@@ -628,12 +628,18 @@ function ShopDetailsContent() {
         minimumFractionDigits: 0
       }).format(price);
     };
-
+  
+    // Add click handler
+    const handleProductClick = () => {
+      router.push(`/productdetails?productId=${product.id}`);
+    };
+  
     if (viewMode === "list") {
       return (
         <div 
           ref={isLast ? lastProductElementRef : null}
-          className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4 transition-all duration-200 hover:bg-white/15 hover:border-white/30"
+          onClick={handleProductClick}
+          className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4 transition-all duration-200 hover:bg-white/15 hover:border-white/30 cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group"
         >
           <div className="flex items-center gap-4">
             <div className="relative w-20 h-20 rounded-lg overflow-hidden flex-shrink-0">
@@ -652,7 +658,7 @@ function ShopDetailsContent() {
             </div>
             
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-white truncate">{product.productName || 'Ürün Adı Yok'}</h3>
+              <h3 className="font-semibold text-white truncate group-hover:text-blue-300">{product.productName || 'Ürün Adı Yok'}</h3>
               <p className="text-sm text-gray-400">{product.category || 'Kategori Yok'} • {product.subcategory || 'Alt Kategori Yok'}</p>
               <div className="flex items-center gap-4 mt-1">
                 <span className="text-lg font-bold text-green-400">
@@ -661,7 +667,7 @@ function ShopDetailsContent() {
                 <span className="text-xs text-gray-400">{product.condition || 'Durum Belirtilmemiş'}</span>
               </div>
             </div>
-
+  
             <div className="flex items-center gap-6 text-sm text-gray-400">
               <div className="flex items-center gap-1">
                 <Eye className="w-4 h-4" />
@@ -676,7 +682,7 @@ function ShopDetailsContent() {
                 <span>{product.purchaseCount || 0}</span>
               </div>
             </div>
-
+  
             {(product.isFeatured || product.isBoosted) && (
               <div className="flex flex-col gap-1">
                 {product.isFeatured && (
@@ -691,15 +697,21 @@ function ShopDetailsContent() {
                 )}
               </div>
             )}
+            
+            {/* Add visual indicator for clickable item */}
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+              <ExternalLink className="w-5 h-5 text-blue-400" />
+            </div>
           </div>
         </div>
       );
     }
-
+  
     return (
       <div 
         ref={isLast ? lastProductElementRef : null}
-        className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden transition-all duration-200 hover:bg-white/15 hover:border-white/30 hover:shadow-lg group"
+        onClick={handleProductClick}
+        className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden transition-all duration-200 hover:bg-white/15 hover:border-white/30 hover:shadow-lg group cursor-pointer hover:border-blue-500/50 hover:scale-[1.02]"
       >
         <div className="relative aspect-square">
           {product.imageUrls?.[0] ? (
@@ -714,7 +726,7 @@ function ShopDetailsContent() {
               <ImageIcon className="w-12 h-12 text-gray-400" />
             </div>
           )}
-
+  
           {(product.isFeatured || product.isBoosted) && (
             <div className="absolute top-2 left-2 flex flex-col gap-1">
               {product.isFeatured && (
@@ -729,7 +741,14 @@ function ShopDetailsContent() {
               )}
             </div>
           )}
-
+  
+          {/* Add visual indicator for clickable item */}
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="p-1 bg-blue-600/90 rounded-full">
+              <ExternalLink className="w-3 h-3 text-white" />
+            </div>
+          </div>
+  
           <div className="absolute bottom-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
             <div className="flex items-center gap-1 bg-black/50 rounded px-2 py-1">
               <Eye className="w-3 h-3 text-white" />
@@ -741,9 +760,9 @@ function ShopDetailsContent() {
             </div>
           </div>
         </div>
-
+  
         <div className="p-4">
-          <h3 className="font-semibold text-white mb-1 line-clamp-2">{product.productName || 'Ürün Adı Yok'}</h3>
+          <h3 className="font-semibold text-white mb-1 line-clamp-2 group-hover:text-blue-300">{product.productName || 'Ürün Adı Yok'}</h3>
           <p className="text-sm text-gray-400 mb-2">{product.category || 'Kategori Yok'}</p>
           <div className="flex items-center justify-between">
             <span className="text-lg font-bold text-green-400">

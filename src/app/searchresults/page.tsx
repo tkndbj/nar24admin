@@ -377,14 +377,16 @@ function SearchResultsContent() {
                 : "space-y-4"
             }
           >
-           {filteredResults.map((result) => {
-  const isClickable = result.type === "user" || result.type === "shop"; // Add shop type here
+         {filteredResults.map((result) => {
+  const isClickable = result.type === "user" || result.type === "shop" || result.type === "product" || result.type === "shop_product";
   
   const handleClick = () => {
     if (result.type === "user") {
       router.push(`/userdetails?userId=${result.id}`);
-    } else if (result.type === "shop") { // Add this condition
+    } else if (result.type === "shop") {
       router.push(`/shopdetails?shopId=${result.id}`);
+    } else if (result.type === "product" || result.type === "shop_product") {
+      router.push(`/productdetails?productId=${result.id}`);
     }
   };
 
