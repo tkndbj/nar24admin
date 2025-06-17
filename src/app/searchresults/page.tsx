@@ -377,12 +377,14 @@ function SearchResultsContent() {
                 : "space-y-4"
             }
           >
-            {filteredResults.map((result) => {
-  const isClickable = result.type === "user";
+           {filteredResults.map((result) => {
+  const isClickable = result.type === "user" || result.type === "shop"; // Add shop type here
   
   const handleClick = () => {
     if (result.type === "user") {
       router.push(`/userdetails?userId=${result.id}`);
+    } else if (result.type === "shop") { // Add this condition
+      router.push(`/shopdetails?shopId=${result.id}`);
     }
   };
 

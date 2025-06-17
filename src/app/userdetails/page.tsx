@@ -3,6 +3,7 @@
 import ProtectedRoute from "@/components/ProtectedRoute";
 import {
   ArrowLeft,
+  ArrowRight,
   User,  
   ShoppingBag,
   Store,
@@ -968,130 +969,150 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
     );
   };
 
-  const ShopCard = ({ shop, viewMode, isLast = false }: { 
-    shop: ShopData; 
-    viewMode: ViewMode;
-    isLast?: boolean;
-  }) => {
-    // Safe access to categories with fallback
-    const categories = shop.categories || [];
-    const categoriesText = categories.length > 0 ? categories.join(", ") : "Kategori Belirtilmemiş";
 
-    if (viewMode === "list") {
-      return (
-        <div 
-          ref={isLast ? lastShopElementRef : null}
-          className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4 transition-all duration-200 hover:bg-white/15 hover:border-white/30"
-        >
-          <div className="flex items-center gap-4">
-            <div className="relative w-16 h-16 rounded-full overflow-hidden flex-shrink-0">
-              {shop.profileImageUrl ? (
-                <Image
-                  src={shop.profileImageUrl}
-                  alt={shop.name || 'Shop'}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                  <Store className="w-6 h-6 text-gray-400" />
-                </div>
-              )}
-            </div>
-            
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-white">{shop.name || 'Mağaza Adı Yok'}</h3>
-              <p className="text-sm text-gray-400">{categoriesText}</p>
-              <p className="text-xs text-gray-500">{shop.address || 'Adres Belirtilmemiş'}</p>
-            </div>
+const ShopCard = ({ shop, viewMode, isLast = false }: { 
+  shop: ShopData; 
+  viewMode: ViewMode;
+  isLast?: boolean;
+}) => {
+  const router = useRouter(); // Add this line to get router access
+  
+  // Safe access to categories with fallback
+  const categories = shop.categories || [];
+  const categoriesText = categories.length > 0 ? categories.join(", ") : "Kategori Belirtilmemiş";
 
-            <div className="flex items-center gap-4 text-sm text-gray-400">
-              <div className="flex items-center gap-1">
-                <Users className="w-4 h-4" />
-                <span>{shop.followerCount || 0}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Star className="w-4 h-4" />
-                <span>{(shop.averageRating || 0).toFixed(1)}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Eye className="w-4 h-4" />
-                <span>{shop.clickCount || 0}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
+  // Add click handler
+  const handleShopClick = () => {
+    router.push(`/shopdetails?shopId=${shop.id}`);
+  };
 
+  if (viewMode === "list") {
     return (
       <div 
         ref={isLast ? lastShopElementRef : null}
-        className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden transition-all duration-200 hover:bg-white/15 hover:border-white/30 hover:shadow-lg"
+        onClick={handleShopClick} // Add click handler
+        className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4 transition-all duration-200 hover:bg-white/15 hover:border-white/30 cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group" // Add cursor and hover effects
       >
-        <div className="relative h-32">
-          {shop.coverImageUrls?.[0] ? (
-            <Image
-              src={shop.coverImageUrls[0]}
-              alt={shop.name || 'Shop'}
-              fill
-              className="object-cover"
-            />
-          ) : (
-            <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-              <Store className="w-8 h-8 text-gray-400" />
-            </div>
-          )}
+        <div className="flex items-center gap-4">
+          <div className="relative w-16 h-16 rounded-full overflow-hidden flex-shrink-0">
+            {shop.profileImageUrl ? (
+              <Image
+                src={shop.profileImageUrl}
+                alt={shop.name || 'Shop'}
+                fill
+                className="object-cover"
+              />
+            ) : (
+              <div className="w-full h-full bg-gray-700 flex items-center justify-center">
+                <Store className="w-6 h-6 text-gray-400" />
+              </div>
+            )}
+          </div>
           
-          {shop.isBoosted && (
-            <div className="absolute top-2 left-2">
-              <span className="px-2 py-1 bg-purple-600/90 text-white text-xs rounded">
-                BOOST
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div className="p-4">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="relative w-12 h-12 rounded-full overflow-hidden">
-              {shop.profileImageUrl ? (
-                <Image
-                  src={shop.profileImageUrl}
-                  alt={shop.name || 'Shop'}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                  <Store className="w-5 h-5 text-gray-400" />
-                </div>
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-white truncate">{shop.name || 'Mağaza Adı Yok'}</h3>
-              <p className="text-xs text-gray-400">{shop.address || 'Adres Belirtilmemiş'}</p>
-            </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-white group-hover:text-blue-300">{shop.name || 'Mağaza Adı Yok'}</h3> {/* Add hover color change */}
+            <p className="text-sm text-gray-400">{categoriesText}</p>
+            <p className="text-xs text-gray-500">{shop.address || 'Adres Belirtilmemiş'}</p>
           </div>
 
-          <div className="space-y-2">
-            <p className="text-sm text-gray-400">{categoriesText}</p>
-            <div className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-1 text-yellow-400">
-                <Star className="w-4 h-4 fill-current" />
-                <span>{(shop.averageRating || 0).toFixed(1)}</span>
-                <span className="text-gray-400">({shop.reviewCount || 0})</span>
-              </div>
-              <div className="flex items-center gap-1 text-blue-400">
-                <Users className="w-4 h-4" />
-                <span>{shop.followerCount || 0}</span>
-              </div>
+          <div className="flex items-center gap-4 text-sm text-gray-400">
+            <div className="flex items-center gap-1">
+              <Users className="w-4 h-4" />
+              <span>{shop.followerCount || 0}</span>
             </div>
+            <div className="flex items-center gap-1">
+              <Star className="w-4 h-4" />
+              <span>{(shop.averageRating || 0).toFixed(1)}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Eye className="w-4 h-4" />
+              <span>{shop.clickCount || 0}</span>
+            </div>
+          </div>
+          
+          {/* Add visual indicator for clickable item */}
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+            <ArrowRight className="w-5 h-5 text-blue-400" />
           </div>
         </div>
       </div>
     );
-  };
+  }
+
+  return (
+    <div 
+      ref={isLast ? lastShopElementRef : null}
+      onClick={handleShopClick} // Add click handler
+      className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden transition-all duration-200 hover:bg-white/15 hover:border-white/30 hover:shadow-lg cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group" // Add cursor and hover effects
+    >
+      <div className="relative h-32">
+        {shop.coverImageUrls?.[0] ? (
+          <Image
+            src={shop.coverImageUrls[0]}
+            alt={shop.name || 'Shop'}
+            fill
+            className="object-cover"
+          />
+        ) : (
+          <div className="w-full h-full bg-gray-700 flex items-center justify-center">
+            <Store className="w-8 h-8 text-gray-400" />
+          </div>
+        )}
+        
+        {shop.isBoosted && (
+          <div className="absolute top-2 left-2">
+            <span className="px-2 py-1 bg-purple-600/90 text-white text-xs rounded">
+              BOOST
+            </span>
+          </div>
+        )}
+        
+        {/* Add visual indicator for clickable item */}
+        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <ArrowRight className="w-5 h-5 text-blue-400 bg-black/50 rounded p-1" />
+        </div>
+      </div>
+
+      <div className="p-4">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="relative w-12 h-12 rounded-full overflow-hidden">
+            {shop.profileImageUrl ? (
+              <Image
+                src={shop.profileImageUrl}
+                alt={shop.name || 'Shop'}
+                fill
+                className="object-cover"
+              />
+            ) : (
+              <div className="w-full h-full bg-gray-700 flex items-center justify-center">
+                <Store className="w-5 h-5 text-gray-400" />
+              </div>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-white truncate group-hover:text-blue-300">{shop.name || 'Mağaza Adı Yok'}</h3> {/* Add hover color change */}
+            <p className="text-xs text-gray-400">{shop.address || 'Adres Belirtilmemiş'}</p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-sm text-gray-400">{categoriesText}</p>
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center gap-1 text-yellow-400">
+              <Star className="w-4 h-4 fill-current" />
+              <span>{(shop.averageRating || 0).toFixed(1)}</span>
+              <span className="text-gray-400">({shop.reviewCount || 0})</span>
+            </div>
+            <div className="flex items-center gap-1 text-blue-400">
+              <Users className="w-4 h-4" />
+              <span>{shop.followerCount || 0}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
