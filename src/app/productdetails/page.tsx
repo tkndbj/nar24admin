@@ -10,36 +10,30 @@ import {
   Loader2,
   Image as ImageIcon,
   Store,
-  MapPin,
   Star,
   Eye,
   Heart,
   TrendingUp,
-  Calendar,
   ShoppingBag,
-  Award,
-  Zap,
   Badge,
-  DollarSign,
   ExternalLink,
   User,
-  Phone,
   Search,
   Grid,
   List,
   MessageCircle,
-  Share2,
-  Activity,
-  Tag,
   Palette,
   Ruler,
   Info,
-  CheckCircle,
-  XCircle,
-  Clock,
-  AlertTriangle,
 } from "lucide-react";
-import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+  Suspense,
+} from "react";
 import {
   collection,
   doc,
@@ -117,15 +111,6 @@ interface ShopData {
   createdAt?: Timestamp;
 }
 
-interface UserData {
-  id: string;
-  displayName: string;
-  email: string;
-  profileImage?: string;
-  verified?: boolean;
-  totalProductsSold?: number;
-}
-
 interface ReviewData {
   id: string;
   userId: string;
@@ -156,13 +141,12 @@ function ProductDetailsContent() {
   const productId = searchParams.get("productId");
 
   // Refs for infinite scroll
-  const relatedProductsObserverRef = useRef<IntersectionObserver | null>(null);
   const lastRelatedProductElementRef = useRef<HTMLDivElement | null>(null);
 
   // State Management
   const [product, setProduct] = useState<ProductData | null>(null);
   const [shop, setShop] = useState<ShopData | null>(null);
-  const [seller, setSeller] = useState<UserData | null>(null);
+
   const [relatedProducts, setRelatedProducts] = useState<ProductData[]>([]);
   const [reviews, setReviews] = useState<ReviewData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -182,8 +166,10 @@ function ProductDetailsContent() {
   const [relatedSort, setRelatedSort] = useState<SortBy>("newest");
 
   // Pagination for Related Products
-  const [lastRelatedDoc, setLastRelatedDoc] = useState<DocumentSnapshot | null>(null);
-  const [hasMoreRelated, setHasMoreRelated] = useState(true);
+  const [lastRelatedDoc, setLastRelatedDoc] = useState<DocumentSnapshot | null>(
+    null
+  );
+
   const ITEMS_PER_PAGE = 8;
 
   // Get current image URLs based on selected color
@@ -197,15 +183,43 @@ function ProductDetailsContent() {
   // Initialize editable fields
   const initializeEditableFields = useCallback((productData: ProductData) => {
     setEditableFields([
-      { field: "productName", value: productData.productName || "", isEditing: false },
-      { field: "brandModel", value: productData.brandModel || "", isEditing: false },
+      {
+        field: "productName",
+        value: productData.productName || "",
+        isEditing: false,
+      },
+      {
+        field: "brandModel",
+        value: productData.brandModel || "",
+        isEditing: false,
+      },
       { field: "price", value: productData.price || 0, isEditing: false },
-      { field: "category", value: productData.category || "", isEditing: false },
-      { field: "subcategory", value: productData.subcategory || "", isEditing: false },
-      { field: "condition", value: productData.condition || "", isEditing: false },
-      { field: "description", value: productData.description || "", isEditing: false },
+      {
+        field: "category",
+        value: productData.category || "",
+        isEditing: false,
+      },
+      {
+        field: "subcategory",
+        value: productData.subcategory || "",
+        isEditing: false,
+      },
+      {
+        field: "condition",
+        value: productData.condition || "",
+        isEditing: false,
+      },
+      {
+        field: "description",
+        value: productData.description || "",
+        isEditing: false,
+      },
       { field: "stock", value: productData.stock || 0, isEditing: false },
-      { field: "warranty", value: productData.warranty || "", isEditing: false },
+      {
+        field: "warranty",
+        value: productData.warranty || "",
+        isEditing: false,
+      },
     ]);
   }, []);
 
@@ -219,23 +233,26 @@ function ProductDetailsContent() {
 
     try {
       setLoading(true);
-      
+
       // Try both collections
       let productDoc = await getDoc(doc(db, "shop_products", productId));
       let isShopProduct = true;
-      
+
       if (!productDoc.exists()) {
         productDoc = await getDoc(doc(db, "products", productId));
         isShopProduct = false;
       }
-      
+
       if (!productDoc.exists()) {
         toast.error("Ürün bulunamadı");
         router.push("/dashboard");
         return;
       }
 
-      const productData = { id: productDoc.id, ...productDoc.data() } as ProductData;
+      const productData = {
+        id: productDoc.id,
+        ...productDoc.data(),
+      } as ProductData;
       setProduct(productData);
       initializeEditableFields(productData);
 
@@ -247,17 +264,8 @@ function ProductDetailsContent() {
         }
       }
 
-      // Fetch seller data
-      if (productData.userId) {
-        const userDoc = await getDoc(doc(db, "users", productData.userId));
-        if (userDoc.exists()) {
-          setSeller({ id: userDoc.id, ...userDoc.data() } as UserData);
-        }
-      }
-
       // Fetch reviews
       await fetchProductReviews(productId, isShopProduct);
-
     } catch (error) {
       console.error("Error fetching product:", error);
       toast.error("Ürün bilgileri yüklenirken hata oluştu");
@@ -267,81 +275,92 @@ function ProductDetailsContent() {
   }, [productId, router, initializeEditableFields]);
 
   // Fetch product reviews
-  const fetchProductReviews = useCallback(async (prodId: string, isShopProduct: boolean) => {
-    try {
-      setReviewsLoading(true);
-      const collection_name = isShopProduct ? "shop_products" : "products";
-      
-      const reviewsQuery = query(
-        collection(db, collection_name, prodId, "reviews"),
-        orderBy("timestamp", "desc"),
-        limit(10)
-      );
-      
-      const snapshot = await getDocs(reviewsQuery);
-      const reviewsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as ReviewData[];
-      
-      setReviews(reviewsData);
-    } catch (error) {
-      console.error("Error fetching reviews:", error);
-    } finally {
-      setReviewsLoading(false);
-    }
-  }, []);
+  const fetchProductReviews = useCallback(
+    async (prodId: string, isShopProduct: boolean) => {
+      try {
+        setReviewsLoading(true);
+        const collection_name = isShopProduct ? "shop_products" : "products";
+
+        const reviewsQuery = query(
+          collection(db, collection_name, prodId, "reviews"),
+          orderBy("timestamp", "desc"),
+          limit(10)
+        );
+
+        const snapshot = await getDocs(reviewsQuery);
+        const reviewsData = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as ReviewData[];
+
+        setReviews(reviewsData);
+      } catch (error) {
+        console.error("Error fetching reviews:", error);
+      } finally {
+        setReviewsLoading(false);
+      }
+    },
+    []
+  );
 
   // Fetch related products
-  const fetchRelatedProducts = useCallback(async (append = false) => {
-    if (!product || relatedLoading) return;
+  const fetchRelatedProducts = useCallback(
+    async (append = false) => {
+      if (!product || relatedLoading) return;
 
-    try {
-      setRelatedLoading(true);
-      
-      let q = query(
-        collection(db, "shop_products"),
-        where("shopId", "==", product.shopId),
-        orderBy(
-          relatedSort === "newest" ? "createdAt" :
-          relatedSort === "oldest" ? "createdAt" :
-          relatedSort === "price_high" ? "price" :
-          relatedSort === "price_low" ? "price" : "clickCount",
-          relatedSort === "oldest" || relatedSort === "price_low" ? "asc" : "desc"
-        ),
-        limit(ITEMS_PER_PAGE)
-      );
+      try {
+        setRelatedLoading(true);
 
-      // Apply pagination
-      if (append && lastRelatedDoc) {
-        q = query(q, startAfter(lastRelatedDoc));
+        let q = query(
+          collection(db, "shop_products"),
+          where("shopId", "==", product.shopId),
+          orderBy(
+            relatedSort === "newest"
+              ? "createdAt"
+              : relatedSort === "oldest"
+              ? "createdAt"
+              : relatedSort === "price_high"
+              ? "price"
+              : relatedSort === "price_low"
+              ? "price"
+              : "clickCount",
+            relatedSort === "oldest" || relatedSort === "price_low"
+              ? "asc"
+              : "desc"
+          ),
+          limit(ITEMS_PER_PAGE)
+        );
+
+        // Apply pagination
+        if (append && lastRelatedDoc) {
+          q = query(q, startAfter(lastRelatedDoc));
+        }
+
+        const snapshot = await getDocs(q);
+        const newProducts = snapshot.docs
+          .map((doc) => ({ id: doc.id, ...doc.data() } as ProductData))
+          .filter((p) => p.id !== product.id); // Exclude current product
+
+        if (append) {
+          setRelatedProducts((prev) => [...prev, ...newProducts]);
+        } else {
+          setRelatedProducts(newProducts);
+          setLastRelatedDoc(null);
+        }
+
+        // Set last document for pagination
+        if (newProducts.length > 0) {
+          setLastRelatedDoc(snapshot.docs[snapshot.docs.length - 1]);
+        }
+      } catch (error) {
+        console.error("Error fetching related products:", error);
+        toast.error("İlgili ürünler yüklenirken hata oluştu");
+      } finally {
+        setRelatedLoading(false);
       }
-
-      const snapshot = await getDocs(q);
-      const newProducts = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }) as ProductData)
-        .filter(p => p.id !== product.id); // Exclude current product
-
-      if (append) {
-        setRelatedProducts(prev => [...prev, ...newProducts]);
-      } else {
-        setRelatedProducts(newProducts);
-        setLastRelatedDoc(null);
-      }
-
-      // Set last document for pagination
-      if (newProducts.length > 0) {
-        setLastRelatedDoc(snapshot.docs[snapshot.docs.length - 1]);
-      }
-
-      setHasMoreRelated(newProducts.length === ITEMS_PER_PAGE);
-    } catch (error) {
-      console.error("Error fetching related products:", error);
-      toast.error("İlgili ürünler yüklenirken hata oluştu");
-    } finally {
-      setRelatedLoading(false);
-    }
-  }, [product, relatedSort, lastRelatedDoc, relatedLoading]);
+    },
+    [product, relatedSort, lastRelatedDoc, relatedLoading]
+  );
 
   // Filter related products
   const filteredRelatedProducts = useMemo(() => {
@@ -350,16 +369,17 @@ function ProductDetailsContent() {
     // Apply search filter
     if (relatedSearch.trim()) {
       const searchTerm = relatedSearch.toLowerCase().trim();
-      filtered = filtered.filter(product =>
-        product.productName?.toLowerCase().includes(searchTerm) ||
-        product.category?.toLowerCase().includes(searchTerm) ||
-        product.brandModel?.toLowerCase().includes(searchTerm)
+      filtered = filtered.filter(
+        (product) =>
+          product.productName?.toLowerCase().includes(searchTerm) ||
+          product.category?.toLowerCase().includes(searchTerm) ||
+          product.brandModel?.toLowerCase().includes(searchTerm)
       );
     }
 
     // Apply status filter
     if (relatedFilter !== "all") {
-      filtered = filtered.filter(product => {
+      filtered = filtered.filter((product) => {
         switch (relatedFilter) {
           case "active":
             return !product.sold;
@@ -378,41 +398,44 @@ function ProductDetailsContent() {
 
   // Handle field editing
   const handleFieldEdit = (field: keyof ProductData) => {
-    setEditableFields(prev =>
-      prev.map(item =>
+    setEditableFields((prev) =>
+      prev.map((item) =>
         item.field === field ? { ...item, isEditing: true } : item
       )
     );
   };
 
-  const handleFieldChange = (field: keyof ProductData, value: string | number | boolean) => {
-    setEditableFields(prev =>
-      prev.map(item =>
-        item.field === field ? { ...item, value } : item
-      )
+  const handleFieldChange = (
+    field: keyof ProductData,
+    value: string | number | boolean
+  ) => {
+    setEditableFields((prev) =>
+      prev.map((item) => (item.field === field ? { ...item, value } : item))
     );
   };
 
   const handleFieldSave = async (field: keyof ProductData) => {
     if (!productId || !product) return;
 
-    const fieldData = editableFields.find(item => item.field === field);
+    const fieldData = editableFields.find((item) => item.field === field);
     if (!fieldData) return;
 
     try {
       setIsSaving(true);
-      
+
       // Determine which collection to update
       const collection_name = product.shopId ? "shop_products" : "products";
-      
+
       await updateDoc(doc(db, collection_name, productId), {
         [field]: fieldData.value,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       });
 
-      setProduct(prev => prev ? { ...prev, [field]: fieldData.value } : null);
-      setEditableFields(prev =>
-        prev.map(item =>
+      setProduct((prev) =>
+        prev ? { ...prev, [field]: fieldData.value } : null
+      );
+      setEditableFields((prev) =>
+        prev.map((item) =>
           item.field === field ? { ...item, isEditing: false } : item
         )
       );
@@ -428,8 +451,8 @@ function ProductDetailsContent() {
 
   const handleFieldCancel = (field: keyof ProductData) => {
     const originalValue = product?.[field];
-    setEditableFields(prev =>
-      prev.map(item =>
+    setEditableFields((prev) =>
+      prev.map((item) =>
         item.field === field
           ? { ...item, value: String(originalValue || ""), isEditing: false }
           : item
@@ -449,11 +472,11 @@ function ProductDetailsContent() {
   };
 
   // Format price
-  const formatPrice = (price: number, currency: string = 'TRY') => {
-    return new Intl.NumberFormat('tr-TR', {
-      style: 'currency',
-      currency: currency === 'TL' ? 'TRY' : currency,
-      minimumFractionDigits: 0
+  const formatPrice = (price: number, currency: string = "TRY") => {
+    return new Intl.NumberFormat("tr-TR", {
+      style: "currency",
+      currency: currency === "TL" ? "TRY" : currency,
+      minimumFractionDigits: 0,
     }).format(price);
   };
 
@@ -466,7 +489,6 @@ function ProductDetailsContent() {
     if (product && product.shopId) {
       setRelatedProducts([]);
       setLastRelatedDoc(null);
-      setHasMoreRelated(true);
       fetchRelatedProducts();
     }
   }, [product]);
@@ -476,7 +498,6 @@ function ProductDetailsContent() {
     if (product && product.shopId) {
       setRelatedProducts([]);
       setLastRelatedDoc(null);
-      setHasMoreRelated(true);
       fetchRelatedProducts();
     }
   }, [relatedSort]);
@@ -503,13 +524,18 @@ function ProductDetailsContent() {
     );
   }
 
-  const EditableField = ({ field, label, type = "text", multiline = false }: {
+  const EditableField = ({
+    field,
+    label,
+    type = "text",
+    multiline = false,
+  }: {
     field: keyof ProductData;
     label: string;
     type?: string;
     multiline?: boolean;
   }) => {
-    const fieldData = editableFields.find(item => item.field === field);
+    const fieldData = editableFields.find((item) => item.field === field);
     if (!fieldData) return null;
 
     return (
@@ -530,7 +556,14 @@ function ProductDetailsContent() {
                 <input
                   type={type}
                   value={fieldData.value.toString()}
-                  onChange={(e) => handleFieldChange(field, type === "number" ? Number(e.target.value) : e.target.value)}
+                  onChange={(e) =>
+                    handleFieldChange(
+                      field,
+                      type === "number"
+                        ? Number(e.target.value)
+                        : e.target.value
+                    )
+                  }
                   className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
                   disabled={isSaving}
                   autoFocus
@@ -541,7 +574,11 @@ function ProductDetailsContent() {
                 disabled={isSaving}
                 className="p-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
               >
-                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                {isSaving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4" />
+                )}
               </button>
               <button
                 onClick={() => handleFieldCancel(field)}
@@ -569,8 +606,12 @@ function ProductDetailsContent() {
     );
   };
 
-  const ProductCard = ({ product: relatedProduct, viewMode, isLast = false }: { 
-    product: ProductData; 
+  const ProductCard = ({
+    product: relatedProduct,
+    viewMode,
+    isLast = false,
+  }: {
+    product: ProductData;
     viewMode: ViewMode;
     isLast?: boolean;
   }) => {
@@ -578,10 +619,10 @@ function ProductDetailsContent() {
     const handleProductClick = () => {
       router.push(`/productdetails?productId=${relatedProduct.id}`);
     };
-  
+
     if (viewMode === "list") {
       return (
-        <div 
+        <div
           ref={isLast ? lastRelatedProductElementRef : null}
           onClick={handleProductClick}
           className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4 transition-all duration-200 hover:bg-white/15 hover:border-white/30 cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group"
@@ -591,7 +632,7 @@ function ProductDetailsContent() {
               {relatedProduct.imageUrls?.[0] ? (
                 <Image
                   src={relatedProduct.imageUrls[0]}
-                  alt={relatedProduct.productName || 'Product'}
+                  alt={relatedProduct.productName || "Product"}
                   fill
                   className="object-cover"
                 />
@@ -601,18 +642,27 @@ function ProductDetailsContent() {
                 </div>
               )}
             </div>
-            
+
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-white truncate group-hover:text-blue-300">{relatedProduct.productName || 'Ürün Adı Yok'}</h3>
-              <p className="text-sm text-gray-400">{relatedProduct.brandModel || 'Marka Model Yok'}</p>
+              <h3 className="font-semibold text-white truncate group-hover:text-blue-300">
+                {relatedProduct.productName || "Ürün Adı Yok"}
+              </h3>
+              <p className="text-sm text-gray-400">
+                {relatedProduct.brandModel || "Marka Model Yok"}
+              </p>
               <div className="flex items-center gap-4 mt-1">
                 <span className="text-lg font-bold text-green-400">
-                  {formatPrice(relatedProduct.price || 0, relatedProduct.currency || 'TRY')}
+                  {formatPrice(
+                    relatedProduct.price || 0,
+                    relatedProduct.currency || "TRY"
+                  )}
                 </span>
-                <span className="text-xs text-gray-400">{relatedProduct.condition || 'Durum Belirtilmemiş'}</span>
+                <span className="text-xs text-gray-400">
+                  {relatedProduct.condition || "Durum Belirtilmemiş"}
+                </span>
               </div>
             </div>
-  
+
             <div className="flex items-center gap-6 text-sm text-gray-400">
               <div className="flex items-center gap-1">
                 <Eye className="w-4 h-4" />
@@ -627,7 +677,7 @@ function ProductDetailsContent() {
                 <span>{relatedProduct.purchaseCount || 0}</span>
               </div>
             </div>
-            
+
             {/* Add visual indicator for clickable item */}
             <div className="opacity-0 group-hover:opacity-100 transition-opacity">
               <ExternalLink className="w-5 h-5 text-blue-400" />
@@ -636,9 +686,9 @@ function ProductDetailsContent() {
         </div>
       );
     }
-  
+
     return (
-      <div 
+      <div
         ref={isLast ? lastRelatedProductElementRef : null}
         onClick={handleProductClick}
         className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden transition-all duration-200 hover:bg-white/15 hover:border-white/30 hover:shadow-lg group cursor-pointer hover:border-blue-500/50 hover:scale-[1.02]"
@@ -647,7 +697,7 @@ function ProductDetailsContent() {
           {relatedProduct.imageUrls?.[0] ? (
             <Image
               src={relatedProduct.imageUrls[0]}
-              alt={relatedProduct.productName || 'Product'}
+              alt={relatedProduct.productName || "Product"}
               fill
               className="object-cover"
             />
@@ -656,7 +706,7 @@ function ProductDetailsContent() {
               <ImageIcon className="w-12 h-12 text-gray-400" />
             </div>
           )}
-  
+
           {(relatedProduct.isFeatured || relatedProduct.isBoosted) && (
             <div className="absolute top-2 left-2 flex flex-col gap-1">
               {relatedProduct.isFeatured && (
@@ -671,7 +721,7 @@ function ProductDetailsContent() {
               )}
             </div>
           )}
-  
+
           {/* Add visual indicator for clickable item */}
           <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
             <div className="p-1 bg-blue-600/90 rounded-full">
@@ -679,15 +729,24 @@ function ProductDetailsContent() {
             </div>
           </div>
         </div>
-  
+
         <div className="p-4">
-          <h3 className="font-semibold text-white mb-1 line-clamp-2 group-hover:text-blue-300">{relatedProduct.productName || 'Ürün Adı Yok'}</h3>
-          <p className="text-sm text-gray-400 mb-2">{relatedProduct.brandModel || 'Marka Model Yok'}</p>
+          <h3 className="font-semibold text-white mb-1 line-clamp-2 group-hover:text-blue-300">
+            {relatedProduct.productName || "Ürün Adı Yok"}
+          </h3>
+          <p className="text-sm text-gray-400 mb-2">
+            {relatedProduct.brandModel || "Marka Model Yok"}
+          </p>
           <div className="flex items-center justify-between">
             <span className="text-lg font-bold text-green-400">
-              {formatPrice(relatedProduct.price || 0, relatedProduct.currency || 'TRY')}
+              {formatPrice(
+                relatedProduct.price || 0,
+                relatedProduct.currency || "TRY"
+              )}
             </span>
-            <span className="text-xs text-gray-400">{relatedProduct.condition || 'Durum Belirtilmemiş'}</span>
+            <span className="text-xs text-gray-400">
+              {relatedProduct.condition || "Durum Belirtilmemiş"}
+            </span>
           </div>
         </div>
       </div>
@@ -725,7 +784,7 @@ function ProductDetailsContent() {
                 {currentImageUrls[selectedImageIndex] ? (
                   <Image
                     src={currentImageUrls[selectedImageIndex]}
-                    alt={product.productName || 'Product'}
+                    alt={product.productName || "Product"}
                     fill
                     className="object-cover"
                   />
@@ -734,28 +793,34 @@ function ProductDetailsContent() {
                     <ImageIcon className="w-16 h-16 text-gray-400" />
                   </div>
                 )}
-                
+
                 {/* Image Navigation */}
                 {currentImageUrls.length > 1 && (
                   <>
                     <button
-                      onClick={() => setSelectedImageIndex(prev => prev > 0 ? prev - 1 : currentImageUrls.length - 1)}
+                      onClick={() =>
+                        setSelectedImageIndex((prev) =>
+                          prev > 0 ? prev - 1 : currentImageUrls.length - 1
+                        )
+                      }
                       className="absolute left-2 top-1/2 transform -translate-y-1/2 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors"
                     >
                       <ArrowLeft className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => setSelectedImageIndex(prev => prev < currentImageUrls.length - 1 ? prev + 1 : 0)}
+                      onClick={() =>
+                        setSelectedImageIndex((prev) =>
+                          prev < currentImageUrls.length - 1 ? prev + 1 : 0
+                        )
+                      }
                       className="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors"
                     >
                       <ArrowLeft className="w-4 h-4 rotate-180" />
                     </button>
                   </>
-                )}              
-                 
-                <div className="absolute top-2 right-2">
-                 
-                </div>
+                )}
+
+                <div className="absolute top-2 right-2"></div>
               </div>
             </div>
 
@@ -767,9 +832,9 @@ function ProductDetailsContent() {
                     key={index}
                     onClick={() => setSelectedImageIndex(index)}
                     className={`relative w-20 h-20 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-colors ${
-                      selectedImageIndex === index 
-                        ? 'border-blue-400' 
-                        : 'border-white/20 hover:border-white/40'
+                      selectedImageIndex === index
+                        ? "border-blue-400"
+                        : "border-white/20 hover:border-white/40"
                     }`}
                   >
                     <Image
@@ -797,8 +862,8 @@ function ProductDetailsContent() {
                       onClick={() => handleColorSelect(color)}
                       className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                         selectedColor === color
-                          ? 'bg-blue-600 text-white border-2 border-blue-400'
-                          : 'bg-white/10 text-gray-300 border-2 border-white/20 hover:bg-white/15 hover:border-white/30'
+                          ? "bg-blue-600 text-white border-2 border-blue-400"
+                          : "bg-white/10 text-gray-300 border-2 border-white/20 hover:bg-white/15 hover:border-white/30"
                       }`}
                     >
                       {color}
@@ -836,12 +901,16 @@ function ProductDetailsContent() {
               <div className="space-y-4">
                 <EditableField field="productName" label="Ürün Adı" />
                 <EditableField field="brandModel" label="Marka/Model" />
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <EditableField field="price" label="Fiyat" type="number" />
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-300">Para Birimi</label>
-                    <span className="block text-white">{product.currency || 'TRY'}</span>
+                    <label className="text-sm font-medium text-gray-300">
+                      Para Birimi
+                    </label>
+                    <span className="block text-white">
+                      {product.currency || "TRY"}
+                    </span>
                   </div>
                 </div>
 
@@ -862,22 +931,28 @@ function ProductDetailsContent() {
 
             {/* Statistics */}
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">İstatistikler</h3>
+              <h3 className="text-lg font-semibold text-white mb-4">
+                İstatistikler
+              </h3>
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Eye className="w-4 h-4 text-blue-400" />
                     <span className="text-sm text-gray-300">Görüntülenme</span>
                   </div>
-                  <span className="text-white font-semibold">{product.clickCount || 0}</span>
+                  <span className="text-white font-semibold">
+                    {product.clickCount || 0}
+                  </span>
                 </div>
-                
+
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Heart className="w-4 h-4 text-red-400" />
                     <span className="text-sm text-gray-300">Beğeni</span>
                   </div>
-                  <span className="text-white font-semibold">{product.favoritesCount || 0}</span>
+                  <span className="text-white font-semibold">
+                    {product.favoritesCount || 0}
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -885,7 +960,9 @@ function ProductDetailsContent() {
                     <ShoppingBag className="w-4 h-4 text-green-400" />
                     <span className="text-sm text-gray-300">Sepete Ekleme</span>
                   </div>
-                  <span className="text-white font-semibold">{product.cartCount || 0}</span>
+                  <span className="text-white font-semibold">
+                    {product.cartCount || 0}
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -893,7 +970,9 @@ function ProductDetailsContent() {
                     <TrendingUp className="w-4 h-4 text-purple-400" />
                     <span className="text-sm text-gray-300">Satın Alma</span>
                   </div>
-                  <span className="text-white font-semibold">{product.purchaseCount || 0}</span>
+                  <span className="text-white font-semibold">
+                    {product.purchaseCount || 0}
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between col-span-2">
@@ -902,8 +981,12 @@ function ProductDetailsContent() {
                     <span className="text-sm text-gray-300">Ortalama Puan</span>
                   </div>
                   <span className="text-white font-semibold">
-                    {product.averageRating ? product.averageRating.toFixed(1) : "0.0"} 
-                    <span className="text-gray-400 text-xs ml-1">({product.reviewCount || 0} değerlendirme)</span>
+                    {product.averageRating
+                      ? product.averageRating.toFixed(1)
+                      : "0.0"}
+                    <span className="text-gray-400 text-xs ml-1">
+                      ({product.reviewCount || 0} değerlendirme)
+                    </span>
                   </span>
                 </div>
               </div>
@@ -935,7 +1018,9 @@ function ProductDetailsContent() {
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <h4 className="font-semibold text-white">{shop.name}</h4>
+                        <h4 className="font-semibold text-white">
+                          {shop.name}
+                        </h4>
                         {shop.verified && (
                           <Badge className="w-4 h-4 text-blue-400" />
                         )}
@@ -961,7 +1046,9 @@ function ProductDetailsContent() {
                       </div>
                     </div>
                     <button
-                      onClick={() => router.push(`/shopdetails?shopId=${shop.id}`)}
+                      onClick={() =>
+                        router.push(`/shopdetails?shopId=${shop.id}`)
+                      }
                       className="p-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg transition-colors"
                     >
                       <ExternalLink className="w-4 h-4" />
@@ -969,8 +1056,6 @@ function ProductDetailsContent() {
                   </div>
                 </div>
               )}
-
-              
             </div>
 
             {/* Additional Info */}
@@ -983,16 +1068,15 @@ function ProductDetailsContent() {
                 <div className="flex items-center justify-between">
                   <span className="text-gray-300">Oluşturulma Tarihi</span>
                   <span className="text-white">
-                    {product.createdAt?.toDate().toLocaleDateString('tr-TR')}
+                    {product.createdAt?.toDate().toLocaleDateString("tr-TR")}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-300">Son Güncelleme</span>
                   <span className="text-white">
-                    {product.updatedAt?.toDate().toLocaleDateString('tr-TR')}
+                    {product.updatedAt?.toDate().toLocaleDateString("tr-TR")}
                   </span>
                 </div>
-                
               </div>
             </div>
           </div>
@@ -1004,16 +1088,21 @@ function ProductDetailsContent() {
             <MessageCircle className="w-5 h-5" />
             Değerlendirmeler ({reviews.length})
           </h3>
-          
+
           {reviewsLoading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
-              <span className="text-gray-400 ml-2">Değerlendirmeler yükleniyor...</span>
+              <span className="text-gray-400 ml-2">
+                Değerlendirmeler yükleniyor...
+              </span>
             </div>
           ) : reviews.length > 0 ? (
             <div className="space-y-4">
               {reviews.map((review) => (
-                <div key={review.id} className="p-4 bg-white/5 rounded-lg border border-white/10">
+                <div
+                  key={review.id}
+                  className="p-4 bg-white/5 rounded-lg border border-white/10"
+                >
                   <div className="flex items-start gap-3">
                     <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
                       {review.userImage ? (
@@ -1031,7 +1120,9 @@ function ProductDetailsContent() {
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <h4 className="font-semibold text-white text-sm">{review.userName}</h4>
+                        <h4 className="font-semibold text-white text-sm">
+                          {review.userName}
+                        </h4>
                         {review.verified && (
                           <Badge className="w-3 h-3 text-blue-400" />
                         )}
@@ -1041,16 +1132,22 @@ function ProductDetailsContent() {
                               key={i}
                               className={`w-3 h-3 ${
                                 i < review.rating
-                                  ? 'text-yellow-400 fill-current'
-                                  : 'text-gray-600'
+                                  ? "text-yellow-400 fill-current"
+                                  : "text-gray-600"
                               }`}
                             />
                           ))}
                         </div>
                       </div>
-                      <p className="text-gray-300 text-sm mb-2">{review.review}</p>
+                      <p className="text-gray-300 text-sm mb-2">
+                        {review.review}
+                      </p>
                       <div className="flex items-center gap-4 text-xs text-gray-400">
-                        <span>{review.timestamp?.toDate().toLocaleDateString('tr-TR')}</span>
+                        <span>
+                          {review.timestamp
+                            ?.toDate()
+                            .toLocaleDateString("tr-TR")}
+                        </span>
                         <div className="flex items-center gap-1">
                           <Heart className="w-3 h-3" />
                           <span>{review.likes?.length || 0}</span>
@@ -1075,7 +1172,9 @@ function ProductDetailsContent() {
             {/* Related Product Controls */}
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-white">Mağazadaki Diğer Ürünler</h2>
+                <h2 className="text-xl font-bold text-white">
+                  Mağazadaki Diğer Ürünler
+                </h2>
                 <div className="flex items-center gap-2 text-sm text-gray-400">
                   <Package className="w-4 h-4" />
                   <span>{filteredRelatedProducts.length} ürün</span>
@@ -1099,14 +1198,36 @@ function ProductDetailsContent() {
                   {/* Filter */}
                   <select
                     value={relatedFilter}
-                    onChange={(e) => setRelatedFilter(e.target.value as FilterStatus)}
+                    onChange={(e) =>
+                      setRelatedFilter(e.target.value as FilterStatus)
+                    }
                     className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    style={{ color: 'white' }}
+                    style={{ color: "white" }}
                   >
-                    <option value="all" style={{ backgroundColor: '#1f2937', color: 'white' }}>Tüm Ürünler</option>
-                    <option value="active" style={{ backgroundColor: '#1f2937', color: 'white' }}>Aktif</option>
-                    <option value="sold" style={{ backgroundColor: '#1f2937', color: 'white' }}>Satılan</option>
-                    <option value="featured" style={{ backgroundColor: '#1f2937', color: 'white' }}>Öne Çıkan</option>
+                    <option
+                      value="all"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      Tüm Ürünler
+                    </option>
+                    <option
+                      value="active"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      Aktif
+                    </option>
+                    <option
+                      value="sold"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      Satılan
+                    </option>
+                    <option
+                      value="featured"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      Öne Çıkan
+                    </option>
                   </select>
 
                   {/* Sort */}
@@ -1114,13 +1235,38 @@ function ProductDetailsContent() {
                     value={relatedSort}
                     onChange={(e) => setRelatedSort(e.target.value as SortBy)}
                     className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    style={{ color: 'white' }}
+                    style={{ color: "white" }}
                   >
-                    <option value="newest" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Yeni</option>
-                    <option value="oldest" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Eski</option>
-                    <option value="price_high" style={{ backgroundColor: '#1f2937', color: 'white' }}>Fiyat: Yüksek → Düşük</option>
-                    <option value="price_low" style={{ backgroundColor: '#1f2937', color: 'white' }}>Fiyat: Düşük → Yüksek</option>
-                    <option value="popular" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Popüler</option>
+                    <option
+                      value="newest"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      En Yeni
+                    </option>
+                    <option
+                      value="oldest"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      En Eski
+                    </option>
+                    <option
+                      value="price_high"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      Fiyat: Yüksek → Düşük
+                    </option>
+                    <option
+                      value="price_low"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      Fiyat: Düşük → Yüksek
+                    </option>
+                    <option
+                      value="popular"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      En Popüler
+                    </option>
                   </select>
                 </div>
 
@@ -1154,7 +1300,9 @@ function ProductDetailsContent() {
             {filteredRelatedProducts.length === 0 && !relatedLoading ? (
               <div className="text-center py-12">
                 <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-white mb-2">İlgili Ürün Bulunamadı</h3>
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  İlgili Ürün Bulunamadı
+                </h3>
                 <p className="text-gray-400">
                   {relatedSearch || relatedFilter !== "all"
                     ? "Arama kriterlerinize uygun ürün bulunamadı."
@@ -1163,11 +1311,13 @@ function ProductDetailsContent() {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className={`grid gap-4 ${
-                  relatedViewMode === "grid"
-                    ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-                    : "grid-cols-1"
-                }`}>
+                <div
+                  className={`grid gap-4 ${
+                    relatedViewMode === "grid"
+                      ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                      : "grid-cols-1"
+                  }`}
+                >
                   {filteredRelatedProducts.map((relatedProduct, index) => (
                     <ProductCard
                       key={relatedProduct.id}
@@ -1194,7 +1344,9 @@ function ProductDetailsContent() {
 
         {/* Analytics Summary */}
         <div className="mt-8 backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Ürün Performans Özeti</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">
+            Ürün Performans Özeti
+          </h3>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="text-center">
               <div className="text-2xl font-bold text-blue-400">
@@ -1202,21 +1354,21 @@ function ProductDetailsContent() {
               </div>
               <div className="text-sm text-gray-400">Görüntülenme</div>
             </div>
-            
+
             <div className="text-center">
               <div className="text-2xl font-bold text-red-400">
                 {product.favoritesCount || 0}
               </div>
               <div className="text-sm text-gray-400">Beğeni</div>
             </div>
-            
+
             <div className="text-center">
               <div className="text-2xl font-bold text-green-400">
                 {product.cartCount || 0}
               </div>
               <div className="text-sm text-gray-400">Sepete Ekleme</div>
             </div>
-            
+
             <div className="text-center">
               <div className="text-2xl font-bold text-purple-400">
                 {product.purchaseCount || 0}
@@ -1241,14 +1393,16 @@ function ProductDetailsContent() {
 export default function ProductDetailsPage() {
   return (
     <ProtectedRoute>
-      <Suspense fallback={
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-          <div className="flex items-center gap-3 text-white">
-            <Loader2 className="w-6 h-6 animate-spin" />
-            <span>Sayfa yükleniyor...</span>
+      <Suspense
+        fallback={
+          <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+            <div className="flex items-center gap-3 text-white">
+              <Loader2 className="w-6 h-6 animate-spin" />
+              <span>Sayfa yükleniyor...</span>
+            </div>
           </div>
-        </div>
-      }>
+        }
+      >
         <ProductDetailsContent />
       </Suspense>
     </ProtectedRoute>
