@@ -4,34 +4,25 @@ import { useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import {
   ArrowLeft,
-  User,
-  Phone,
-  Mail,
+  User,  
   ShoppingBag,
   Store,
-  Edit,
-  Save,
+  Edit,  
   X,
   Check,
   Loader2,
   Image as ImageIcon,
   Package,
-  MapPin,
-  Calendar,
+  MapPin,  
   Star,
   Eye,
   Heart,
   TrendingUp,
-  Activity,
-  Filter,
+  Activity,  
   Search,
   Grid,
-  List,
-  ChevronDown,
-  ExternalLink,
-  Users,
-  Camera,
-  Plus,
+  List,  
+  Users,  
 } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
@@ -45,8 +36,7 @@ import {
   limit,
   startAfter,
   updateDoc,
-  Timestamp,
-  onSnapshot,
+  Timestamp,  
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";

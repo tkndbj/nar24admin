@@ -53,7 +53,7 @@ try {
   console.error("Error message:", error.message);
 }
 
-export async function GET(request) {
+export async function GET(_request) {
   try {
     // Check if client is initialized
     if (!client) {
