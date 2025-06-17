@@ -36,7 +36,8 @@ import {
   limit,
   startAfter,
   updateDoc,
-  Timestamp,  
+  Timestamp,
+  DocumentSnapshot,  
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -155,8 +156,7 @@ type ViewMode = "grid" | "list";
 type FilterStatus = "all" | "active" | "sold" | "featured";
 type SortBy = "newest" | "oldest" | "price_high" | "price_low" | "popular";
 
-export default function UserDetailsPage() {
-  const { user: currentUser } = useAuth();
+export default function UserDetailsPage() {  
   const router = useRouter();
   const searchParams = useSearchParams();
   const userId = searchParams.get("userId");
@@ -180,7 +180,7 @@ export default function UserDetailsPage() {
   const [orders, setOrders] = useState<OrderData[]>([]);
 const [orderItems, setOrderItems] = useState<OrderItemData[]>([]);
 const [ordersLoading, setOrdersLoading] = useState(false);
-const [lastOrderDoc, setLastOrderDoc] = useState<any>(null);
+const [lastOrderDoc, setLastOrderDoc] = useState<DocumentSnapshot | null>(null);
 const [hasMoreOrders, setHasMoreOrders] = useState(true);
 const ordersObserverRef = useRef<IntersectionObserver | null>(null);
 const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
@@ -195,8 +195,8 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
   const [activeTab, setActiveTab] = useState<"products" | "shops" | "orders">("products");
 
   // Pagination
-  const [lastProductDoc, setLastProductDoc] = useState<any>(null);
-  const [lastShopDoc, setLastShopDoc] = useState<any>(null);
+  const [lastProductDoc, setLastProductDoc] = useState<DocumentSnapshot | null>(null);
+  const [lastShopDoc, setLastShopDoc] = useState<DocumentSnapshot | null>(null);
   const [hasMoreProducts, setHasMoreProducts] = useState(true);
   const [hasMoreShops, setHasMoreShops] = useState(true);
   const ITEMS_PER_PAGE = 12;

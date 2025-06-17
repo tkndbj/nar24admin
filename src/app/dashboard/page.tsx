@@ -82,7 +82,7 @@ interface CustomTooltipProps {
 }
 
 // Calculate costs based on Google Cloud pricing
-const calculateCosts = (data: MetricData[], _isDaily: boolean = false) => {
+const calculateCosts = (data: MetricData[]) => {
   const totalReads = data.reduce((sum, item) => sum + item.reads, 0);
   const totalWrites = data.reduce((sum, item) => sum + item.writes, 0);
   const totalFunctions = data.reduce((sum, item) => sum + item.functions, 0);
@@ -288,7 +288,7 @@ export default function Dashboard() {
   }, [dailyMetricsData]);
 
   const hourlyCosts = useMemo(() => calculateCosts(metricsData), [metricsData]);
-  const dailyCosts = useMemo(() => calculateCosts(dailyMetricsData, true), [dailyMetricsData]);
+const dailyCosts = useMemo(() => calculateCosts(dailyMetricsData), [dailyMetricsData]);
 
   // Optimized search with useMemo
   const searchResults = useMemo(() => {
