@@ -1,6 +1,5 @@
 "use client";
 
-
 import ProtectedRoute from "@/components/ProtectedRoute";
 import {
   ArrowLeft,
@@ -24,7 +23,7 @@ import {
   List,  
   Users,  
 } from "lucide-react";
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from "react";
 import {
   collection,
   doc,
@@ -44,7 +43,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { toast } from "react-hot-toast";
 
-// Types
+// Types (keeping all the same types)
 interface UserData {
   id: string;
   displayName: string;
@@ -156,7 +155,8 @@ type ViewMode = "grid" | "list";
 type FilterStatus = "all" | "active" | "sold" | "featured";
 type SortBy = "newest" | "oldest" | "price_high" | "price_low" | "popular";
 
-export default function UserDetailsPage() {  
+// Create a separate component that uses useSearchParams
+function UserDetailsContent() {  
   const router = useRouter();
   const searchParams = useSearchParams();
   const userId = searchParams.get("userId");
@@ -618,27 +618,23 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
 
   if (loading) {
     return (
-      <ProtectedRoute>
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-          <div className="flex items-center gap-3 text-white">
-            <Loader2 className="w-6 h-6 animate-spin" />
-            <span>Kullanıcı bilgileri yükleniyor...</span>
-          </div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="flex items-center gap-3 text-white">
+          <Loader2 className="w-6 h-6 animate-spin" />
+          <span>Kullanıcı bilgileri yükleniyor...</span>
         </div>
-      </ProtectedRoute>
+      </div>
     );
   }
 
   if (!user) {
     return (
-      <ProtectedRoute>
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-          <div className="text-center text-white">
-            <h2 className="text-xl font-semibold mb-2">Kullanıcı Bulunamadı</h2>
-            <p className="text-gray-400">Aradığınız kullanıcı mevcut değil.</p>
-          </div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="text-center text-white">
+          <h2 className="text-xl font-semibold mb-2">Kullanıcı Bulunamadı</h2>
+          <p className="text-gray-400">Aradığınız kullanıcı mevcut değil.</p>
         </div>
-      </ProtectedRoute>
+      </div>
     );
   }
 
@@ -1098,404 +1094,421 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
   };
 
   return (
-    <ProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-        {/* Header */}
-        <header className="backdrop-blur-xl bg-white/10 border-b border-white/20 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center gap-4 py-4">
-              <button
-                onClick={() => router.back()}
-                className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5 text-white" />
-              </button>
-              <div>
-                <h1 className="text-xl font-bold text-white">Kullanıcı Detayları</h1>
-                <p className="text-sm text-gray-400">{user.displayName}</p>
-              </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      {/* Header */}
+      <header className="backdrop-blur-xl bg-white/10 border-b border-white/20 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-4 py-4">
+            <button
+              onClick={() => router.back()}
+              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 text-white" />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-white">Kullanıcı Detayları</h1>
+              <p className="text-sm text-gray-400">{user.displayName}</p>
             </div>
           </div>
-        </header>
+        </div>
+      </header>
 
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {/* User Profile Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-            {/* Profile Info */}
-            <div className="lg:col-span-2">
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
-                <div className="flex items-start gap-6 mb-6">
-                  <div className="relative w-24 h-24 rounded-full overflow-hidden flex-shrink-0">
-                    {user.profileImage ? (
-                      <Image
-                        src={user.profileImage}
-                        alt={user.displayName}
-                        fill
-                        className="object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                        <User className="w-10 h-10 text-gray-400" />
-                      </div>
-                    )}
-                    
-                  </div>
-                  
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h2 className="text-2xl font-bold text-white">{user.displayName}</h2>
-                      
-                    </div>
-                    <p className="text-gray-400 mb-1">{user.email}</p>                   
-                    
-                  </div>
-                </div>
-
-                {/* Editable Fields */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <EditableField field="displayName" label="Adı Soyadı" />
-                  <EditableField field="email" label="E-posta" type="email" />
-                  <EditableField field="phone" label="Telefon" type="tel" />
-                  <EditableField field="gender" label="Cinsiyet" />
-                </div>
-              </div>
-            </div>
-
-            {/* Stats */}
-            <div className="space-y-4">
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-                <h3 className="text-lg font-semibold text-white mb-4">İstatistikler</h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Package className="w-4 h-4 text-blue-400" />
-                      <span className="text-sm text-gray-300">Toplam Ürün</span>
-                    </div>
-                    <span className="text-white font-semibold">{products.length}</span>
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Store className="w-4 h-4 text-green-400" />
-                      <span className="text-sm text-gray-300">Mağaza Sayısı</span>
-                    </div>
-                    <span className="text-white font-semibold">{shops.length}</span>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-purple-400" />
-                      <span className="text-sm text-gray-300">Satılan Ürün</span>
-                    </div>
-                    <span className="text-white font-semibold">{user.totalProductsSold || 0}</span>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Star className="w-4 h-4 text-yellow-400" />
-                      <span className="text-sm text-gray-300">Ortalama Puan</span>
-                    </div>
-                    <span className="text-white font-semibold">
-                      {user.averageRating ? user.averageRating.toFixed(1) : "0.0"}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Activity className="w-4 h-4 text-orange-400" />
-                      <span className="text-sm text-gray-300">Oyun Puanı</span>
-                    </div>
-                    <span className="text-white font-semibold">{user.playPoints || 0}</span>
-                  </div>
-                </div>
-              </div>         
-            </div>
-          </div>
-
-          {/* Tabs */}
-          <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl mb-6">
-            <div className="flex border-b border-white/20">
-              <button
-                onClick={() => setActiveTab("products")}
-                className={`px-6 py-3 font-medium transition-colors ${
-                  activeTab === "products"
-                    ? "text-blue-400 border-b-2 border-blue-400"
-                    : "text-gray-400 hover:text-white"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Package className="w-4 h-4" />
-                  <span>Ürünler ({products.length})</span>
-                </div>
-              </button>
-              <button
-                onClick={() => setActiveTab("shops")}
-                className={`px-6 py-3 font-medium transition-colors ${
-                  activeTab === "shops"
-                    ? "text-blue-400 border-b-2 border-blue-400"
-                    : "text-gray-400 hover:text-white"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Store className="w-4 h-4" />
-                  <span>Mağazalar ({shops.length})</span>
-                </div>
-              </button>
-              <button
-  onClick={() => setActiveTab("orders")}
-  className={`px-6 py-3 font-medium transition-colors ${
-    activeTab === "orders"
-      ? "text-blue-400 border-b-2 border-blue-400"
-      : "text-gray-400 hover:text-white"
-  }`}
->
-  <div className="flex items-center gap-2">
-    <ShoppingBag className="w-4 h-4" />
-    <span>Siparişler ({orders.length})</span>
-  </div>
-</button>
-            </div>
-          </div>
-
-          {/* Products Tab */}
-          {activeTab === "products" && (
-            <div className="space-y-6">
-              {/* Product Controls */}
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-                  <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-                    {/* Search */}
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="text"
-                        value={productSearch}
-                        onChange={(e) => setProductSearch(e.target.value)}
-                        placeholder="Ürün ara..."
-                        className="pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
-                      />
-                    </div>
-
-                    {/* Filter */}
-                    <select
-                      value={productFilter}
-                      onChange={(e) => setProductFilter(e.target.value as FilterStatus)}
-                      className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      style={{ color: 'white' }}
-                    >
-                      <option value="all" style={{ backgroundColor: '#1f2937', color: 'white' }}>Tüm Ürünler</option>
-                      <option value="active" style={{ backgroundColor: '#1f2937', color: 'white' }}>Aktif</option>
-                      <option value="sold" style={{ backgroundColor: '#1f2937', color: 'white' }}>Satılan</option>
-                      <option value="featured" style={{ backgroundColor: '#1f2937', color: 'white' }}>Öne Çıkan</option>
-                    </select>
-
-                    {/* Sort */}
-                    <select
-                      value={productSort}
-                      onChange={(e) => setProductSort(e.target.value as SortBy)}
-                      className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      style={{ color: 'white' }}
-                    >
-                      <option value="newest" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Yeni</option>
-                      <option value="oldest" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Eski</option>
-                      <option value="price_high" style={{ backgroundColor: '#1f2937', color: 'white' }}>Fiyat: Yüksek → Düşük</option>
-                      <option value="price_low" style={{ backgroundColor: '#1f2937', color: 'white' }}>Fiyat: Düşük → Yüksek</option>
-                      <option value="popular" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Popüler</option>
-                    </select>
-                  </div>
-
-                  {/* View Mode Toggle */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setProductViewMode("grid")}
-                      className={`p-2 rounded-lg transition-colors ${
-                        productViewMode === "grid"
-                          ? "bg-blue-600 text-white"
-                          : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
-                      }`}
-                    >
-                      <Grid className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => setProductViewMode("list")}
-                      className={`p-2 rounded-lg transition-colors ${
-                        productViewMode === "list"
-                          ? "bg-blue-600 text-white"
-                          : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
-                      }`}
-                    >
-                      <List className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Products Grid/List */}
-              {filteredProducts.length === 0 && !productsLoading ? (
-                <div className="text-center py-12">
-                  <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-xl font-semibold text-white mb-2">Ürün Bulunamadı</h3>
-                  <p className="text-gray-400">
-                    {productSearch || productFilter !== "all"
-                      ? "Arama kriterlerinize uygun ürün bulunamadı."
-                      : "Bu kullanıcının henüz ürünü bulunmuyor."}
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className={`grid gap-4 ${
-                    productViewMode === "grid"
-                      ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-                      : "grid-cols-1"
-                  }`}>
-                    {filteredProducts.map((product, index) => (
-                      <ProductCard
-                        key={product.id}
-                        product={product}
-                        viewMode={productViewMode}
-                        isLast={index === filteredProducts.length - 1}
-                      />
-                    ))}
-                  </div>
-
-                  {/* Loading indicator for infinite scroll */}
-                  {productsLoading && (
-                    <div className="flex items-center justify-center py-8">
-                      <div className="flex items-center gap-3 text-white">
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        <span>Daha fazla ürün yükleniyor...</span>
-                      </div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* User Profile Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          {/* Profile Info */}
+          <div className="lg:col-span-2">
+            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
+              <div className="flex items-start gap-6 mb-6">
+                <div className="relative w-24 h-24 rounded-full overflow-hidden flex-shrink-0">
+                  {user.profileImage ? (
+                    <Image
+                      src={user.profileImage}
+                      alt={user.displayName}
+                      fill
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gray-700 flex items-center justify-center">
+                      <User className="w-10 h-10 text-gray-400" />
                     </div>
                   )}
+                  
                 </div>
-              )}
-            </div>
-          )}
-
-          {/* Shops Tab */}
-          {activeTab === "shops" && (
-            <div className="space-y-6">
-              {/* Shop Controls */}
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-                  <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-                    {/* Search */}
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="text"
-                        value={shopSearch}
-                        onChange={(e) => setShopSearch(e.target.value)}
-                        placeholder="Mağaza ara..."
-                        className="pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
-                      />
-                    </div>
+                
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h2 className="text-2xl font-bold text-white">{user.displayName}</h2>
+                    
                   </div>
-
-                  {/* View Mode Toggle */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setShopViewMode("grid")}
-                      className={`p-2 rounded-lg transition-colors ${
-                        shopViewMode === "grid"
-                          ? "bg-blue-600 text-white"
-                          : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
-                      }`}
-                    >
-                      <Grid className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => setShopViewMode("list")}
-                      className={`p-2 rounded-lg transition-colors ${
-                        shopViewMode === "list"
-                          ? "bg-blue-600 text-white"
-                          : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
-                      }`}
-                    >
-                      <List className="w-4 h-4" />
-                    </button>
-                  </div>
+                  <p className="text-gray-400 mb-1">{user.email}</p>                   
+                  
                 </div>
               </div>
 
-              {/* Shops Grid/List */}
-              {filteredShops.length === 0 && !shopsLoading ? (
-                <div className="text-center py-12">
-                  <Store className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-xl font-semibold text-white mb-2">Mağaza Bulunamadı</h3>
-                  <p className="text-gray-400">
-                    {shopSearch
-                      ? "Arama kriterlerinize uygun mağaza bulunamadı."
-                      : "Bu kullanıcının henüz mağazası bulunmuyor."}
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className={`grid gap-4 ${
-                    shopViewMode === "grid"
-                      ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-                      : "grid-cols-1"
-                  }`}>
-                    {filteredShops.map((shop, index) => (
-                      <ShopCard
-                        key={shop.id}
-                        shop={shop}
-                        viewMode={shopViewMode}
-                        isLast={index === filteredShops.length - 1}
-                      />
-                    ))}
-                  </div>
-
-                  {/* Loading indicator for infinite scroll */}
-                  {shopsLoading && (
-                    <div className="flex items-center justify-center py-8">
-                      <div className="flex items-center gap-3 text-white">
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        <span>Daha fazla mağaza yükleniyor...</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Editable Fields */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <EditableField field="displayName" label="Adı Soyadı" />
+                <EditableField field="email" label="E-posta" type="email" />
+                <EditableField field="phone" label="Telefon" type="tel" />
+                <EditableField field="gender" label="Cinsiyet" />
+              </div>
             </div>
-          )}
-          {/* Orders Tab */}
-{activeTab === "orders" && (
-  <div className="space-y-6">
-    {/* Orders List */}
-    {orders.length === 0 && !ordersLoading ? (
-      <div className="text-center py-12">
-        <ShoppingBag className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-        <h3 className="text-xl font-semibold text-white mb-2">Sipariş Bulunamadı</h3>
-        <p className="text-gray-400">Bu kullanıcının henüz siparişi bulunmuyor.</p>
-      </div>
-    ) : (
-      <div className="space-y-4">
-        <div className="grid gap-6">
-          {orders.map((order, index) => (
-            <OrderCard
-              key={order.id}
-              order={order}
-              isLast={index === orders.length - 1}
-            />
-          ))}
+          </div>
+
+          {/* Stats */}
+          <div className="space-y-4">
+            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+              <h3 className="text-lg font-semibold text-white mb-4">İstatistikler</h3>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Package className="w-4 h-4 text-blue-400" />
+                    <span className="text-sm text-gray-300">Toplam Ürün</span>
+                  </div>
+                  <span className="text-white font-semibold">{products.length}</span>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Store className="w-4 h-4 text-green-400" />
+                    <span className="text-sm text-gray-300">Mağaza Sayısı</span>
+                  </div>
+                  <span className="text-white font-semibold">{shops.length}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-purple-400" />
+                    <span className="text-sm text-gray-300">Satılan Ürün</span>
+                  </div>
+                  <span className="text-white font-semibold">{user.totalProductsSold || 0}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Star className="w-4 h-4 text-yellow-400" />
+                    <span className="text-sm text-gray-300">Ortalama Puan</span>
+                  </div>
+                  <span className="text-white font-semibold">
+                    {user.averageRating ? user.averageRating.toFixed(1) : "0.0"}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-orange-400" />
+                    <span className="text-sm text-gray-300">Oyun Puanı</span>
+                  </div>
+                  <span className="text-white font-semibold">{user.playPoints || 0}</span>
+                </div>
+              </div>
+            </div>         
+          </div>
         </div>
 
-        {/* Loading indicator for infinite scroll */}
-        {ordersLoading && (
-          <div className="flex items-center justify-center py-8">
-            <div className="flex items-center gap-3 text-white">
-              <Loader2 className="w-5 h-5 animate-spin" />
-              <span>Daha fazla sipariş yükleniyor...</span>
+        {/* Tabs */}
+        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl mb-6">
+          <div className="flex border-b border-white/20">
+            <button
+              onClick={() => setActiveTab("products")}
+              className={`px-6 py-3 font-medium transition-colors ${
+                activeTab === "products"
+                  ? "text-blue-400 border-b-2 border-blue-400"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Package className="w-4 h-4" />
+                <span>Ürünler ({products.length})</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab("shops")}
+              className={`px-6 py-3 font-medium transition-colors ${
+                activeTab === "shops"
+                  ? "text-blue-400 border-b-2 border-blue-400"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Store className="w-4 h-4" />
+                <span>Mağazalar ({shops.length})</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab("orders")}
+              className={`px-6 py-3 font-medium transition-colors ${
+                activeTab === "orders"
+                  ? "text-blue-400 border-b-2 border-blue-400"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <ShoppingBag className="w-4 h-4" />
+                <span>Siparişler ({orders.length})</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Products Tab */}
+        {activeTab === "products" && (
+          <div className="space-y-6">
+            {/* Product Controls */}
+            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={productSearch}
+                      onChange={(e) => setProductSearch(e.target.value)}
+                      placeholder="Ürün ara..."
+                      className="pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+                    />
+                  </div>
+
+                  {/* Filter */}
+                  <select
+                    value={productFilter}
+                    onChange={(e) => setProductFilter(e.target.value as FilterStatus)}
+                    className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ color: 'white' }}
+                  >
+                    <option value="all" style={{ backgroundColor: '#1f2937', color: 'white' }}>Tüm Ürünler</option>
+                    <option value="active" style={{ backgroundColor: '#1f2937', color: 'white' }}>Aktif</option>
+                    <option value="sold" style={{ backgroundColor: '#1f2937', color: 'white' }}>Satılan</option>
+                    <option value="featured" style={{ backgroundColor: '#1f2937', color: 'white' }}>Öne Çıkan</option>
+                  </select>
+
+                  {/* Sort */}
+                  <select
+                    value={productSort}
+                    onChange={(e) => setProductSort(e.target.value as SortBy)}
+                    className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ color: 'white' }}
+                  >
+                    <option value="newest" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Yeni</option>
+                    <option value="oldest" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Eski</option>
+                    <option value="price_high" style={{ backgroundColor: '#1f2937', color: 'white' }}>Fiyat: Yüksek → Düşük</option>
+                    <option value="price_low" style={{ backgroundColor: '#1f2937', color: 'white' }}>Fiyat: Düşük → Yüksek</option>
+                    <option value="popular" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Popüler</option>
+                  </select>
+                </div>
+
+                {/* View Mode Toggle */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setProductViewMode("grid")}
+                    className={`p-2 rounded-lg transition-colors ${
+                      productViewMode === "grid"
+                        ? "bg-blue-600 text-white"
+                        : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
+                    }`}
+                  >
+                    <Grid className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setProductViewMode("list")}
+                    className={`p-2 rounded-lg transition-colors ${
+                      productViewMode === "list"
+                        ? "bg-blue-600 text-white"
+                        : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
+                    }`}
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </div>
+
+            {/* Products Grid/List */}
+            {filteredProducts.length === 0 && !productsLoading ? (
+              <div className="text-center py-12">
+                <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-white mb-2">Ürün Bulunamadı</h3>
+                <p className="text-gray-400">
+                  {productSearch || productFilter !== "all"
+                    ? "Arama kriterlerinize uygun ürün bulunamadı."
+                    : "Bu kullanıcının henüz ürünü bulunmuyor."}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className={`grid gap-4 ${
+                  productViewMode === "grid"
+                    ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                    : "grid-cols-1"
+                }`}>
+                  {filteredProducts.map((product, index) => (
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      viewMode={productViewMode}
+                      isLast={index === filteredProducts.length - 1}
+                    />
+                  ))}
+                </div>
+
+                {/* Loading indicator for infinite scroll */}
+                {productsLoading && (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="flex items-center gap-3 text-white">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Daha fazla ürün yükleniyor...</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
-      </div>
-    )}
-  </div>
-)}
-        </main>
-      </div>
+
+        {/* Shops Tab */}
+        {activeTab === "shops" && (
+          <div className="space-y-6">
+            {/* Shop Controls */}
+            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={shopSearch}
+                      onChange={(e) => setShopSearch(e.target.value)}
+                      placeholder="Mağaza ara..."
+                      className="pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+                    />
+                  </div>
+                </div>
+
+                {/* View Mode Toggle */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShopViewMode("grid")}
+                    className={`p-2 rounded-lg transition-colors ${
+                      shopViewMode === "grid"
+                        ? "bg-blue-600 text-white"
+                        : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
+                    }`}
+                  >
+                    <Grid className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setShopViewMode("list")}
+                    className={`p-2 rounded-lg transition-colors ${
+                      shopViewMode === "list"
+                        ? "bg-blue-600 text-white"
+                        : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
+                    }`}
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Shops Grid/List */}
+            {filteredShops.length === 0 && !shopsLoading ? (
+              <div className="text-center py-12">
+                <Store className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-white mb-2">Mağaza Bulunamadı</h3>
+                <p className="text-gray-400">
+                  {shopSearch
+                    ? "Arama kriterlerinize uygun mağaza bulunamadı."
+                    : "Bu kullanıcının henüz mağazası bulunmuyor."}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className={`grid gap-4 ${
+                  shopViewMode === "grid"
+                    ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+                    : "grid-cols-1"
+                }`}>
+                  {filteredShops.map((shop, index) => (
+                    <ShopCard
+                      key={shop.id}
+                      shop={shop}
+                      viewMode={shopViewMode}
+                      isLast={index === filteredShops.length - 1}
+                    />
+                  ))}
+                </div>
+
+                {/* Loading indicator for infinite scroll */}
+                {shopsLoading && (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="flex items-center gap-3 text-white">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Daha fazla mağaza yükleniyor...</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Orders Tab */}
+        {activeTab === "orders" && (
+          <div className="space-y-6">
+            {/* Orders List */}
+            {orders.length === 0 && !ordersLoading ? (
+              <div className="text-center py-12">
+                <ShoppingBag className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-white mb-2">Sipariş Bulunamadı</h3>
+                <p className="text-gray-400">Bu kullanıcının henüz siparişi bulunmuyor.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid gap-6">
+                  {orders.map((order, index) => (
+                    <OrderCard
+                      key={order.id}
+                      order={order}
+                      isLast={index === orders.length - 1}
+                    />
+                  ))}
+                </div>
+
+                {/* Loading indicator for infinite scroll */}
+                {ordersLoading && (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="flex items-center gap-3 text-white">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Daha fazla sipariş yükleniyor...</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+// Main component that wraps the content with Suspense
+export default function UserDetailsPage() {
+  return (
+    <ProtectedRoute>
+      <Suspense fallback={
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+          <div className="flex items-center gap-3 text-white">
+            <Loader2 className="w-6 h-6 animate-spin" />
+            <span>Sayfa yükleniyor...</span>
+          </div>
+        </div>
+      }>
+        <UserDetailsContent />
+      </Suspense>
     </ProtectedRoute>
   );
 }
