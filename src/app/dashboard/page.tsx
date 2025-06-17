@@ -18,6 +18,10 @@ import {
   Database,
   Zap,
   TrendingUp,
+  DollarSign,
+  ShoppingCart,
+  Activity,
+  Globe,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -78,6 +82,28 @@ interface CustomTooltipProps {
   label?: string;
 }
 
+// Calculate costs based on Google Cloud pricing
+const calculateCosts = (data: MetricData[], isDaily: boolean = false) => {
+  const totalReads = data.reduce((sum, item) => sum + item.reads, 0);
+  const totalWrites = data.reduce((sum, item) => sum + item.writes, 0);
+  const totalFunctions = data.reduce((sum, item) => sum + item.functions, 0);
+
+  // Google Cloud Firestore pricing (approximate)
+  // Reads: $0.06 per 100K operations
+  // Writes: $0.18 per 100K operations
+  // Functions: $0.40 per million invocations
+  const readCost = (totalReads / 100000) * 0.06;
+  const writeCost = (totalWrites / 100000) * 0.18;
+  const functionCost = (totalFunctions / 1000000) * 0.40;
+
+  return {
+    reads: readCost,
+    writes: writeCost,
+    functions: functionCost,
+    total: readCost + writeCost + functionCost,
+  };
+};
+
 // Generate realistic sample data for the last 60 minutes
 const generateMetricData = (): MetricData[] => {
   const data: MetricData[] = [];
@@ -109,6 +135,37 @@ const generateMetricData = (): MetricData[] => {
   return data;
 };
 
+// Generate realistic sample data for the last 24 hours
+const generateDailyMetricData = (): MetricData[] => {
+  const data: MetricData[] = [];
+  const now = new Date();
+
+  for (let i = 23; i >= 0; i--) {
+    const time = new Date(now.getTime() - i * 60 * 60000); // 1 hour intervals
+    const timeStr = time.toLocaleTimeString("tr-TR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    // Generate higher volume data for daily view
+    const baseReads = 200 + Math.sin(i / 6) * 100 + Math.cos(i / 4) * 50;
+    const baseWrites = 50 + Math.sin(i / 8) * 25 + Math.cos(i / 6) * 15;
+    const baseFunctions = 30 + Math.sin(i / 5) * 15 + Math.cos(i / 7) * 10;
+
+    data.push({
+      time: timeStr,
+      reads: Math.max(0, Math.round(baseReads + (Math.random() - 0.5) * 100)),
+      writes: Math.max(0, Math.round(baseWrites + (Math.random() - 0.5) * 30)),
+      functions: Math.max(
+        0,
+        Math.round(baseFunctions + (Math.random() - 0.5) * 20)
+      ),
+    });
+  }
+
+  return data;
+};
+
 export default function Dashboard() {
   const { user, logout } = useAuth();
   const router = useRouter();
@@ -119,7 +176,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [activeUsers, setActiveUsers] = useState(0);
   const [metricsData, setMetricsData] = useState<MetricData[]>([]);
+  const [dailyMetricsData, setDailyMetricsData] = useState<MetricData[]>([]);
   const [metricsLoading, setMetricsLoading] = useState(true);
+
   // Fetch metrics data from the API
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -128,16 +187,20 @@ export default function Dashboard() {
         const response = await fetch("/api/metrics");
         if (response.ok) {
           const data = await response.json();
-          setMetricsData(data);
+          // Handle the new API response format
+          setMetricsData(data.hourly || generateMetricData());
+          setDailyMetricsData(data.daily || generateDailyMetricData());
         } else {
           console.error("Failed to fetch metrics");
           // Fallback to sample data if API fails
           setMetricsData(generateMetricData());
+          setDailyMetricsData(generateDailyMetricData());
         }
       } catch (error) {
         console.error("Error fetching metrics:", error);
         // Fallback to sample data if API fails
         setMetricsData(generateMetricData());
+        setDailyMetricsData(generateDailyMetricData());
       } finally {
         setMetricsLoading(false);
       }
@@ -198,7 +261,7 @@ export default function Dashboard() {
     };
   }, []);
 
-  // Calculate metrics totals
+  // Calculate metrics totals and costs
   const metricsTotal = useMemo(() => {
     if (!metricsData.length) return { reads: 0, writes: 0, functions: 0 };
 
@@ -211,6 +274,22 @@ export default function Dashboard() {
       { reads: 0, writes: 0, functions: 0 }
     );
   }, [metricsData]);
+
+  const dailyMetricsTotal = useMemo(() => {
+    if (!dailyMetricsData.length) return { reads: 0, writes: 0, functions: 0 };
+
+    return dailyMetricsData.reduce(
+      (acc, curr) => ({
+        reads: acc.reads + curr.reads,
+        writes: acc.writes + curr.writes,
+        functions: acc.functions + curr.functions,
+      }),
+      { reads: 0, writes: 0, functions: 0 }
+    );
+  }, [dailyMetricsData]);
+
+  const hourlyCosts = useMemo(() => calculateCosts(metricsData), [metricsData]);
+  const dailyCosts = useMemo(() => calculateCosts(dailyMetricsData, true), [dailyMetricsData]);
 
   // Optimized search with useMemo
   const searchResults = useMemo(() => {
@@ -323,8 +402,9 @@ export default function Dashboard() {
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           {/* Top Row - Stats and Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4">
-            {/* Left side - Quick Stats */}
+            {/* Left side - Quick Stats (2 rows) */}
             <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* First row of stats */}
               <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
                 <div className="flex items-center gap-3">
                   <div className="flex items-center justify-center w-10 h-10 bg-blue-500/20 rounded-lg">
@@ -370,12 +450,61 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
+
+              {/* Second row of stats */}
+              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-10 h-10 bg-orange-500/20 rounded-lg">
+                    <Package className="w-5 h-5 text-orange-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">
+                      Ürünler
+                    </h3>
+                    <p className="text-xl font-bold text-orange-400">
+                      {loading ? "..." : products.length.toLocaleString("tr-TR")}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-10 h-10 bg-pink-500/20 rounded-lg">
+                    <Activity className="w-5 h-5 text-pink-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">
+                      API Çağrıları
+                    </h3>
+                    <p className="text-xl font-bold text-pink-400">
+                      {metricsTotal.reads + metricsTotal.writes + metricsTotal.functions}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-10 h-10 bg-yellow-500/20 rounded-lg">
+                    <Globe className="w-5 h-5 text-yellow-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">
+                      Günlük Maliyet
+                    </h3>
+                    <p className="text-xl font-bold text-yellow-400">
+                      ${dailyCosts.total.toFixed(4)}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* Right side - Monitoring Charts */}
+            {/* Right side - Monitoring Charts (2x2 grid) */}
             <div className="lg:col-span-7 grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* Firestore Operations Chart */}
-              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl p-4">
+              {/* Firestore Operations Chart - 60 minutes */}
+              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl p-4 relative">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <Database className="w-5 h-5 text-blue-400" />
@@ -428,10 +557,15 @@ export default function Dashboard() {
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
+                {/* Cost display */}
+                <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-gray-400">
+                  <DollarSign className="w-3 h-3" />
+                  <span>${(hourlyCosts.reads + hourlyCosts.writes).toFixed(4)}</span>
+                </div>
               </div>
 
-              {/* Cloud Functions Chart */}
-              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl p-4">
+              {/* Cloud Functions Chart - 60 minutes */}
+              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl p-4 relative">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <Zap className="w-5 h-5 text-yellow-400" />
@@ -472,6 +606,115 @@ export default function Dashboard() {
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
+                {/* Cost display */}
+                <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-gray-400">
+                  <DollarSign className="w-3 h-3" />
+                  <span>${hourlyCosts.functions.toFixed(4)}</span>
+                </div>
+              </div>
+
+              {/* Firestore Operations Chart - 24 hours */}
+              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl p-4 relative">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-5 h-5 text-blue-400" />
+                    <h3 className="text-sm font-semibold text-white">
+                      Firestore (24sa)
+                    </h3>
+                  </div>
+                  <div className="flex gap-4 text-xs">
+                    <span className="text-blue-400">
+                      R: {dailyMetricsTotal.reads}
+                    </span>
+                    <span className="text-green-400">
+                      W: {dailyMetricsTotal.writes}
+                    </span>
+                  </div>
+                </div>
+                <div className="h-24">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={dailyMetricsData}>
+                      <XAxis
+                        dataKey="time"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 10, fill: "#9CA3AF" }}
+                        interval={5}
+                      />
+                      <YAxis hide />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Area
+                        type="monotone"
+                        dataKey="reads"
+                        stackId="1"
+                        stroke="#60A5FA"
+                        fill="#60A5FA"
+                        fillOpacity={0.3}
+                        strokeWidth={1}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="writes"
+                        stackId="1"
+                        stroke="#34D399"
+                        fill="#34D399"
+                        fillOpacity={0.3}
+                        strokeWidth={1}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                {/* Cost display */}
+                <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-gray-400">
+                  <DollarSign className="w-3 h-3" />
+                  <span>${(dailyCosts.reads + dailyCosts.writes).toFixed(4)}</span>
+                </div>
+              </div>
+
+              {/* Cloud Functions Chart - 24 hours */}
+              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl p-4 relative">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-yellow-400" />
+                    <h3 className="text-sm font-semibold text-white">
+                      Functions (24sa)
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-yellow-400" />
+                    <span className="text-xs text-yellow-400">
+                      {dailyMetricsTotal.functions}
+                    </span>
+                  </div>
+                </div>
+                <div className="h-24">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={dailyMetricsData}>
+                      <XAxis
+                        dataKey="time"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 10, fill: "#9CA3AF" }}
+                        interval={5}
+                      />
+                      <YAxis hide />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Line
+                        type="monotone"
+                        dataKey="functions"
+                        stroke="#FBBF24"
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={{ r: 3, fill: "#FBBF24" }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                {/* Cost display */}
+                <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-gray-400">
+                  <DollarSign className="w-3 h-3" />
+                  <span>${dailyCosts.functions.toFixed(4)}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -485,7 +728,7 @@ export default function Dashboard() {
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Kullanıcı adı, ürün adı arama..."
+                  placeholder="Kullanıcı, ürün, mağaza ara"
                   className="w-full pl-10 pr-4 py-2.5 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-sm"
                 />
               </div>

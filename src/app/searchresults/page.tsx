@@ -20,6 +20,7 @@ import {
   Grid,
   List,
   Loader2,
+  ArrowRight,
 } from "lucide-react";
 
 interface UserResult {
@@ -376,29 +377,50 @@ function SearchResultsContent() {
                 : "space-y-4"
             }
           >
-            {filteredResults.map((result) => (
-              <div
-                key={`${result.type}-${result.id}`}
-                className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6 hover:bg-white/15 transition-all duration-200"
-              >
-                {/* Result Header */}
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    {getResultIcon(result.type)}
-                    <div>
-                      <h3 className="font-semibold text-white">
-                        {result.type === "user"
-                          ? (result as UserResult).displayName
-                          : result.type === "shop"
-                          ? (result as ShopResult).name
-                          : (result as ProductResult).productName}
-                      </h3>
-                      <span className="text-sm text-gray-400">
-                        {getResultTypeText(result.type)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+            {filteredResults.map((result) => {
+  const isClickable = result.type === "user";
+  
+  const handleClick = () => {
+    if (result.type === "user") {
+      router.push(`/userdetails?userId=${result.id}`);
+    }
+  };
+
+  return (
+    <div
+      key={`${result.type}-${result.id}`}
+      onClick={isClickable ? handleClick : undefined}
+      className={`backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6 transition-all duration-200 ${
+        isClickable 
+          ? 'hover:bg-white/15 cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group' 
+          : 'hover:bg-white/15'
+      }`}
+    >
+      {/* Result Header */}
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-3">
+          {getResultIcon(result.type)}
+          <div>
+            <h3 className={`font-semibold text-white ${isClickable ? 'group-hover:text-blue-300' : ''}`}>
+              {result.type === "user"
+                ? (result as UserResult).displayName
+                : result.type === "shop"
+                ? (result as ShopResult).name
+                : (result as ProductResult).productName}
+            </h3>
+            <span className="text-sm text-gray-400">
+              {getResultTypeText(result.type)}
+            </span>
+          </div>
+        </div>
+        
+        {/* Add a visual indicator for clickable items */}
+        {isClickable && (
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+            <ArrowRight className="w-5 h-5 text-blue-400" />
+          </div>
+        )}
+      </div>
 
                 {/* Result Details */}
                 <div className="space-y-2">
@@ -482,7 +504,7 @@ function SearchResultsContent() {
                   </div>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         )}
 
