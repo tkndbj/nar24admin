@@ -1,6 +1,7 @@
 "use client";
 
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import {
   ArrowLeft,
   Package,
@@ -25,6 +26,7 @@ import {
   Palette,
   Ruler,
   Info,
+  Zap,
 } from "lucide-react";
 import {
   useState,
@@ -48,10 +50,11 @@ import {
   Timestamp,
   DocumentSnapshot,
 } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { toast } from "react-hot-toast";
+import BoostModal from "@/components/boostproduct";
 
 // Types
 interface ProductData {
@@ -78,6 +81,9 @@ interface ProductData {
   sold: boolean;
   isFeatured: boolean;
   isBoosted: boolean;
+  boostStartTime?: Timestamp;
+  boostEndTime?: Timestamp;
+  boostDuration?: number;
   isApproved: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -109,6 +115,22 @@ interface ShopData {
   address?: string;
   contactNo?: string;
   createdAt?: Timestamp;
+}
+
+interface QuestionData {
+  id: string;
+  questionId: string;
+  productId: string;
+  askerId: string;
+  askerName: string;
+  askerNameVisible: boolean;
+  questionText: string;
+  timestamp: Timestamp;
+  answered: boolean;
+  answerText?: string;
+  answererName?: string;
+  answererProfileImage?: string;
+  answerTimestamp?: Timestamp;
 }
 
 interface ReviewData {
@@ -147,6 +169,15 @@ function ProductDetailsContent() {
   const [product, setProduct] = useState<ProductData | null>(null);
   const [shop, setShop] = useState<ShopData | null>(null);
 
+  const [activeTab, setActiveTab] = useState<"reviews" | "questions">(
+    "reviews"
+  );
+  const [questions, setQuestions] = useState<QuestionData[]>([]);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [questionFilter, setQuestionFilter] = useState<"all" | "answered">(
+    "all"
+  );
+
   const [relatedProducts, setRelatedProducts] = useState<ProductData[]>([]);
   const [reviews, setReviews] = useState<ReviewData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -154,6 +185,9 @@ function ProductDetailsContent() {
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [editableFields, setEditableFields] = useState<EditableField[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+
+  const [showBoostModal, setShowBoostModal] = useState(false);
+  const [isBoostLoading, setIsBoostLoading] = useState(false);
 
   // Image Gallery State
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -266,6 +300,7 @@ function ProductDetailsContent() {
 
       // Fetch reviews
       await fetchProductReviews(productId, isShopProduct);
+      await fetchProductQuestions(productId, isShopProduct);
     } catch (error) {
       console.error("Error fetching product:", error);
       toast.error("Ürün bilgileri yüklenirken hata oluştu");
@@ -273,6 +308,150 @@ function ProductDetailsContent() {
       setLoading(false);
     }
   }, [productId, router, initializeEditableFields]);
+
+  const handleBoostProduct = async (durationInMinutes: number) => {
+    if (!product || !productId) return;
+
+    try {
+      setIsBoostLoading(true);
+
+      const functions = getFunctions(undefined, "europe-west3");
+      const boostProducts = httpsCallable(functions, "boostProducts");
+
+      // Debug logging - let's see what we have
+      console.log("=== BOOST DEBUG INFO ===");
+      console.log("Product data:", {
+        id: product.id,
+        shopId: product.shopId,
+        userId: product.userId,
+        isBoosted: product.isBoosted,
+        boostEndTime: product.boostEndTime,
+      });
+
+      // Check current user's auth state
+      const { currentUser } = auth;
+      console.log("Current user:", {
+        uid: currentUser?.uid,
+        email: currentUser?.email,
+      });
+
+      // Check shop data if available
+      if (shop) {
+        console.log("Shop data:", {
+          id: shop.id,
+          ownerId: shop.ownerId,
+          name: shop.name,
+        });
+      }
+
+      // Determine collection and shopId
+      const collection = product.shopId ? "shop_products" : "products";
+
+      // CRITICAL FIX: Ensure shopId is provided for shop_products
+      if (collection === "shop_products" && !product.shopId) {
+        throw new Error("Shop products must have a shopId");
+      }
+
+      // Build the item object according to cloud function requirements
+      const item: {
+        itemId: string;
+        collection: string;
+        shopId?: string;
+      } = {
+        itemId: productId,
+        collection: collection,
+      };
+
+      // Only add shopId if it exists and collection is shop_products
+      if (collection === "shop_products" && product.shopId) {
+        item.shopId = product.shopId;
+      }
+
+      const request = {
+        items: [item],
+        boostDuration: durationInMinutes,
+      };
+
+      console.log("Request payload:", JSON.stringify(request, null, 2));
+      console.log("=== END DEBUG INFO ===");
+
+      const result = await boostProducts(request);
+
+      console.log("Boost result:", result.data);
+
+      // Check if the response indicates success
+      if (result.data && (result.data as { success: boolean }).success) {
+        // Update local product state
+        setProduct((prev) =>
+          prev
+            ? {
+                ...prev,
+                isBoosted: true,
+                boostStartTime: Timestamp.fromDate(new Date()),
+                boostEndTime: Timestamp.fromDate(
+                  new Date(Date.now() + durationInMinutes * 60 * 1000)
+                ),
+                boostDuration: durationInMinutes,
+              }
+            : null
+        );
+
+        setShowBoostModal(false);
+        toast.success(`Ürün ${durationInMinutes} dakika boyunca boost edildi!`);
+      } else {
+        // Handle case where cloud function returns success: false
+        throw new Error(
+          (result.data as { message: string }).message ||
+            "Boost işlemi başarısız oldu"
+        );
+      }
+    } catch (error: unknown) {
+      console.error("=== BOOST ERROR ===");
+      console.error("Full error object:", error);
+
+      let errorMessage = "Boost işlemi sırasında hata oluştu";
+
+      // Better error handling
+      if (error && typeof error === "object") {
+        if ("code" in error) {
+          const errorCode = (error as { code: string }).code;
+          console.error("Error code:", errorCode);
+
+          if (errorCode === "unauthenticated") {
+            errorMessage = "Bu işlem için giriş yapmanız gerekiyor";
+          } else if (errorCode === "permission-denied") {
+            errorMessage = "Bu ürünü boost etme yetkiniz yok";
+          } else if (errorCode === "failed-precondition") {
+            errorMessage = "Ürün zaten boost edilmiş durumda";
+          } else if (errorCode === "invalid-argument") {
+            errorMessage = "Geçersiz parametreler. Lütfen tekrar deneyin.";
+          }
+        } else if ("message" in error) {
+          const message = (error as { message: string }).message;
+          console.error("Error message:", message);
+
+          // Extract more specific error messages
+          if (message.includes("No valid items found")) {
+            errorMessage = `Ürün boost edilemedi. Olası nedenler:
+            • Ürün zaten boost edilmiş olabilir
+            • Bu mağaza için yetkiniz bulunmuyor olabilir
+            • Ürün geçerli olmayabilir`;
+          } else if (message.includes("permissions")) {
+            errorMessage = "Bu ürünü boost etme yetkiniz yok";
+          } else if (message.includes("shopId")) {
+            errorMessage = "Mağaza ürünü için geçerli mağaza ID'si gerekli";
+          } else {
+            errorMessage = message;
+          }
+        }
+      }
+
+      console.error("=== END BOOST ERROR ===");
+      toast.error(errorMessage);
+    } finally {
+      setIsBoostLoading(false);
+    }
+  };
 
   // Fetch product reviews
   const fetchProductReviews = useCallback(
@@ -298,6 +477,34 @@ function ProductDetailsContent() {
         console.error("Error fetching reviews:", error);
       } finally {
         setReviewsLoading(false);
+      }
+    },
+    []
+  );
+
+  const fetchProductQuestions = useCallback(
+    async (prodId: string, isShopProduct: boolean) => {
+      try {
+        setQuestionsLoading(true);
+        const collection_name = isShopProduct ? "shop_products" : "products";
+
+        const questionsQuery = query(
+          collection(db, collection_name, prodId, "product_questions"),
+          orderBy("timestamp", "desc"),
+          limit(20)
+        );
+
+        const snapshot = await getDocs(questionsQuery);
+        const questionsData = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as QuestionData[];
+
+        setQuestions(questionsData);
+      } catch (error) {
+        console.error("Error fetching questions:", error);
+      } finally {
+        setQuestionsLoading(false);
       }
     },
     []
@@ -395,6 +602,13 @@ function ProductDetailsContent() {
 
     return filtered;
   }, [relatedProducts, relatedSearch, relatedFilter]);
+
+  const filteredQuestions = useMemo(() => {
+    if (questionFilter === "all") {
+      return questions;
+    }
+    return questions.filter((question) => question.answered);
+  }, [questions, questionFilter]);
 
   // Handle field editing
   const handleFieldEdit = (field: keyof ProductData) => {
@@ -501,6 +715,65 @@ function ProductDetailsContent() {
       fetchRelatedProducts();
     }
   }, [relatedSort]);
+
+  const BoostCountdown = ({ boostEndTime }: { boostEndTime: Timestamp }) => {
+    const [timeRemaining, setTimeRemaining] = useState<{
+      days: number;
+      hours: number;
+      minutes: number;
+      seconds: number;
+    }>({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+
+    useEffect(() => {
+      const updateCountdown = () => {
+        const now = new Date().getTime();
+        const endTime = boostEndTime.toDate().getTime();
+        const difference = endTime - now;
+
+        if (difference > 0) {
+          const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+          const hours = Math.floor(
+            (difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)
+          );
+          const minutes = Math.floor(
+            (difference % (1000 * 60 * 60)) / (1000 * 60)
+          );
+          const seconds = Math.floor((difference % (1000 * 60)) / 1000);
+
+          setTimeRemaining({ days, hours, minutes, seconds });
+        } else {
+          // Boost has expired
+          setTimeRemaining({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+          // Update the product state to reflect that boost has ended
+          setProduct((prev) => (prev ? { ...prev, isBoosted: false } : null));
+        }
+      };
+
+      // Update immediately
+      updateCountdown();
+
+      // Update every second
+      const interval = setInterval(updateCountdown, 1000);
+
+      return () => clearInterval(interval);
+    }, [boostEndTime]);
+
+    const formatTime = (time: number) => time.toString().padStart(2, "0");
+
+    return (
+      <div className="p-2 bg-gradient-to-r from-purple-600/90 to-pink-600/90 text-white rounded-lg shadow-lg backdrop-blur-sm border border-purple-500/50">
+        <div className="flex items-center gap-2 mb-1">
+          <Zap className="w-4 h-4 animate-pulse" />
+          <span className="text-xs font-medium">Boost Aktif</span>
+        </div>
+        <div className="text-xs font-mono">
+          {timeRemaining.days > 0 && <span>{timeRemaining.days}g </span>}
+          {formatTime(timeRemaining.hours)}:{formatTime(timeRemaining.minutes)}:
+          {formatTime(timeRemaining.seconds)}
+        </div>
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -820,7 +1093,26 @@ function ProductDetailsContent() {
                   </>
                 )}
 
-                <div className="absolute top-2 right-2"></div>
+                <div className="absolute top-2 right-2">
+                  {!product.isBoosted ? (
+                    <button
+                      onClick={() => setShowBoostModal(true)}
+                      className="p-2 bg-purple-600/90 hover:bg-purple-700/90 text-white rounded-lg transition-colors shadow-lg backdrop-blur-sm border border-purple-500/50 flex items-center gap-2"
+                      title="Ürünü Öne Çıkar"
+                    >
+                      <Zap className="w-4 h-4" />
+                      <span className="text-sm font-medium">Boost</span>
+                    </button>
+                  ) : // Replace the old static boost active div with the countdown component
+                  product.boostEndTime ? (
+                    <BoostCountdown boostEndTime={product.boostEndTime} />
+                  ) : (
+                    <div className="p-2 bg-gradient-to-r from-purple-600/90 to-pink-600/90 text-white rounded-lg shadow-lg backdrop-blur-sm border border-purple-500/50 flex items-center gap-2">
+                      <Zap className="w-4 h-4 animate-pulse" />
+                      <span className="text-sm font-medium">Boost Aktif</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1082,86 +1374,228 @@ function ProductDetailsContent() {
           </div>
         </div>
 
-        {/* Reviews Section */}
+        {/* Reviews and Questions Section */}
         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6 mb-8">
-          <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <MessageCircle className="w-5 h-5" />
-            Değerlendirmeler ({reviews.length})
-          </h3>
+          {/* Tab Headers */}
+          <div className="flex items-center gap-4 mb-6 border-b border-white/20">
+            <button
+              onClick={() => setActiveTab("reviews")}
+              className={`pb-3 px-1 text-sm font-medium transition-colors relative ${
+                activeTab === "reviews"
+                  ? "text-white border-b-2 border-blue-400"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <MessageCircle className="w-4 h-4" />
+                Değerlendirmeler ({reviews.length})
+              </div>
+            </button>
 
-          {reviewsLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
-              <span className="text-gray-400 ml-2">
-                Değerlendirmeler yükleniyor...
-              </span>
+            <button
+              onClick={() => setActiveTab("questions")}
+              className={`pb-3 px-1 text-sm font-medium transition-colors relative ${
+                activeTab === "questions"
+                  ? "text-white border-b-2 border-blue-400"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <MessageCircle className="w-4 h-4" />
+                Sorular ({questions.length})
+              </div>
+            </button>
+          </div>
+
+          {/* Reviews Tab Content */}
+          {activeTab === "reviews" && (
+            <div>
+              {reviewsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                  <span className="text-gray-400 ml-2">
+                    Değerlendirmeler yükleniyor...
+                  </span>
+                </div>
+              ) : reviews.length > 0 ? (
+                <div className="space-y-4">
+                  {reviews.map((review) => (
+                    <div
+                      key={review.id}
+                      className="p-4 bg-white/5 rounded-lg border border-white/10"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
+                          {review.userImage ? (
+                            <Image
+                              src={review.userImage}
+                              alt={review.userName}
+                              fill
+                              className="object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gray-700 flex items-center justify-center">
+                              <User className="w-5 h-5 text-gray-400" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-semibold text-white text-sm">
+                              {review.userName}
+                            </h4>
+                            {review.verified && (
+                              <Badge className="w-3 h-3 text-blue-400" />
+                            )}
+                            <div className="flex items-center gap-1">
+                              {[...Array(5)].map((_, i) => (
+                                <Star
+                                  key={i}
+                                  className={`w-3 h-3 ${
+                                    i < review.rating
+                                      ? "text-yellow-400 fill-current"
+                                      : "text-gray-600"
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <p className="text-gray-300 text-sm mb-2">
+                            {review.review}
+                          </p>
+                          <div className="flex items-center gap-4 text-xs text-gray-400">
+                            <span>
+                              {review.timestamp
+                                ?.toDate()
+                                .toLocaleDateString("tr-TR")}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <Heart className="w-3 h-3" />
+                              <span>{review.likes?.length || 0}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <MessageCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                  <p className="text-gray-400">
+                    Henüz değerlendirme bulunmuyor
+                  </p>
+                </div>
+              )}
             </div>
-          ) : reviews.length > 0 ? (
-            <div className="space-y-4">
-              {reviews.map((review) => (
-                <div
-                  key={review.id}
-                  className="p-4 bg-white/5 rounded-lg border border-white/10"
+          )}
+
+          {/* Questions Tab Content */}
+          {activeTab === "questions" && (
+            <div>
+              {/* Question Filter Toggle */}
+              <div className="flex items-center gap-3 mb-4">
+                <button
+                  onClick={() => setQuestionFilter("all")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    questionFilter === "all"
+                      ? "bg-blue-600 text-white"
+                      : "bg-white/10 text-gray-300 hover:bg-white/15 hover:text-white"
+                  }`}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-                      {review.userImage ? (
-                        <Image
-                          src={review.userImage}
-                          alt={review.userName}
-                          fill
-                          className="object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                          <User className="w-5 h-5 text-gray-400" />
+                  Hepsi ({questions.length})
+                </button>
+                <button
+                  onClick={() => setQuestionFilter("answered")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    questionFilter === "answered"
+                      ? "bg-blue-600 text-white"
+                      : "bg-white/10 text-gray-300 hover:bg-white/15 hover:text-white"
+                  }`}
+                >
+                  Cevaplananlar ({questions.filter((q) => q.answered).length})
+                </button>
+              </div>
+
+              {/* Questions List */}
+              {questionsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                  <span className="text-gray-400 ml-2">
+                    Sorular yükleniyor...
+                  </span>
+                </div>
+              ) : filteredQuestions.length > 0 ? (
+                <div className="space-y-4">
+                  {filteredQuestions.map((question) => (
+                    <div
+                      key={question.id}
+                      className="p-4 bg-white/5 rounded-lg border border-white/10"
+                    >
+                      {/* Question */}
+                      <div className="mb-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h4 className="font-semibold text-white text-sm">
+                            {question.askerNameVisible
+                              ? question.askerName
+                              : "Anonim"}
+                          </h4>
+                          <span className="text-xs text-gray-400">
+                            {question.timestamp
+                              ?.toDate()
+                              .toLocaleDateString("tr-TR")}
+                          </span>
+                        </div>
+                        <p className="text-gray-300 text-sm">
+                          {question.questionText}
+                        </p>
+                      </div>
+
+                      {/* Answer */}
+                      {question.answered && question.answerText && (
+                        <div className="ml-4 pl-4 border-l-2 border-blue-400/30 bg-white/5 rounded-r-lg p-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="relative w-6 h-6 rounded-full overflow-hidden flex-shrink-0">
+                              {question.answererProfileImage ? (
+                                <Image
+                                  src={question.answererProfileImage}
+                                  alt="Seller"
+                                  fill
+                                  className="object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-full bg-gray-700 flex items-center justify-center">
+                                  <User className="w-3 h-3 text-gray-400" />
+                                </div>
+                              )}
+                            </div>
+                            <h5 className="font-semibold text-blue-300 text-sm">
+                              {question.answererName || shop?.name || "Satıcı"}
+                            </h5>
+                            <span className="text-xs text-gray-400">
+                              {question.answerTimestamp
+                                ?.toDate()
+                                .toLocaleDateString("tr-TR")}
+                            </span>
+                          </div>
+                          <p className="text-gray-300 text-sm">
+                            {question.answerText}
+                          </p>
                         </div>
                       )}
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className="font-semibold text-white text-sm">
-                          {review.userName}
-                        </h4>
-                        {review.verified && (
-                          <Badge className="w-3 h-3 text-blue-400" />
-                        )}
-                        <div className="flex items-center gap-1">
-                          {[...Array(5)].map((_, i) => (
-                            <Star
-                              key={i}
-                              className={`w-3 h-3 ${
-                                i < review.rating
-                                  ? "text-yellow-400 fill-current"
-                                  : "text-gray-600"
-                              }`}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                      <p className="text-gray-300 text-sm mb-2">
-                        {review.review}
-                      </p>
-                      <div className="flex items-center gap-4 text-xs text-gray-400">
-                        <span>
-                          {review.timestamp
-                            ?.toDate()
-                            .toLocaleDateString("tr-TR")}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <Heart className="w-3 h-3" />
-                          <span>{review.likes?.length || 0}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <MessageCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-              <p className="text-gray-400">Henüz değerlendirme bulunmuyor</p>
+              ) : (
+                <div className="text-center py-8">
+                  <MessageCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                  <p className="text-gray-400">
+                    {questionFilter === "all"
+                      ? "Henüz soru bulunmuyor"
+                      : "Henüz cevaplanmış soru bulunmuyor"}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1385,6 +1819,13 @@ function ProductDetailsContent() {
           </div>
         </div>
       </main>
+      <BoostModal
+        isOpen={showBoostModal}
+        onClose={() => setShowBoostModal(false)}
+        onBoost={handleBoostProduct}
+        productName={product.productName || "Ürün"}
+        isLoading={isBoostLoading}
+      />
     </div>
   );
 }
