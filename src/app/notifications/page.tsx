@@ -29,6 +29,7 @@ import {
   serverTimestamp,
   query,
   where,
+  Timestamp,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
@@ -36,7 +37,7 @@ import { useRouter } from "next/navigation";
 interface NotificationData {
   type: string;
   message: string;
-  timestamp: any;
+  timestamp: Timestamp | null;
   isRead: boolean;
   // Optional fields for navigation
   productId?: string;
@@ -72,7 +73,7 @@ const languages = [
 ];
 
 export default function NotificationsPage() {
-  const { user } = useAuth();
+  
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -159,7 +160,7 @@ export default function NotificationsPage() {
       const notificationData: NotificationData = {
         type: notificationType,
         message: message.trim(),
-        timestamp: serverTimestamp(),
+        timestamp: Timestamp.now(),
         isRead: false,
       };
 
@@ -410,7 +411,7 @@ export default function NotificationsPage() {
                 <div className="flex items-center gap-2 text-gray-300">
                   <IconComponent className={`w-5 h-5 ${selectedTypeData?.color}`} />
                   <span className="text-sm">
-                    "{selectedTypeData?.label}" bildirimi {currentLanguageStats.toLocaleString()} {selectedLanguage.toUpperCase()} kullanıcısına gönderiliyor
+                  &quot;{selectedTypeData?.label}&quot; bildirimi {currentLanguageStats.toLocaleString()} {selectedLanguage.toUpperCase()} kullanıcısına gönderiliyor
                   </span>
                 </div>
                 <button
