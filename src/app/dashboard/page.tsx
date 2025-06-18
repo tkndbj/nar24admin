@@ -21,6 +21,7 @@ import {
   DollarSign,
   Activity,
   Globe,
+  Bell,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -345,6 +346,9 @@ export default function Dashboard() {
         break;
       case "main-banners":
         router.push("/normalbanners");
+        break;
+      case "notifications":
+        router.push("/notifications");
         break;
       default:
         break;
@@ -870,6 +874,18 @@ export default function Dashboard() {
                   </h4>
                 </div>
                 <p className="text-xs text-gray-300">Tüm banner yönetimi</p>
+              </button>
+              <button
+                onClick={() => handleNavigation("notifications")}
+                className="p-3 bg-pink-600/20 hover:bg-pink-600/30 border border-pink-500/30 rounded-lg text-left transition-colors group"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Bell className="w-4 h-4 text-pink-400 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-white text-sm">
+                    Bildirim Gönder
+                  </h4>
+                </div>
+                <p className="text-xs text-gray-300">Bildirim gönderimi</p>
               </button>
             </div>
           </div>
