@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import {
   Send,
@@ -25,8 +24,7 @@ import {
   collection, 
   getDocs, 
   doc, 
-  setDoc, 
-  serverTimestamp,
+  setDoc,   
   query,
   where,
   Timestamp,
