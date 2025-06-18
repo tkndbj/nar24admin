@@ -7,36 +7,31 @@ let client;
 try {
   // Clean up the private key - handle different possible formats
   let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-  
+
   if (!privateKey || !process.env.FIREBASE_CLIENT_EMAIL) {
     throw new Error("Missing required credentials");
   }
 
   // Handle different private key formats
   privateKey = privateKey
-    .replace(/\\n/g, '\n')  // Replace literal \n with actual newlines
-    .replace(/"/g, '')      // Remove any quotes
-    .trim();                // Remove whitespace
+    .replace(/\\n/g, "\n") // Replace literal \n with actual newlines
+    .replace(/"/g, "") // Remove any quotes
+    .trim(); // Remove whitespace
 
   // Ensure proper formatting
-  if (!privateKey.includes('\n')) {
+  if (!privateKey.includes("\n")) {
     // If no newlines, add them manually at proper positions
     privateKey = privateKey
-      .replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n')
-      .replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----');
-    
+      .replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
+      .replace("-----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----");
+
     // Add newlines every 64 characters for the key body
-    const keyBody = privateKey.split('\n')[1].replace('-----END PRIVATE KEY-----', '');
-    const formattedKeyBody = keyBody.match(/.{1,64}/g)?.join('\n') || keyBody;
+    const keyBody = privateKey
+      .split("\n")[1]
+      .replace("-----END PRIVATE KEY-----", "");
+    const formattedKeyBody = keyBody.match(/.{1,64}/g)?.join("\n") || keyBody;
     privateKey = `-----BEGIN PRIVATE KEY-----\n${formattedKeyBody}\n-----END PRIVATE KEY-----`;
   }
-
-  console.log("🔑 Private key format check:", {
-    hasBeginMarker: privateKey.includes('-----BEGIN PRIVATE KEY-----'),
-    hasEndMarker: privateKey.includes('-----END PRIVATE KEY-----'),
-    hasNewlines: privateKey.includes('\n'),
-    length: privateKey.length
-  });
 
   client = new MetricServiceClient({
     projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
@@ -45,7 +40,7 @@ try {
       private_key: privateKey,
     },
   });
-  
+
   console.log("✅ MetricServiceClient initialized successfully");
 } catch (error) {
   console.error("❌ Failed to initialize MetricServiceClient:", error);
@@ -60,7 +55,8 @@ export async function GET() {
       console.error("MetricServiceClient not initialized");
       return NextResponse.json({
         hourly: generateFallbackData(true),
-        daily: generateFallbackData(false)
+        daily: generateFallbackData(false),
+        functions: generateFallbackFunctionData(),
       });
     }
 
@@ -69,44 +65,68 @@ export async function GET() {
       console.error("Project ID not found");
       return NextResponse.json({
         hourly: generateFallbackData(true),
-        daily: generateFallbackData(false)
+        daily: generateFallbackData(false),
+        functions: generateFallbackFunctionData(),
       });
     }
 
     const projectPath = client.projectPath(projectId);
     const endTime = Math.floor(Date.now() / 1000);
 
-    // Fetch both 1-hour and 24-hour data
-    const [hourlyData, dailyData] = await Promise.all([
+    // Define time periods for function-specific data
+    const timePeriods = [
+      { name: "10min", duration: 600, alignment: 60 },
+      { name: "30min", duration: 1800, alignment: 300 },
+      { name: "1hr", duration: 3600, alignment: 300 },
+      { name: "4hr", duration: 14400, alignment: 900 },
+      { name: "8hr", duration: 28800, alignment: 1800 },
+    ];
+
+    // Fetch existing hourly and daily data + new function-specific data
+    const [hourlyData, dailyData, ...functionDataResults] = await Promise.all([
       fetchMetricsData(client, projectPath, endTime - 3600, endTime, 300), // 1 hour, 5-min intervals
-      fetchMetricsData(client, projectPath, endTime - 86400, endTime, 3600) // 24 hours, 1-hour intervals
+      fetchMetricsData(client, projectPath, endTime - 86400, endTime, 3600), // 24 hours, 1-hour intervals
+      ...timePeriods.map((period) =>
+        fetchFunctionSpecificMetrics(
+          client,
+          projectPath,
+          endTime - period.duration,
+          endTime,
+          period.alignment
+        )
+      ),
     ]);
+
+    // Organize function data by time period
+    const functionsByPeriod = {};
+    timePeriods.forEach((period, index) => {
+      functionsByPeriod[period.name] = functionDataResults[index];
+    });
 
     return NextResponse.json({
       hourly: hourlyData,
-      daily: dailyData
+      daily: dailyData,
+      functions: functionsByPeriod,
     });
   } catch (error) {
     console.error("❌ Error fetching metrics:", error);
-    console.error("Error details:", {
-      message: error.message,
-      code: error.code,
-      details: error.details,
-      stack: error.stack,
-    });
 
     // Return fallback data on error
     return NextResponse.json({
       hourly: generateFallbackData(true),
-      daily: generateFallbackData(false)
+      daily: generateFallbackData(false),
+      functions: generateFallbackFunctionData(),
     });
   }
 }
 
-async function fetchMetricsData(client, projectPath, startTime, endTime, alignmentPeriod) {
-  console.log(`📊 Fetching metrics from ${new Date(startTime * 1000)} to ${new Date(endTime * 1000)}`);
-  console.log(`⏰ Alignment period: ${alignmentPeriod} seconds`);
-
+async function fetchMetricsData(
+  client,
+  projectPath,
+  startTime,
+  endTime,
+  alignmentPeriod
+) {
   // Firestore document reads
   const firestoreReadsRequest = {
     name: projectPath,
@@ -140,7 +160,8 @@ async function fetchMetricsData(client, projectPath, startTime, endTime, alignme
   // Cloud Functions executions
   const functionsRequest = {
     name: projectPath,
-    filter: 'metric.type="cloudfunctions.googleapis.com/function/execution_count"',
+    filter:
+      'metric.type="cloudfunctions.googleapis.com/function/execution_count"',
     interval: {
       endTime: { seconds: endTime },
       startTime: { seconds: startTime },
@@ -153,19 +174,15 @@ async function fetchMetricsData(client, projectPath, startTime, endTime, alignme
   };
 
   try {
-    console.log("🔍 Fetching Firestore reads...");
-    const [firestoreReadsTimeSeries] = await client.listTimeSeries(firestoreReadsRequest);
-    
-    console.log("✍️ Fetching Firestore writes...");
-    const [firestoreWritesTimeSeries] = await client.listTimeSeries(firestoreWritesRequest);
-    
-    console.log("⚡ Fetching Functions metrics...");
-    const [functionsTimeSeries] = await client.listTimeSeries(functionsRequest);
+    const [firestoreReadsTimeSeries] = await client.listTimeSeries(
+      firestoreReadsRequest
+    );
 
-    // Debug logs
-    console.log("📊 Firestore reads data points:", firestoreReadsTimeSeries?.length || 0);
-    console.log("✍️ Firestore writes data points:", firestoreWritesTimeSeries?.length || 0);
-    console.log("⚡ Functions data points:", functionsTimeSeries?.length || 0);
+    const [firestoreWritesTimeSeries] = await client.listTimeSeries(
+      firestoreWritesRequest
+    );
+
+    const [functionsTimeSeries] = await client.listTimeSeries(functionsRequest);
 
     // Process the data
     const processedData = processMetricsData(
@@ -175,7 +192,6 @@ async function fetchMetricsData(client, projectPath, startTime, endTime, alignme
       alignmentPeriod
     );
 
-    console.log("📈 Processed data sample:", processedData.slice(0, 3));
     return processedData;
   } catch (error) {
     console.error("❌ Error in fetchMetricsData:", error);
@@ -183,7 +199,170 @@ async function fetchMetricsData(client, projectPath, startTime, endTime, alignme
   }
 }
 
-function processMetricsData(firestoreReadsData, firestoreWritesData, functionsData, alignmentPeriod) {
+async function fetchFunctionSpecificMetrics(
+  client,
+  projectPath,
+  startTime,
+  endTime,
+  alignmentPeriod
+) {
+  // Cloud Functions executions with function name breakdown
+  const functionsRequest = {
+    name: projectPath,
+    filter:
+      'metric.type="cloudfunctions.googleapis.com/function/execution_count"',
+    interval: {
+      endTime: { seconds: endTime },
+      startTime: { seconds: startTime },
+    },
+    aggregation: {
+      alignmentPeriod: { seconds: alignmentPeriod },
+      perSeriesAligner: "ALIGN_RATE",
+      crossSeriesReducer: "REDUCE_NONE", // Don't sum across functions - keep them separate
+      groupByFields: ["resource.labels.function_name"], // Group by function name
+    },
+  };
+
+  // Function errors - only get failed executions
+  const functionErrorsRequest = {
+    name: projectPath,
+    filter:
+      'metric.type="cloudfunctions.googleapis.com/function/execution_count" AND metric.labels.status!="ok"',
+    interval: {
+      endTime: { seconds: endTime },
+      startTime: { seconds: startTime },
+    },
+    aggregation: {
+      alignmentPeriod: { seconds: alignmentPeriod },
+      perSeriesAligner: "ALIGN_RATE",
+      crossSeriesReducer: "REDUCE_NONE",
+      groupByFields: ["resource.labels.function_name"],
+    },
+  };
+
+  try {
+    // Only fetch executions and errors, skip duration for now
+    const [functionsTimeSeries, errorsTimeSeries] = await Promise.all([
+      client.listTimeSeries(functionsRequest),
+      client.listTimeSeries(functionErrorsRequest),
+    ]);
+
+    return processFunctionSpecificData(
+      functionsTimeSeries[0] || [],
+      errorsTimeSeries[0] || [],
+      [], // Empty duration data for now
+      alignmentPeriod
+    );
+  } catch (error) {
+    console.error("❌ Error fetching function-specific metrics:", error);
+
+    // Try a simpler approach - just get basic execution counts without grouping
+    try {
+      const simpleRequest = {
+        name: projectPath,
+        filter:
+          'metric.type="cloudfunctions.googleapis.com/function/execution_count"',
+        interval: {
+          endTime: { seconds: endTime },
+          startTime: { seconds: startTime },
+        },
+      };
+
+      const [simpleResults] = await client.listTimeSeries(simpleRequest);
+
+      if (simpleResults && simpleResults.length > 0) {
+        console.log(
+          "📋 Available functions:",
+          simpleResults
+            .map((r) => r.resource?.labels?.function_name)
+            .filter(Boolean)
+        );
+      }
+
+      return []; // Return empty for now, but we can see what functions exist
+    } catch (simpleError) {
+      console.error("❌ Simple query also failed:", simpleError.message);
+      throw error;
+    }
+  }
+}
+
+function processFunctionSpecificData(
+  functionsData,
+  errorsData,
+  durationData,
+  alignmentPeriod
+) {
+  const functionMap = new Map();
+
+  // Process executions
+  functionsData.forEach((series, index) => {
+    const functionName =
+      series.resource?.labels?.function_name || `unknown-${index}`;
+
+    if (!functionMap.has(functionName)) {
+      functionMap.set(functionName, {
+        name: functionName,
+        executions: 0,
+        errors: 0,
+        avgDuration: 0, // Default to 0 since we can't get duration for now
+        dataPoints: [],
+      });
+    }
+
+    const funcData = functionMap.get(functionName);
+
+    series.points?.forEach((point) => {
+      const value = parseFloat(point.value?.doubleValue || 0);
+      const executions = Math.round(value * alignmentPeriod);
+      funcData.executions += executions;
+
+      if (point.interval?.endTime) {
+        const timestamp = parseInt(point.interval.endTime.seconds);
+        funcData.dataPoints.push({
+          timestamp,
+          executions,
+          errors: 0,
+          duration: 0,
+        });
+      }
+    });
+  });
+
+  // Process errors
+  errorsData.forEach((series) => {
+    const functionName = series.resource?.labels?.function_name || "unknown";
+    const funcData = functionMap.get(functionName);
+
+    if (funcData) {
+      series.points?.forEach((point) => {
+        const value = parseFloat(point.value?.doubleValue || 0);
+        const errors = Math.round(value * alignmentPeriod);
+        funcData.errors += errors;
+
+        // Match with existing data points by timestamp
+        if (point.interval?.endTime) {
+          const timestamp = parseInt(point.interval.endTime.seconds);
+          const dataPoint = funcData.dataPoints.find(
+            (dp) => dp.timestamp === timestamp
+          );
+          if (dataPoint) {
+            dataPoint.errors = errors;
+          }
+        }
+      });
+    }
+  });
+
+  return Array.from(functionMap.values());
+}
+
+function processMetricsData(
+  firestoreReadsData,
+  firestoreWritesData,
+  functionsData,
+  alignmentPeriod
+) {
   const dataMap = new Map();
   const isHourly = alignmentPeriod === 300; // 5-minute intervals = hourly view
 
@@ -201,8 +380,6 @@ function processMetricsData(firestoreReadsData, firestoreWritesData, functionsDa
     dataMap.set(timeStr, { time: timeStr, reads: 0, writes: 0, functions: 0 });
   }
 
-  console.log("📅 Time slots initialized:", Array.from(dataMap.keys()));
-
   // Helper function to find the closest time slot
   const findClosestTimeSlot = (timestamp) => {
     const targetTime = new Date(timestamp * 1000);
@@ -210,38 +387,38 @@ function processMetricsData(firestoreReadsData, firestoreWritesData, functionsDa
       hour: "2-digit",
       minute: "2-digit",
     });
-    
+
     // Try exact match first
     if (dataMap.has(targetTimeStr)) {
       return targetTimeStr;
     }
-    
+
     // Find closest time slot within the interval
     const tolerance = isHourly ? 5 * 60 * 1000 : 60 * 60 * 1000; // 5 minutes or 1 hour
-    
+
     for (const [timeSlot] of dataMap) {
-      const [hour, minute] = timeSlot.split(':').map(Number);
+      const [hour, minute] = timeSlot.split(":").map(Number);
       const slotTime = new Date();
       slotTime.setHours(hour, minute, 0, 0);
-      
+
       // Check if within tolerance of this slot
       const timeDiff = Math.abs(targetTime.getTime() - slotTime.getTime());
       if (timeDiff <= tolerance) {
         return timeSlot;
       }
     }
-    
+
     return null;
   };
 
   // Process all data types
   const dataSources = [
-    { data: firestoreReadsData, key: 'reads', emoji: '📊' },
-    { data: firestoreWritesData, key: 'writes', emoji: '✍️' },
-    { data: functionsData, key: 'functions', emoji: '⚡' }
+    { data: firestoreReadsData, key: "reads", emoji: "📊" },
+    { data: firestoreWritesData, key: "writes", emoji: "✍️" },
+    { data: functionsData, key: "functions", emoji: "⚡" },
   ];
 
-  dataSources.forEach(({ data, key, emoji }) => {
+  dataSources.forEach(({ data, key }) => {
     if (data && Array.isArray(data)) {
       data.forEach((series) => {
         if (series.points && Array.isArray(series.points)) {
@@ -249,14 +426,12 @@ function processMetricsData(firestoreReadsData, firestoreWritesData, functionsDa
             if (point.interval && point.interval.endTime) {
               const timestamp = parseInt(point.interval.endTime.seconds);
               const timeSlot = findClosestTimeSlot(timestamp);
-              
+
               if (timeSlot) {
                 const value = parseFloat(point.value?.doubleValue || 0);
                 // Convert rate per second to count per interval
                 const countPerInterval = Math.round(value * alignmentPeriod);
                 dataMap.get(timeSlot)[key] += countPerInterval;
-                
-                console.log(`${emoji} ${key}: ${value}/sec = ${countPerInterval} per ${alignmentPeriod}s at ${new Date(timestamp * 1000).toLocaleTimeString()} -> slot ${timeSlot}`);
               }
             }
           });
@@ -265,9 +440,7 @@ function processMetricsData(firestoreReadsData, firestoreWritesData, functionsDa
     }
   });
 
-  const result = Array.from(dataMap.values());
-  console.log("📈 Final processed data:", result);
-  return result;
+  return Array.from(dataMap.values());
 }
 
 function generateFallbackData(isHourly = true) {
@@ -291,11 +464,46 @@ function generateFallbackData(isHourly = true) {
 
     data.push({
       time: timeStr,
-      reads: Math.max(0, Math.round(baseReads + (Math.random() - 0.5) * 10 * scale)),
-      writes: Math.max(0, Math.round(baseWrites + (Math.random() - 0.5) * 4 * scale)),
-      functions: Math.max(0, Math.round(baseFunctions + (Math.random() - 0.5) * 3 * scale)),
+      reads: Math.max(
+        0,
+        Math.round(baseReads + (Math.random() - 0.5) * 10 * scale)
+      ),
+      writes: Math.max(
+        0,
+        Math.round(baseWrites + (Math.random() - 0.5) * 4 * scale)
+      ),
+      functions: Math.max(
+        0,
+        Math.round(baseFunctions + (Math.random() - 0.5) * 3 * scale)
+      ),
     });
   }
 
   return data;
+}
+
+function generateFallbackFunctionData() {
+  const mockFunctions = [
+    "createUser",
+    "processPayment",
+    "sendNotification",
+    "updateInventory",
+    "generateReport",
+    "validateOrder",
+  ];
+
+  const timePeriods = ["10min", "30min", "1hr", "4hr", "8hr"];
+  const result = {};
+
+  timePeriods.forEach((period) => {
+    result[period] = mockFunctions.map((funcName) => ({
+      name: funcName,
+      executions: Math.floor(Math.random() * 100) + 10,
+      errors: Math.floor(Math.random() * 5),
+      avgDuration: Math.random() * 1000 + 100,
+      dataPoints: [],
+    }));
+  });
+
+  return result;
 }

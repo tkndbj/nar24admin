@@ -18,7 +18,7 @@ import {
   Database,
   Zap,
   TrendingUp,
-  DollarSign,  
+  DollarSign,
   Activity,
   Globe,
 } from "lucide-react";
@@ -93,7 +93,7 @@ const calculateCosts = (data: MetricData[]) => {
   // Functions: $0.40 per million invocations
   const readCost = (totalReads / 100000) * 0.06;
   const writeCost = (totalWrites / 100000) * 0.18;
-  const functionCost = (totalFunctions / 1000000) * 0.40;
+  const functionCost = (totalFunctions / 1000000) * 0.4;
 
   return {
     reads: readCost,
@@ -288,7 +288,10 @@ export default function Dashboard() {
   }, [dailyMetricsData]);
 
   const hourlyCosts = useMemo(() => calculateCosts(metricsData), [metricsData]);
-const dailyCosts = useMemo(() => calculateCosts(dailyMetricsData), [dailyMetricsData]);
+  const dailyCosts = useMemo(
+    () => calculateCosts(dailyMetricsData),
+    [dailyMetricsData]
+  );
 
   // Optimized search with useMemo
   const searchResults = useMemo(() => {
@@ -461,7 +464,9 @@ const dailyCosts = useMemo(() => calculateCosts(dailyMetricsData), [dailyMetrics
                       Ürünler
                     </h3>
                     <p className="text-xl font-bold text-orange-400">
-                      {loading ? "..." : products.length.toLocaleString("tr-TR")}
+                      {loading
+                        ? "..."
+                        : products.length.toLocaleString("tr-TR")}
                     </p>
                   </div>
                 </div>
@@ -477,7 +482,9 @@ const dailyCosts = useMemo(() => calculateCosts(dailyMetricsData), [dailyMetrics
                       API Çağrıları
                     </h3>
                     <p className="text-xl font-bold text-pink-400">
-                      {metricsTotal.reads + metricsTotal.writes + metricsTotal.functions}
+                      {metricsTotal.reads +
+                        metricsTotal.writes +
+                        metricsTotal.functions}
                     </p>
                   </div>
                 </div>
@@ -559,7 +566,9 @@ const dailyCosts = useMemo(() => calculateCosts(dailyMetricsData), [dailyMetrics
                 {/* Cost display */}
                 <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-gray-400">
                   <DollarSign className="w-3 h-3" />
-                  <span>${(hourlyCosts.reads + hourlyCosts.writes).toFixed(4)}</span>
+                  <span>
+                    ${(hourlyCosts.reads + hourlyCosts.writes).toFixed(4)}
+                  </span>
                 </div>
               </div>
 
@@ -666,7 +675,9 @@ const dailyCosts = useMemo(() => calculateCosts(dailyMetricsData), [dailyMetrics
                 {/* Cost display */}
                 <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-gray-400">
                   <DollarSign className="w-3 h-3" />
-                  <span>${(dailyCosts.reads + dailyCosts.writes).toFixed(4)}</span>
+                  <span>
+                    ${(dailyCosts.reads + dailyCosts.writes).toFixed(4)}
+                  </span>
                 </div>
               </div>
 
@@ -720,7 +731,7 @@ const dailyCosts = useMemo(() => calculateCosts(dailyMetricsData), [dailyMetrics
 
           {/* Search Bar */}
           <div className="mb-4">
-            <form onSubmit={handleSearch} className="flex gap-3 max-w-2xl">
+            <form onSubmit={handleSearch} className="flex gap-3 max-w-3xl">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -737,6 +748,14 @@ const dailyCosts = useMemo(() => calculateCosts(dailyMetricsData), [dailyMetrics
                 className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-600 text-white font-medium rounded-xl transition-all duration-200 disabled:cursor-not-allowed text-sm"
               >
                 Ara
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/cloudfunctionmonitoring")}
+                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-700 hover:to-orange-700 text-white font-medium rounded-xl transition-all duration-200 text-sm"
+              >
+                <Zap className="w-4 h-4" />
+                Cloud Function Analiz
               </button>
             </form>
 
