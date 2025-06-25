@@ -22,6 +22,7 @@ import {
   Activity,
   Globe,
   Bell,
+  Filter,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -349,6 +350,9 @@ export default function Dashboard() {
         break;
       case "notifications":
         router.push("/notifications");
+        break;
+      case "marketfilters":
+        router.push("/marketscreenfilters");
         break;
       default:
         break;
@@ -886,6 +890,18 @@ export default function Dashboard() {
                   </h4>
                 </div>
                 <p className="text-xs text-gray-300">Bildirim gönderimi</p>
+              </button>
+              <button
+                onClick={() => handleNavigation("marketfilters")}
+                className="p-3 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-lg text-left transition-colors group"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Filter className="w-4 h-4 text-blue-400 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-white text-sm">
+                    Ana Ekran Filtereleri
+                  </h4>
+                </div>
+                <p className="text-xs text-gray-300">Dinamik Filtre Oluştur</p>
               </button>
             </div>
           </div>
