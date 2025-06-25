@@ -11,6 +11,11 @@ import {
   AlertCircle,
   CheckCircle,
   Grid3X3,
+  Search,
+  X,
+  Store,
+  Package,
+  Link,
 } from "lucide-react";
 import {
   collection,
@@ -22,6 +27,10 @@ import {
   orderBy,
   query,
   Timestamp,
+  updateDoc,
+  getDocs,
+  where,
+  limit,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, getStorage } from "firebase/storage";
 import { db } from "../lib/firebase";
@@ -32,6 +41,15 @@ interface MarketBanner {
   id: string;
   imageUrl: string;
   createdAt: Timestamp;
+  linkType?: string;
+  linkId?: string;
+}
+
+interface SearchResult {
+  id: string;
+  title: string;
+  type: "shop" | "product" | "shop_product";
+  subtitle?: string;
 }
 
 export default function NormalBannersPage() {
@@ -41,6 +59,12 @@ export default function NormalBannersPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+
+  // Link management states
+  const [editingBanner, setEditingBanner] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   useEffect(() => {
     const q = query(
@@ -60,6 +84,88 @@ export default function NormalBannersPage() {
 
     return () => unsubscribe();
   }, []);
+
+  // Search functionality
+  const searchContent = async (searchTerm: string) => {
+    if (!searchTerm.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    setSearchLoading(true);
+    const results: SearchResult[] = [];
+
+    try {
+      // Search shops
+      const shopsQuery = query(
+        collection(db, "shops"),
+        where("shopName", ">=", searchTerm),
+        where("shopName", "<=", searchTerm + "\uf8ff"),
+        limit(5)
+      );
+      const shopsSnapshot = await getDocs(shopsQuery);
+      shopsSnapshot.forEach((doc) => {
+        const data = doc.data();
+        results.push({
+          id: doc.id,
+          title: data.shopName || "İsimsiz Mağaza",
+          type: "shop",
+          subtitle: data.shopDescription || "Mağaza",
+        });
+      });
+
+      // Search products
+      const productsQuery = query(
+        collection(db, "products"),
+        where("productName", ">=", searchTerm),
+        where("productName", "<=", searchTerm + "\uf8ff"),
+        limit(5)
+      );
+      const productsSnapshot = await getDocs(productsQuery);
+      productsSnapshot.forEach((doc) => {
+        const data = doc.data();
+        results.push({
+          id: doc.id,
+          title: data.productName || "İsimsiz Ürün",
+          type: "product",
+          subtitle: `${data.price || 0} TL`,
+        });
+      });
+
+      // Search shop products
+      const shopProductsQuery = query(
+        collection(db, "shop_products"),
+        where("productName", ">=", searchTerm),
+        where("productName", "<=", searchTerm + "\uf8ff"),
+        limit(5)
+      );
+      const shopProductsSnapshot = await getDocs(shopProductsQuery);
+      shopProductsSnapshot.forEach((doc) => {
+        const data = doc.data();
+        results.push({
+          id: doc.id,
+          title: data.productName || "İsimsiz Mağaza Ürünü",
+          type: "shop_product",
+          subtitle: `${data.price || 0} TL`,
+        });
+      });
+
+      setSearchResults(results);
+    } catch (error) {
+      console.error("Search error:", error);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      searchContent(searchQuery);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const uploadBanner = async (file: File) => {
     setUploading(true);
@@ -96,6 +202,35 @@ export default function NormalBannersPage() {
       await deleteDoc(doc(db, "market_banners", bannerId));
     } catch (error) {
       console.error("Error deleting banner:", error);
+    }
+  };
+
+  const updateBannerLink = async (
+    bannerId: string,
+    linkType: string,
+    linkId: string
+  ) => {
+    try {
+      await updateDoc(doc(db, "market_banners", bannerId), {
+        linkType,
+        linkId,
+      });
+      setEditingBanner(null);
+      setSearchQuery("");
+      setSearchResults([]);
+    } catch (error) {
+      console.error("Error updating banner link:", error);
+    }
+  };
+
+  const removeBannerLink = async (bannerId: string) => {
+    try {
+      await updateDoc(doc(db, "market_banners", bannerId), {
+        linkType: null,
+        linkId: null,
+      });
+    } catch (error) {
+      console.error("Error removing banner link:", error);
     }
   };
 
@@ -140,6 +275,31 @@ export default function NormalBannersPage() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case "shop":
+        return <Store className="w-4 h-4" />;
+      case "product":
+      case "shop_product":
+        return <Package className="w-4 h-4" />;
+      default:
+        return <Package className="w-4 h-4" />;
+    }
+  };
+
+  const getTypeLabel = (type: string) => {
+    switch (type) {
+      case "shop":
+        return "Mağaza";
+      case "product":
+        return "Ürün";
+      case "shop_product":
+        return "Mağaza Ürünü";
+      default:
+        return "Bilinmeyen";
+    }
   };
 
   return (
@@ -238,7 +398,8 @@ export default function NormalBannersPage() {
                 <p className="text-indigo-200 text-sm">
                   Market bannerlar uygulamanın market bölümünde görüntülenir.
                   Kullanıcılar bu bannerları görerek özel kampanyalar ve
-                  tekliflerden haberdar olur.
+                  tekliflerden haberdar olur. Her bannerı bir mağaza veya ürüne
+                  bağlayabilirsiniz.
                 </p>
               </div>
             </div>
@@ -280,8 +441,22 @@ export default function NormalBannersPage() {
                       className="object-cover"
                     />
 
-                    {/* Delete Button */}
-                    <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {/* Action Buttons */}
+                    <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => setEditingBanner(banner.id)}
+                        className="flex items-center justify-center w-8 h-8 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                      >
+                        <Link className="w-4 h-4 text-white" />
+                      </button>
+                      {banner.linkType && (
+                        <button
+                          onClick={() => removeBannerLink(banner.id)}
+                          className="flex items-center justify-center w-8 h-8 bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors"
+                        >
+                          <X className="w-4 h-4 text-white" />
+                        </button>
+                      )}
                       <button
                         onClick={() => deleteBanner(banner.id)}
                         className="flex items-center justify-center w-8 h-8 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
@@ -312,11 +487,101 @@ export default function NormalBannersPage() {
                       <span>{formatDate(banner.createdAt)}</span>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-sm text-green-300">Aktif</span>
-                    </div>
+                    {/* Link info */}
+                    {banner.linkType && banner.linkId ? (
+                      <div className="flex items-center gap-2 mb-2">
+                        <Link className="w-4 h-4 text-blue-400" />
+                        <span className="text-sm text-blue-300">
+                          {getTypeLabel(banner.linkType)} bağlantısı var
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 mb-2">
+                        <CheckCircle className="w-4 h-4 text-green-400" />
+                        <span className="text-sm text-green-300">Aktif</span>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Link Editor */}
+                  {editingBanner === banner.id && (
+                    <div className="border-t border-white/20 p-4">
+                      <div className="space-y-4">
+                        <h4 className="text-white font-medium">
+                          Banner Bağlantısı Ekle
+                        </h4>
+
+                        {/* Search Input */}
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Search className="h-5 w-5 text-gray-400" />
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="Mağaza veya ürün ara..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="block w-full pl-10 pr-3 py-2 border border-white/20 rounded-lg bg-white/10 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+
+                        {/* Search Results */}
+                        {searchLoading && (
+                          <div className="flex items-center justify-center py-4">
+                            <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+                            <span className="ml-2 text-gray-300">
+                              Aranıyor...
+                            </span>
+                          </div>
+                        )}
+
+                        {searchResults.length > 0 && (
+                          <div className="max-h-48 overflow-y-auto space-y-2">
+                            {searchResults.map((result) => (
+                              <button
+                                key={`${result.type}-${result.id}`}
+                                onClick={() => {
+                                  updateBannerLink(
+                                    banner.id,
+                                    result.type,
+                                    result.id
+                                  );
+                                }}
+                                className="w-full flex items-center gap-3 p-3 bg-white/5 hover:bg-white/10 rounded-lg transition-colors text-left"
+                              >
+                                <div className="flex items-center justify-center w-8 h-8 bg-blue-500/20 rounded-lg">
+                                  {getTypeIcon(result.type)}
+                                </div>
+                                <div className="flex-1">
+                                  <p className="text-white font-medium">
+                                    {result.title}
+                                  </p>
+                                  <p className="text-gray-400 text-sm">
+                                    {getTypeLabel(result.type)} •{" "}
+                                    {result.subtitle}
+                                  </p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Cancel Button */}
+                        <div className="flex justify-end">
+                          <button
+                            onClick={() => {
+                              setEditingBanner(null);
+                              setSearchQuery("");
+                              setSearchResults([]);
+                            }}
+                            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                          >
+                            İptal
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
