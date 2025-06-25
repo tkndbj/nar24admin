@@ -25,6 +25,7 @@ import { ref, uploadBytes, getStorage } from "firebase/storage";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { where, limit, getDocs, updateDoc } from "firebase/firestore";
 
 interface TopBanner {
   id: string;
@@ -32,6 +33,9 @@ interface TopBanner {
   storagePath?: string;
   createdAt: Timestamp;
   dominantColor?: string;
+  linkType?: "shop" | "product" | "shop_product";
+  linkId?: string;
+  linkedName?: string;
 }
 
 export default function TopBannerPage() {
@@ -41,6 +45,12 @@ export default function TopBannerPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [editingBannerId, setEditingBannerId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState<
+    { type: TopBanner["linkType"]; id: string; name: string }[]
+  >([]);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const q = query(
@@ -59,6 +69,69 @@ export default function TopBannerPage() {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!editingBannerId || searchTerm.length < 2) return;
+    const handler = setTimeout(async () => {
+      const shopsQ = query(
+        collection(db, "shops"),
+        where("name", ">=", searchTerm),
+        where("name", "<=", searchTerm + "\uf8ff"),
+        limit(5)
+      );
+      const prodsQ = query(
+        collection(db, "products"),
+        where("productName", ">=", searchTerm),
+        where("productName", "<=", searchTerm + "\uf8ff"),
+        limit(5)
+      );
+      const shopProdsQ = query(
+        collection(db, "shop_products"),
+        where("productName", ">=", searchTerm),
+        where("productName", "<=", searchTerm + "\uf8ff"),
+        limit(5)
+      );
+
+      const [shopsSnap, prodsSnap, shopProdsSnap] = await Promise.all([
+        getDocs(shopsQ),
+        getDocs(prodsQ),
+        getDocs(shopProdsQ),
+      ]);
+
+      setSearchResults([
+        ...shopsSnap.docs.map((d) => ({
+          type: "shop" as const,
+          id: d.id,
+          name: d.data().name,
+        })),
+        ...prodsSnap.docs.map((d) => ({
+          type: "product" as const,
+          id: d.id,
+          name: d.data().productName,
+        })),
+        ...shopProdsSnap.docs.map((d) => ({
+          type: "shop_product" as const,
+          id: d.id,
+          name: d.data().productName,
+        })),
+      ]);
+    }, 300);
+
+    return () => clearTimeout(handler);
+  }, [searchTerm, editingBannerId]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(e.target as Node)
+      ) {
+        setEditingBannerId(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const uploadBanner = async (file: File) => {
@@ -243,7 +316,7 @@ export default function TopBannerPage() {
               {banners.map((banner) => (
                 <div
                   key={banner.id}
-                  className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden group hover:bg-white/15 transition-all duration-200"
+                  className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-visible relative group hover:bg-white/15 transition-all duration-200"
                 >
                   {/* Banner Image */}
                   <div className="relative h-48 bg-gradient-to-r from-gray-800 to-gray-900">
@@ -300,6 +373,89 @@ export default function TopBannerPage() {
                       <div className="flex items-center gap-2 mt-2">
                         <CheckCircle className="w-4 h-4 text-green-400" />
                         <span className="text-sm text-green-300">Aktif</span>
+                      </div>
+                    )}
+                    {!banner.linkId ? (
+                      // ─────────────────────── No link yet ───────────────────────
+                      <button
+                        className="mt-2 text-sm text-blue-400"
+                        onClick={() => {
+                          // open the input, reset term & results
+                          setEditingBannerId(banner.id);
+                          setSearchTerm("");
+                          setSearchResults([]);
+                        }}
+                      >
+                        Bağlantı Ekle
+                      </button>
+                    ) : (
+                      // ─────────────────────── Link exists ───────────────────────
+                      <button
+                        className="mt-2 text-sm text-red-400"
+                        onClick={async () => {
+                          // remove the link fields
+                          await updateDoc(
+                            doc(db, "market_top_ads_banners", banner.id),
+                            {
+                              linkType: null,
+                              linkId: null,
+                              linkedName: null,
+                            }
+                          );
+                          // close the edit UI
+                          setEditingBannerId(null);
+                        }}
+                      >
+                        Bağlantıyı Kaldır
+                      </button>
+                    )}
+
+                    {/* only show the search box & suggestions if we're editing */}
+                    {editingBannerId === banner.id && !banner.linkId && (
+                      <div ref={wrapperRef} className="relative mt-2">
+                        <input
+                          className="w-full p-2 rounded border bg-white/20 text-white placeholder-gray-300"
+                          placeholder="Mağaza veya Ürün ara..."
+                          value={searchTerm}
+                          autoFocus
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+
+                        {searchResults.length > 0 && (
+                          <ul className="absolute left-0 right-0 bg-white/10 mt-1 rounded max-h-40 overflow-auto z-50">
+                            {searchResults.map((r) => (
+                              <li
+                                key={r.id}
+                                className="p-2 hover:bg-white/20 cursor-pointer text-white"
+                                onMouseDown={async () => {
+                                  // apply the new link
+                                  await updateDoc(
+                                    doc(
+                                      db,
+                                      "market_top_ads_banners",
+                                      banner.id
+                                    ),
+                                    {
+                                      linkType: r.type,
+                                      linkId: r.id,
+                                      linkedName: r.name,
+                                    }
+                                  );
+                                  setEditingBannerId(null);
+                                }}
+                              >
+                                {r.type === "shop" ? "🏬 " : "📦 "}
+                                {r.name}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+
+                    {banner.linkedName && (
+                      <div className="mt-2 text-sm text-gray-300">
+                        🔗 Bağlı: {banner.linkedName}
                       </div>
                     )}
                   </div>
