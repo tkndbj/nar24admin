@@ -10,13 +10,12 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle,
-  Image as ImageIcon,
+  Maximize2,
   Search,
   X,
   Store,
   Package,
   Link,
-  Palette,
 } from "lucide-react";
 import {
   collection,
@@ -38,11 +37,10 @@ import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 
-interface AdsBanner {
+interface ThinBanner {
   id: string;
   imageUrl: string;
   createdAt: Timestamp;
-  dominantColor?: number;
   linkType?: string;
   linkId?: string;
 }
@@ -54,59 +52,10 @@ interface SearchResult {
   subtitle?: string;
 }
 
-// Color extraction utility (simplified version)
-const extractDominantColor = async (imageUrl: string): Promise<number> => {
-  return new Promise((resolve) => {
-    const img = new window.Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        resolve(0xff808080); // Default gray
-        return;
-      }
-
-      canvas.width = img.width;
-      canvas.height = img.height;
-      ctx.drawImage(img, 0, 0);
-
-      try {
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-
-        let r = 0,
-          g = 0,
-          b = 0;
-        const sampleSize = 10; // Sample every 10th pixel for performance
-
-        for (let i = 0; i < data.length; i += 4 * sampleSize) {
-          r += data[i];
-          g += data[i + 1];
-          b += data[i + 2];
-        }
-
-        const pixelCount = data.length / (4 * sampleSize);
-        r = Math.round(r / pixelCount);
-        g = Math.round(g / pixelCount);
-        b = Math.round(b / pixelCount);
-
-        // Convert to single integer (ARGB format)
-        const color = (0xff << 24) | (r << 16) | (g << 8) | b;
-        resolve(color);
-      } catch {
-        resolve(0xff808080); // Default gray on error
-      }
-    };
-    img.onerror = () => resolve(0xff808080);
-    img.src = imageUrl;
-  });
-};
-
-export default function AdsBannerPage() {
+export default function ThinBannerPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [banners, setBanners] = useState<AdsBanner[]>([]);
+  const [banners, setBanners] = useState<ThinBanner[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -119,7 +68,7 @@ export default function AdsBannerPage() {
 
   useEffect(() => {
     const q = query(
-      collection(db, "market_top_ads_banners"),
+      collection(db, "market_thin_banners"),
       orderBy("createdAt", "desc")
     );
 
@@ -127,7 +76,7 @@ export default function AdsBannerPage() {
       const bannersData = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
-      })) as AdsBanner[];
+      })) as ThinBanner[];
 
       setBanners(bannersData);
       setLoading(false);
@@ -150,18 +99,18 @@ export default function AdsBannerPage() {
       // Search shops
       const shopsQuery = query(
         collection(db, "shops"),
-        where("shopName", ">=", searchTerm),
-        where("shopName", "<=", searchTerm + "\uf8ff"),
+        where("name", ">=", searchTerm),
+        where("name", "<=", searchTerm + "\uf8ff"),
         limit(5)
       );
       const shopsSnapshot = await getDocs(shopsQuery);
       shopsSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as { name?: string; description?: string };
         results.push({
           id: doc.id,
-          title: data.shopName || "İsimsiz Mağaza",
+          title: data.name || "İsimsiz Mağaza",
           type: "shop",
-          subtitle: data.shopDescription || "Mağaza",
+          subtitle: data.description || "Mağaza",
         });
       });
 
@@ -174,7 +123,7 @@ export default function AdsBannerPage() {
       );
       const productsSnapshot = await getDocs(productsQuery);
       productsSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as { productName?: string; price?: number };
         results.push({
           id: doc.id,
           title: data.productName || "İsimsiz Ürün",
@@ -192,7 +141,7 @@ export default function AdsBannerPage() {
       );
       const shopProductsSnapshot = await getDocs(shopProductsQuery);
       shopProductsSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as { productName?: string; price?: number };
         results.push({
           id: doc.id,
           title: data.productName || "İsimsiz Mağaza Ürünü",
@@ -221,8 +170,8 @@ export default function AdsBannerPage() {
   const uploadBanner = async (file: File) => {
     setUploading(true);
     try {
-      // Create storage path
-      const path = `market_top_ads_banners/${Date.now()}_${file.name}`;
+      // Create storage path exactly like Flutter version
+      const path = `market_thin_banners/${Date.now()}_${file.name}`;
 
       // Upload to Firebase Storage
       const storage = getStorage();
@@ -232,17 +181,14 @@ export default function AdsBannerPage() {
       // Get download URL
       const downloadUrl = await getDownloadURL(uploadRef);
 
-      // Extract dominant color
-      const dominantColor = await extractDominantColor(downloadUrl);
-
-      // Add to Firestore with dominant color
-      await addDoc(collection(db, "market_top_ads_banners"), {
+      // Add to Firestore exactly like Flutter version
+      await addDoc(collection(db, "market_thin_banners"), {
         imageUrl: downloadUrl,
-        dominantColor: dominantColor,
         createdAt: serverTimestamp(),
       });
     } catch (error) {
       console.error("Error uploading banner:", error);
+      // You could add a toast notification here
     } finally {
       setUploading(false);
     }
@@ -250,7 +196,9 @@ export default function AdsBannerPage() {
 
   const deleteBanner = async (bannerId: string) => {
     try {
-      await deleteDoc(doc(db, "market_top_ads_banners", bannerId));
+      await deleteDoc(doc(db, "market_thin_banners", bannerId));
+      // Note: storage file remains unless you store its path and also delete
+      // This matches the Flutter implementation
     } catch (error) {
       console.error("Error deleting banner:", error);
     }
@@ -262,7 +210,7 @@ export default function AdsBannerPage() {
     linkId: string
   ) => {
     try {
-      await updateDoc(doc(db, "market_top_ads_banners", bannerId), {
+      await updateDoc(doc(db, "market_thin_banners", bannerId), {
         linkType,
         linkId,
       });
@@ -276,7 +224,7 @@ export default function AdsBannerPage() {
 
   const removeBannerLink = async (bannerId: string) => {
     try {
-      await updateDoc(doc(db, "market_top_ads_banners", bannerId), {
+      await updateDoc(doc(db, "market_thin_banners", bannerId), {
         linkType: null,
         linkId: null,
       });
@@ -353,12 +301,6 @@ export default function AdsBannerPage() {
     }
   };
 
-  const formatColor = (colorInt?: number) => {
-    if (!colorInt) return "#808080";
-    const hex = (colorInt & 0xffffff).toString(16).padStart(6, "0");
-    return `#${hex}`;
-  };
-
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -373,11 +315,11 @@ export default function AdsBannerPage() {
                 >
                   <ArrowLeft className="w-5 h-5 text-white" />
                 </button>
-                <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-r from-orange-500 to-pink-600 rounded-lg">
-                  <ImageIcon className="w-5 h-5 text-white" />
+                <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg">
+                  <Maximize2 className="w-5 h-5 text-white" />
                 </div>
                 <h1 className="text-xl font-bold text-white">
-                  Ana Banner Yönetimi
+                  İnce Banner Yönetimi
                 </h1>
               </div>
               <button
@@ -390,7 +332,7 @@ export default function AdsBannerPage() {
                 ) : (
                   <Plus className="w-4 h-4" />
                 )}
-                Ana Banner Ekle
+                İnce Banner Ekle
               </button>
             </div>
           </div>
@@ -411,7 +353,7 @@ export default function AdsBannerPage() {
           <div
             className={`mb-8 border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 ${
               dragOver
-                ? "border-orange-400 bg-orange-500/10"
+                ? "border-emerald-400 bg-emerald-500/10"
                 : "border-white/30 bg-white/5 hover:bg-white/10"
             }`}
             onDrop={handleDrop}
@@ -422,23 +364,22 @@ export default function AdsBannerPage() {
             <div className="flex flex-col items-center">
               {uploading ? (
                 <>
-                  <Loader2 className="w-12 h-12 text-orange-400 animate-spin mb-4" />
+                  <Loader2 className="w-12 h-12 text-emerald-400 animate-spin mb-4" />
                   <p className="text-white font-medium">
-                    Ana banner yükleniyor...
+                    İnce banner yükleniyor...
                   </p>
                   <p className="text-gray-300 text-sm mt-1">
-                    Dominant renk çıkarılıyor ve işlem tamamlanıyor
+                    Lütfen bekleyin, işlem tamamlanıyor
                   </p>
                 </>
               ) : (
                 <>
                   <Upload className="w-12 h-12 text-gray-400 mb-4" />
                   <p className="text-white font-medium mb-2">
-                    Ana banner yüklemek için tıklayın veya sürükleyip bırakın
+                    İnce banner yüklemek için tıklayın veya sürükleyip bırakın
                   </p>
                   <p className="text-gray-300 text-sm">
-                    PNG, JPG, GIF dosyaları desteklenir. Dominant renk otomatik
-                    çıkarılır.
+                    PNG, JPG, GIF dosyaları desteklenir (İnce format önerilir)
                   </p>
                 </>
               )}
@@ -446,17 +387,17 @@ export default function AdsBannerPage() {
           </div>
 
           {/* Info Card */}
-          <div className="mb-8 backdrop-blur-xl bg-orange-500/10 border border-orange-500/30 rounded-xl p-4">
+          <div className="mb-8 backdrop-blur-xl bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
             <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-orange-400 mt-0.5" />
+              <AlertCircle className="w-5 h-5 text-blue-400 mt-0.5" />
               <div>
-                <h3 className="text-orange-300 font-medium mb-1">
-                  Ana Banner Hakkında
+                <h3 className="text-blue-300 font-medium mb-1">
+                  İnce Banner Hakkında
                 </h3>
-                <p className="text-orange-200 text-sm">
-                  Ana bannerlar uygulamanın üst kısmında carousel olarak
-                  görüntülenir. Arka plan rengi otomatik olarak bannerin
-                  dominant rengine göre ayarlanır. Her bannerı bir mağaza veya
+                <p className="text-blue-200 text-sm">
+                  İnce bannerlar uygulamanın ana ekranında horizontal olarak
+                  görüntülenir. En iyi sonuç için yatay (landscape)
+                  orientasyonda resimler kullanın. Her bannerı bir mağaza veya
                   ürüne bağlayabilirsiniz.
                 </p>
               </div>
@@ -466,21 +407,21 @@ export default function AdsBannerPage() {
           {/* Banners List */}
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-orange-400" />
+              <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
               <span className="ml-3 text-gray-300">
-                Ana bannerlar yükleniyor...
+                İnce bannerlar yükleniyor...
               </span>
             </div>
           ) : banners.length === 0 ? (
             <div className="text-center py-12">
               <div className="flex items-center justify-center w-16 h-16 bg-gray-500/20 rounded-full mx-auto mb-4">
-                <ImageIcon className="w-8 h-8 text-gray-400" />
+                <Maximize2 className="w-8 h-8 text-gray-400" />
               </div>
               <h3 className="text-xl font-semibold text-white mb-2">
-                Henüz ana banner eklenmemiş
+                Henüz ince banner eklenmemiş
               </h3>
               <p className="text-gray-300">
-                İlk ana bannerınızı eklemek için yukarıdaki alana tıklayın
+                İlk ince bannerınızı eklemek için yukarıdaki alana tıklayın
               </p>
             </div>
           ) : (
@@ -492,38 +433,27 @@ export default function AdsBannerPage() {
                 >
                   <div className="flex flex-col">
                     <div className="flex flex-col sm:flex-row">
-                      {/* Banner Image - Standard banner format */}
-                      <div className="relative w-full sm:w-80 h-32 bg-gradient-to-r from-gray-800 to-gray-900 flex-shrink-0">
+                      {/* Banner Image - Thin/Wide format */}
+                      <div className="relative w-full sm:w-64 h-24 bg-gradient-to-r from-gray-800 to-gray-900 flex-shrink-0">
                         <Image
                           src={banner.imageUrl}
-                          alt="Main Banner"
+                          alt="Thin Banner"
                           fill
                           className="object-cover"
                         />
-                        {/* Dominant color indicator */}
-                        {banner.dominantColor && (
-                          <div
-                            className="absolute top-2 right-2 w-6 h-6 rounded-full border-2 border-white shadow-md"
-                            style={{
-                              backgroundColor: formatColor(
-                                banner.dominantColor
-                              ),
-                            }}
-                          />
-                        )}
                       </div>
 
                       {/* Banner Info */}
                       <div className="flex-1 p-4 flex items-center justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
-                            <ImageIcon className="w-4 h-4 text-orange-400" />
+                            <Maximize2 className="w-4 h-4 text-emerald-400" />
                             <h3 className="text-white font-medium">
-                              Ana Banner
+                              İnce Banner
                             </h3>
                           </div>
 
-                          <div className="flex items-center gap-4 text-sm text-gray-300 mb-2">
+                          <div className="flex items-center gap-4 text-sm text-gray-300">
                             <div className="flex items-center gap-2">
                               <AlertCircle className="w-4 h-4" />
                               <span>{formatDate(banner.createdAt)}</span>
@@ -534,20 +464,9 @@ export default function AdsBannerPage() {
                             </div>
                           </div>
 
-                          {/* Dominant color info */}
-                          {banner.dominantColor && (
-                            <div className="flex items-center gap-2 text-sm text-gray-300 mb-2">
-                              <Palette className="w-4 h-4 text-purple-400" />
-                              <span className="text-purple-300">
-                                Dominant renk:{" "}
-                                {formatColor(banner.dominantColor)}
-                              </span>
-                            </div>
-                          )}
-
                           {/* Link info */}
                           {banner.linkType && banner.linkId && (
-                            <div className="flex items-center gap-2 text-sm">
+                            <div className="flex items-center gap-2 mt-2 text-sm">
                               <Link className="w-4 h-4 text-blue-400" />
                               <span className="text-blue-300">
                                 {getTypeLabel(banner.linkType)} bağlantısı var
@@ -672,12 +591,12 @@ export default function AdsBannerPage() {
         {uploading && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-8 text-center">
-              <Loader2 className="w-12 h-12 text-orange-400 animate-spin mx-auto mb-4" />
+              <Loader2 className="w-12 h-12 text-emerald-400 animate-spin mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-white mb-2">
-                Ana Banner Yükleniyor
+                İnce Banner Yükleniyor
               </h3>
               <p className="text-gray-300">
-                Resim yükleniyor ve dominant renk çıkarılıyor...
+                İşlem tamamlanana kadar lütfen bekleyin...
               </p>
             </div>
           </div>
