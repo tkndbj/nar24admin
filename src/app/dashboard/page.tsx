@@ -354,6 +354,9 @@ export default function Dashboard() {
       case "marketfilters":
         router.push("/marketscreenfilters");
         break;
+      case "createcampaing":
+        router.push("/createcampaing");
+        break;
       default:
         break;
     }
@@ -902,6 +905,18 @@ export default function Dashboard() {
                   </h4>
                 </div>
                 <p className="text-xs text-gray-300">Dinamik Filtre Oluştur</p>
+              </button>
+              <button
+                onClick={() => handleNavigation("createcampaing")}
+                className="p-3 bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 rounded-lg text-left transition-colors group"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Bell className="w-4 h-4 text-orange-400 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-white text-sm">
+                    Özel Gün Kampanyaları
+                  </h4>
+                </div>
+                <p className="text-xs text-gray-300">Özel Günler İçin Kampanya Oluştur</p>
               </button>
             </div>
           </div>

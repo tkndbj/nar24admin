@@ -351,10 +351,16 @@ export default function MarketScreenFilters() {
     try {
       const validation = await validateFilter(formData);
 
-      if (!validation.isValid) {
-        alert(`Validasyon hataları:\n${validation.errors.join("\n")}`);
-        return;
-      }
+     if (!validation.isValid) {
+  console.error("❌ Filter validation failed:");
+  console.error("Validation errors:", validation.errors);
+  console.log("📋 Error details:");
+  validation.errors.forEach((error, index) => {
+    console.log(`${index + 1}. ${error}`);
+  });
+  console.log("🔧 Form data that failed validation:", formData);
+  return;
+}
 
       const maxOrder = Math.max(...filters.map((f) => f.order || 0), 0);
 
@@ -390,10 +396,13 @@ export default function MarketScreenFilters() {
       await updateFilterStats();
     } catch (error) {
       console.error("Error creating filter:", error);
-      alert(
-        "Filter oluştururken hata oluştu: " +
-          (error instanceof Error ? error.message : "Bilinmeyen hata")
-      );
+      console.error("❌ Error creating filter:");
+console.error(error);
+if (error instanceof Error) {
+  console.error("Error message:", error.message);
+  console.error("Error stack:", error.stack);
+}
+console.log("🔧 Form data when error occurred:", formData);
     } finally {
       setSaving(false);
     }
@@ -409,9 +418,15 @@ export default function MarketScreenFilters() {
       const validation = await validateFilter({ ...editingFilter, ...updates });
 
       if (!validation.isValid) {
-        alert(`Validasyon hataları:\n${validation.errors.join("\n")}`);
-        return;
-      }
+  console.error("❌ Filter update validation failed:");
+  console.error("Validation errors:", validation.errors);
+  console.log("📋 Error details:");
+  validation.errors.forEach((error, index) => {
+    console.log(`${index + 1}. ${error}`);
+  });
+  console.log("🔧 Filter data that failed validation:", { ...editingFilter, ...updates });
+  return;
+}
 
       await updateDoc(doc(db, "market_screen_filters", filterId), {
         ...updates,
@@ -424,10 +439,13 @@ export default function MarketScreenFilters() {
       await updateFilterStats();
     } catch (error) {
       console.error("Error updating filter:", error);
-      alert(
-        "Filter güncellenirken hata oluştu: " +
-          (error instanceof Error ? error.message : "Bilinmeyen hata")
-      );
+      console.error("❌ Error updating filter:");
+console.error(error);
+if (error instanceof Error) {
+  console.error("Error message:", error.message);
+  console.error("Error stack:", error.stack);
+}
+console.log("🔧 Update data when error occurred:", { filterId, updates });
     } finally {
       setSaving(false);
     }
@@ -460,10 +478,13 @@ export default function MarketScreenFilters() {
       }
     } catch (error) {
       console.error("Error deleting filter:", error);
-      alert(
-        "Filter silinirken hata oluştu: " +
-          (error instanceof Error ? error.message : "Bilinmeyen hata")
-      );
+     console.error("❌ Error deleting filter:");
+console.error(error);
+if (error instanceof Error) {
+  console.error("Error message:", error.message);
+  console.error("Error stack:", error.stack);
+}
+console.log("🔧 Filter ID when error occurred:", filterId);
     } finally {
       setSaving(false);
     }
@@ -490,7 +511,9 @@ export default function MarketScreenFilters() {
       await Promise.all(updatePromises);
     } catch (error) {
       console.error("Error updating filter order:", error);
-      alert("Filter sıralama güncellenirken hata oluştu");
+      console.error("❌ Error updating filter order:");
+console.error(error);
+console.log("🔧 Drag result when error occurred:", result);
     } finally {
       setSaving(false);
     }
