@@ -14,6 +14,9 @@ import {
   Calendar,
   FileText,
   Sparkles,
+  Eye,
+  Trash2,
+  Clock,
 } from "lucide-react";
 import {
   collection,
@@ -22,15 +25,29 @@ import {
   setDoc,
   Timestamp,
   addDoc,
+  query,
+  orderBy,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
+import { httpsCallable } from "firebase/functions";
+import { functions } from "../lib/firebase";
 
 interface ShopMember {
   shopId: string;
   shopName: string;
   userId: string;
   role: string;
+}
+
+interface Campaign {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: Timestamp;
+  targetAudience: string;
+  notificationsSent: number;
+  isActive: boolean;
 }
 
 const emojis = [
@@ -76,12 +93,48 @@ export default function CreateCampaignPage() {
   const [shopMembers, setShopMembers] = useState<ShopMember[]>([]);
   const [fetchingMembers, setFetchingMembers] = useState(true);
 
+  // New states for campaigns
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [fetchingCampaigns, setFetchingCampaigns] = useState(true);
+  const [deletingCampaignId, setDeletingCampaignId] = useState<string | null>(
+    null
+  );
+
   // Form states
   const [campaignName, setCampaignName] = useState("");
   const [campaignDescription, setCampaignDescription] = useState("");
   const [activeField, setActiveField] = useState<"name" | "description" | null>(
     null
   );
+
+  // Fetch all campaigns
+  useEffect(() => {
+    const fetchCampaigns = async () => {
+      try {
+        setFetchingCampaigns(true);
+        const campaignsRef = collection(db, "campaigns");
+        const q = query(campaignsRef, orderBy("createdAt", "desc"));
+        const snapshot = await getDocs(q);
+
+        const campaignsList: Campaign[] = [];
+        snapshot.docs.forEach((doc) => {
+          campaignsList.push({
+            id: doc.id,
+            ...doc.data(),
+          } as Campaign);
+        });
+
+        setCampaigns(campaignsList);
+      } catch (err) {
+        console.error("Error fetching campaigns:", err);
+        setError("Kampanyalar alınamadı");
+      } finally {
+        setFetchingCampaigns(false);
+      }
+    };
+
+    fetchCampaigns();
+  }, []);
 
   // Fetch all shop members on component mount
   useEffect(() => {
@@ -171,6 +224,87 @@ export default function CreateCampaignPage() {
     }
   };
 
+  const handleDeleteCampaign = async (campaignId: string) => {
+    const confirmMessage = `Bu kampanyayı silmek istediğinizden emin misiniz?\n\nBu işlem:\n• Kampanyayı tamamen silecek\n• Kampanyaya bağlı tüm ürünlerden kampanya bilgilerini kaldıracak\n• Bu işlem geri alınamaz\n\nDevam etmek istiyor musunuz?`;
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    setDeletingCampaignId(campaignId);
+    setError(""); // Clear any previous errors
+
+    try {
+      // Create callable function reference
+      const deleteCampaignFunction = httpsCallable(functions, "deleteCampaign");
+
+      console.log(`Starting deletion of campaign: ${campaignId}`);
+
+      // Call the Cloud Function
+      const result = await deleteCampaignFunction({ campaignId });
+      const data = result.data as {
+        success: boolean;
+        productsUpdated: number;
+        message: string;
+      };
+
+      if (data.success) {
+        // Update local state - remove the campaign from the list
+        setCampaigns(campaigns.filter((c) => c.id !== campaignId));
+
+        // Show success message with details
+        console.log(
+          `Campaign deleted successfully: ${data.productsUpdated} products updated`
+        );
+
+        // Optional: Show a success toast/notification
+        // You can add a success state if you want to show a green alert
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 5000);
+      } else {
+        throw new Error("Campaign deletion failed");
+      }
+    } catch (err) {
+      console.error("Error deleting campaign:", err);
+
+      let errorMessage = "Kampanya silinemedi. ";
+
+      // Handle specific error types from Cloud Function
+      if (err && typeof err === "object" && "code" in err) {
+        const error = err as { code: string; message?: string };
+
+        if (error.code === "functions/not-found") {
+          errorMessage += "Kampanya bulunamadı.";
+        } else if (error.code === "functions/permission-denied") {
+          errorMessage += "Bu işlem için yetkiniz yok.";
+        } else if (error.code === "functions/deadline-exceeded") {
+          errorMessage += "İşlem zaman aşımına uğradı. Lütfen tekrar deneyin.";
+        } else if (error.code === "functions/unavailable") {
+          errorMessage +=
+            "Servis şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin.";
+        } else {
+          errorMessage += error.message || "Bilinmeyen bir hata oluştu.";
+        }
+      } else {
+        errorMessage += "Bilinmeyen bir hata oluştu.";
+      }
+
+      setError(errorMessage);
+    } finally {
+      setDeletingCampaignId(null);
+    }
+  };
+
+  const formatDate = (timestamp: Timestamp) => {
+    return timestamp.toDate().toLocaleDateString("tr-TR", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -203,6 +337,15 @@ export default function CreateCampaignPage() {
         collection(db, "campaigns"),
         campaignData
       );
+
+      // Add the new campaign to the local state
+      setCampaigns((prev) => [
+        {
+          id: campaignRef.id,
+          ...campaignData,
+        },
+        ...prev,
+      ]);
 
       // Prepare notification data
       const notificationData = {
@@ -261,7 +404,7 @@ export default function CreateCampaignPage() {
                     <Megaphone className="w-5 h-5 text-white" />
                   </div>
                   <h1 className="text-2xl font-bold text-white">
-                    Kampanya Oluştur
+                    Kampanya Yönetimi
                   </h1>
                 </div>
               </div>
@@ -310,6 +453,81 @@ export default function CreateCampaignPage() {
             </div>
           )}
 
+          {/* Existing Campaigns Section */}
+          <div className="mb-8 backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl p-6">
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <Eye className="w-6 h-6" />
+              Mevcut Kampanyalar
+            </h2>
+
+            {fetchingCampaigns ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-white" />
+                <span className="ml-2 text-white">
+                  Kampanyalar yükleniyor...
+                </span>
+              </div>
+            ) : campaigns.length === 0 ? (
+              <div className="text-center py-8">
+                <Megaphone className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                <p className="text-gray-400">Henüz kampanya oluşturulmamış</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {campaigns.map((campaign) => (
+                  <div
+                    key={campaign.id}
+                    className="bg-white/10 border border-white/20 rounded-lg p-4"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-white text-lg mb-2">
+                          {campaign.name}
+                        </h3>
+                        <p className="text-gray-300 text-sm mb-3">
+                          {campaign.description}
+                        </p>
+                        <div className="flex items-center gap-4 text-xs text-gray-400">
+                          <div className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {formatDate(campaign.createdAt)}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Users className="w-3 h-3" />
+                            {campaign.notificationsSent.toLocaleString()} kişiye
+                            gönderildi
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <div
+                              className={`w-2 h-2 rounded-full ${
+                                campaign.isActive
+                                  ? "bg-green-400"
+                                  : "bg-gray-400"
+                              }`}
+                            />
+                            {campaign.isActive ? "Aktif" : "Pasif"}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteCampaign(campaign.id)}
+                        disabled={deletingCampaignId === campaign.id}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 text-sm rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {deletingCampaignId === campaign.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3 h-3" />
+                        )}
+                        Sil
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Shop Members Statistics */}
           <div className="mb-6 backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl p-4">
             <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
@@ -356,8 +574,13 @@ export default function CreateCampaignPage() {
             </div>
           </div>
 
-          {/* Form */}
+          {/* Create New Campaign Form */}
           <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
+            <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+              <Megaphone className="w-6 h-6" />
+              Yeni Kampanya Oluştur
+            </h2>
+
             <form onSubmit={handleCreateCampaign} className="space-y-6">
               {/* Campaign Name */}
               <div>
