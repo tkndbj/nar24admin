@@ -15,13 +15,11 @@ import {
   FileText,
   Sparkles,
 } from "lucide-react";
-import { 
-  collection, 
-  getDocs, 
-  doc, 
-  setDoc,   
-  query,
-  where,
+import {
+  collection,
+  getDocs,
+  doc,
+  setDoc,
   Timestamp,
   addDoc,
 } from "firebase/firestore";
@@ -36,14 +34,38 @@ interface ShopMember {
 }
 
 const emojis = [
-  { category: "Campaign", emojis: ["🎉", "🎊", "🎈", "🎁", "💫", "⭐", "🌟", "✨"] },
-  { category: "Shopping", emojis: ["🛍️", "🛒", "💳", "💰", "💎", "🏷️", "🔥", "⚡"] },
-  { category: "Fashion", emojis: ["👗", "👔", "👕", "👖", "👠", "👜", "💄", "💍"] },
-  { category: "Food", emojis: ["🍕", "🍔", "🍰", "🍪", "☕", "🍺", "🥂", "🍷"] },
-  { category: "Tech", emojis: ["📱", "💻", "⌚", "🎧", "📷", "🖥️", "⚙️", "🔧"] },
-  { category: "Hearts", emojis: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍"] },
-  { category: "Nature", emojis: ["🌸", "🌺", "🌻", "🌷", "🌹", "🍀", "🌿", "🌱"] },
-  { category: "Faces", emojis: ["😊", "😍", "🥳", "😎", "🤩", "😋", "🤗", "😘"] }
+  {
+    category: "Campaign",
+    emojis: ["🎉", "🎊", "🎈", "🎁", "💫", "⭐", "🌟", "✨"],
+  },
+  {
+    category: "Shopping",
+    emojis: ["🛍️", "🛒", "💳", "💰", "💎", "🏷️", "🔥", "⚡"],
+  },
+  {
+    category: "Fashion",
+    emojis: ["👗", "👔", "👕", "👖", "👠", "👜", "💄", "💍"],
+  },
+  {
+    category: "Food",
+    emojis: ["🍕", "🍔", "🍰", "🍪", "☕", "🍺", "🥂", "🍷"],
+  },
+  {
+    category: "Tech",
+    emojis: ["📱", "💻", "⌚", "🎧", "📷", "🖥️", "⚙️", "🔧"],
+  },
+  {
+    category: "Hearts",
+    emojis: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍"],
+  },
+  {
+    category: "Nature",
+    emojis: ["🌸", "🌺", "🌻", "🌷", "🌹", "🍀", "🌿", "🌱"],
+  },
+  {
+    category: "Faces",
+    emojis: ["😊", "😍", "🥳", "😎", "🤩", "😋", "🤗", "😘"],
+  },
 ];
 
 export default function CreateCampaignPage() {
@@ -57,7 +79,9 @@ export default function CreateCampaignPage() {
   // Form states
   const [campaignName, setCampaignName] = useState("");
   const [campaignDescription, setCampaignDescription] = useState("");
-  const [activeField, setActiveField] = useState<'name' | 'description' | null>(null);
+  const [activeField, setActiveField] = useState<"name" | "description" | null>(
+    null
+  );
 
   // Fetch all shop members on component mount
   useEffect(() => {
@@ -66,24 +90,24 @@ export default function CreateCampaignPage() {
         setFetchingMembers(true);
         const shopsRef = collection(db, "shops");
         const snapshot = await getDocs(shopsRef);
-        
+
         const members: ShopMember[] = [];
-        
-        snapshot.docs.forEach(doc => {
+
+        snapshot.docs.forEach((doc) => {
           const shopData = doc.data();
           const shopId = doc.id;
           const shopName = shopData.name || "Unnamed Shop";
-          
+
           // Add owner
           if (shopData.ownerId) {
             members.push({
               shopId,
               shopName,
               userId: shopData.ownerId,
-              role: "owner"
+              role: "owner",
             });
           }
-          
+
           // Add co-owners
           if (shopData.coOwners && Array.isArray(shopData.coOwners)) {
             shopData.coOwners.forEach((userId: string) => {
@@ -91,11 +115,11 @@ export default function CreateCampaignPage() {
                 shopId,
                 shopName,
                 userId,
-                role: "coOwner"
+                role: "coOwner",
               });
             });
           }
-          
+
           // Add editors
           if (shopData.editors && Array.isArray(shopData.editors)) {
             shopData.editors.forEach((userId: string) => {
@@ -103,11 +127,11 @@ export default function CreateCampaignPage() {
                 shopId,
                 shopName,
                 userId,
-                role: "editor"
+                role: "editor",
               });
             });
           }
-          
+
           // Add viewers
           if (shopData.viewers && Array.isArray(shopData.viewers)) {
             shopData.viewers.forEach((userId: string) => {
@@ -115,17 +139,18 @@ export default function CreateCampaignPage() {
                 shopId,
                 shopName,
                 userId,
-                role: "viewer"
+                role: "viewer",
               });
             });
           }
         });
-        
+
         // Remove duplicates based on userId
-        const uniqueMembers = members.filter((member, index, self) => 
-          index === self.findIndex(m => m.userId === member.userId)
+        const uniqueMembers = members.filter(
+          (member, index, self) =>
+            index === self.findIndex((m) => m.userId === member.userId)
         );
-        
+
         setShopMembers(uniqueMembers);
       } catch (err) {
         console.error("Error fetching shop members:", err);
@@ -139,16 +164,16 @@ export default function CreateCampaignPage() {
   }, []);
 
   const addEmojiToField = (emoji: string) => {
-    if (activeField === 'name') {
-      setCampaignName(prev => prev + emoji);
-    } else if (activeField === 'description') {
-      setCampaignDescription(prev => prev + emoji);
+    if (activeField === "name") {
+      setCampaignName((prev) => prev + emoji);
+    } else if (activeField === "description") {
+      setCampaignDescription((prev) => prev + emoji);
     }
   };
 
   const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!campaignName.trim() || !campaignDescription.trim()) {
       setError("Kampanya adı ve açıklama alanları dolu olmalıdır");
       return;
@@ -171,10 +196,13 @@ export default function CreateCampaignPage() {
         createdAt: Timestamp.now(),
         targetAudience: "shop_members",
         notificationsSent: shopMembers.length,
-        isActive: true
+        isActive: true,
       };
 
-      const campaignRef = await addDoc(collection(db, "campaigns"), campaignData);
+      const campaignRef = await addDoc(
+        collection(db, "campaigns"),
+        campaignData
+      );
 
       // Prepare notification data
       const notificationData = {
@@ -185,12 +213,14 @@ export default function CreateCampaignPage() {
         isRead: false,
         campaignId: campaignRef.id,
         // Add campaign metadata
-        campaignName: campaignName.trim()
+        campaignName: campaignName.trim(),
       };
 
       // Send notification to each shop member
       const promises = shopMembers.map(async (member) => {
-        const notificationRef = doc(collection(db, "users", member.userId, "notifications"));
+        const notificationRef = doc(
+          collection(db, "users", member.userId, "notifications")
+        );
         await setDoc(notificationRef, notificationData);
       });
 
@@ -204,7 +234,6 @@ export default function CreateCampaignPage() {
 
       // Hide success message after 5 seconds
       setTimeout(() => setSuccess(false), 5000);
-
     } catch (err) {
       console.error("Error creating campaign:", err);
       setError("Kampanya oluşturulamadı. Lütfen tekrar deneyin.");
@@ -231,13 +260,17 @@ export default function CreateCampaignPage() {
                   <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-r from-pink-500 to-purple-600 rounded-lg">
                     <Megaphone className="w-5 h-5 text-white" />
                   </div>
-                  <h1 className="text-2xl font-bold text-white">Kampanya Oluştur</h1>
+                  <h1 className="text-2xl font-bold text-white">
+                    Kampanya Oluştur
+                  </h1>
                 </div>
               </div>
               <div className="flex items-center gap-3 text-white">
                 <Store className="w-5 h-5" />
                 <span className="text-sm">
-                  {fetchingMembers ? "Yükleniyor..." : `${shopMembers.length.toLocaleString()} mağaza üyesi`}
+                  {fetchingMembers
+                    ? "Yükleniyor..."
+                    : `${shopMembers.length.toLocaleString()} mağaza üyesi`}
                 </span>
               </div>
             </div>
@@ -252,9 +285,12 @@ export default function CreateCampaignPage() {
               <div className="flex items-center gap-3">
                 <CheckCircle className="w-5 h-5 text-green-400" />
                 <div>
-                  <h3 className="font-semibold text-green-400">Kampanya Başarıyla Oluşturuldu! 🎉</h3>
+                  <h3 className="font-semibold text-green-400">
+                    Kampanya Başarıyla Oluşturuldu! 🎉
+                  </h3>
                   <p className="text-sm text-green-300">
-                    {shopMembers.length.toLocaleString()} mağaza üyesine bildirim gönderildi.
+                    {shopMembers.length.toLocaleString()} mağaza üyesine
+                    bildirim gönderildi.
                   </p>
                 </div>
               </div>
@@ -296,7 +332,7 @@ export default function CreateCampaignPage() {
                   <span className="text-white font-medium">Sahipler</span>
                 </div>
                 <span className="text-purple-400 font-bold">
-                  {shopMembers.filter(m => m.role === 'owner').length}
+                  {shopMembers.filter((m) => m.role === "owner").length}
                 </span>
               </div>
               <div className="flex items-center justify-between p-3 bg-white/10 rounded-lg">
@@ -305,7 +341,7 @@ export default function CreateCampaignPage() {
                   <span className="text-white font-medium">Editörler</span>
                 </div>
                 <span className="text-green-400 font-bold">
-                  {shopMembers.filter(m => m.role === 'editor').length}
+                  {shopMembers.filter((m) => m.role === "editor").length}
                 </span>
               </div>
               <div className="flex items-center justify-between p-3 bg-white/10 rounded-lg">
@@ -314,7 +350,7 @@ export default function CreateCampaignPage() {
                   <span className="text-white font-medium">İzleyiciler</span>
                 </div>
                 <span className="text-orange-400 font-bold">
-                  {shopMembers.filter(m => m.role === 'viewer').length}
+                  {shopMembers.filter((m) => m.role === "viewer").length}
                 </span>
               </div>
             </div>
@@ -332,7 +368,7 @@ export default function CreateCampaignPage() {
                   type="text"
                   value={campaignName}
                   onChange={(e) => setCampaignName(e.target.value)}
-                  onFocus={() => setActiveField('name')}
+                  onFocus={() => setActiveField("name")}
                   placeholder="Kampanyanızın adını girin..."
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                   required
@@ -347,7 +383,7 @@ export default function CreateCampaignPage() {
                 <textarea
                   value={campaignDescription}
                   onChange={(e) => setCampaignDescription(e.target.value)}
-                  onFocus={() => setActiveField('description')}
+                  onFocus={() => setActiveField("description")}
                   placeholder="Kampanyanızın detaylarını açıklayın..."
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none"
                   rows={4}
@@ -361,21 +397,26 @@ export default function CreateCampaignPage() {
                   😊 Emoji Ekle
                   {activeField && (
                     <span className="text-xs text-gray-400">
-                      ({activeField === 'name' ? 'Kampanya adına' : 'Açıklamaya'} eklenecek)
+                      (
+                      {activeField === "name" ? "Kampanya adına" : "Açıklamaya"}{" "}
+                      eklenecek)
                     </span>
                   )}
                 </h3>
-                
+
                 {!activeField && (
                   <p className="text-xs text-gray-400 mb-3">
-                    Emoji eklemek için önce kampanya adı veya açıklama alanına tıklayın
+                    Emoji eklemek için önce kampanya adı veya açıklama alanına
+                    tıklayın
                   </p>
                 )}
 
                 <div className="space-y-3">
                   {emojis.map((category) => (
                     <div key={category.category}>
-                      <h4 className="text-xs font-medium text-gray-300 mb-2">{category.category}</h4>
+                      <h4 className="text-xs font-medium text-gray-300 mb-2">
+                        {category.category}
+                      </h4>
                       <div className="flex flex-wrap gap-2">
                         {category.emojis.map((emoji, index) => (
                           <button
@@ -384,7 +425,9 @@ export default function CreateCampaignPage() {
                             onClick={() => addEmojiToField(emoji)}
                             disabled={!activeField}
                             className={`w-8 h-8 text-lg rounded hover:bg-white/10 transition-colors ${
-                              !activeField ? 'opacity-50 cursor-not-allowed' : 'hover:scale-110'
+                              !activeField
+                                ? "opacity-50 cursor-not-allowed"
+                                : "hover:scale-110"
                             }`}
                           >
                             {emoji}
@@ -408,7 +451,8 @@ export default function CreateCampaignPage() {
                       🎉 Yeni Kampanya: {campaignName || "Kampanya Adı"}
                     </h4>
                     <p className="text-gray-300 text-sm mt-1">
-                      {campaignDescription || "Kampanya açıklaması burada görünecek..."}
+                      {campaignDescription ||
+                        "Kampanya açıklaması burada görünecek..."}
                     </p>
                   </div>
                 </div>
@@ -419,12 +463,18 @@ export default function CreateCampaignPage() {
                 <div className="flex items-center gap-2 text-gray-300">
                   <Store className="w-5 h-5 text-pink-400" />
                   <span className="text-sm">
-                    {shopMembers.length.toLocaleString()} mağaza üyesine kampanya bildirimi gönderilecek
+                    {shopMembers.length.toLocaleString()} mağaza üyesine
+                    kampanya bildirimi gönderilecek
                   </span>
                 </div>
                 <button
                   type="submit"
-                  disabled={loading || fetchingMembers || !campaignName.trim() || !campaignDescription.trim()}
+                  disabled={
+                    loading ||
+                    fetchingMembers ||
+                    !campaignName.trim() ||
+                    !campaignDescription.trim()
+                  }
                   className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-600 text-white font-semibold rounded-lg transition-all duration-200 disabled:cursor-not-allowed"
                 >
                   {loading ? (
