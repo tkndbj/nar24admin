@@ -350,13 +350,14 @@ export default function CreateCampaignPage() {
       // Prepare notification data
       const notificationData = {
         type: "campaign",
-        title: `🎉 Yeni Kampanya: ${campaignName.trim()}`,
+        title: `🎉 ${campaignName.trim()}`,
         message: campaignDescription.trim(),
         timestamp: Timestamp.now(),
         isRead: false,
         campaignId: campaignRef.id,
         // Add campaign metadata
         campaignName: campaignName.trim(),
+        campaignDescription: campaignDescription.trim(),
       };
 
       // Send notification to each shop member
