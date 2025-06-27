@@ -13,7 +13,7 @@ import {
   Megaphone,
   Calendar,
   FileText,
-  Sparkles,
+  
   Eye,
   Trash2,
   Clock,
@@ -23,13 +23,13 @@ import {
   collection,
   getDocs,
   doc,
-  setDoc,
+  
   Timestamp,
   addDoc,
   query,
   orderBy,
   writeBatch,
-  where,
+  
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
@@ -51,7 +51,7 @@ interface ShopData {
   editors?: string[];
   viewers?: string[];
   isActive?: boolean;
-  createdAt?: any;
+  createdAt?: Timestamp;
 }
 
 interface Campaign {
