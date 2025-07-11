@@ -361,6 +361,9 @@ export default function Dashboard() {
       case "marketscreenhorizontallist":
         router.push("/marketscreenhorizontallist");
         break;
+      case "marketlayout":
+        router.push("/marketlayout");
+        break;
       default:
         break;
     }
@@ -920,7 +923,9 @@ export default function Dashboard() {
                     Özel Gün Kampanyaları
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">Özel Günler İçin Kampanya Oluştur</p>
+                <p className="text-xs text-gray-300">
+                  Özel Günler İçin Kampanya Oluştur
+                </p>
               </button>
               <button
                 onClick={() => handleNavigation("marketscreenhorizontallist")}
@@ -932,7 +937,23 @@ export default function Dashboard() {
                     Ana Ekran Yatay Ürün Listesi
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">Ana Ekran Yatay Ürün Listesi</p>
+                <p className="text-xs text-gray-300">
+                  Ana Ekran Yatay Ürün Listesi
+                </p>
+              </button>
+              <button
+                onClick={() => handleNavigation("marketlayout")}
+                className="p-3 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 rounded-lg text-left transition-colors group"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Layout className="w-4 h-4 text-indigo-400 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-white text-sm">
+                    Ana Ekran Layout
+                  </h4>
+                </div>
+                <p className="text-xs text-gray-300">
+                  Widget sıralama ve görünürlük
+                </p>
               </button>
             </div>
           </div>
