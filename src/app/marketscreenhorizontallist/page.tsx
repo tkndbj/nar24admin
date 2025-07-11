@@ -14,13 +14,9 @@ import {
   Eye,
   EyeOff,
   Search,
-  CheckCircle,
-  AlertTriangle,
-  Clock,
-  Image,
-  Palette,
-  List,
-  Filter,
+  CheckCircle,  
+  Clock,  
+  List,  
   ArrowLeft,
   Building,
 } from "lucide-react";
@@ -947,7 +943,7 @@ export default function MarketScreenHorizontalProductList() {
                       className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded focus:ring-blue-500"
                     />
                     <label htmlFor="showViewAll" className="text-sm text-gray-300">
-                      "Tümünü Gör" Butonu Göster
+                      &quot;Tümünü Gör&quot; Butonu Göster
                     </label>
                   </div>
                 </div>
@@ -972,7 +968,7 @@ export default function MarketScreenHorizontalProductList() {
                         <div>Total Products: {products.length}</div>
                         <div>Loading Shop Products: {loadingShopProducts.toString()}</div>
                         <div>Selected Shop: {selectedShopForProducts}</div>
-                        <div>Search Term: "{searchTerm}" (length: {searchTerm.length})</div>
+                        <div>Search Term: &quot;{searchTerm}&quot; (length: {searchTerm.length})</div>
                         <div>Filtered Products: {filteredProducts.length}</div>
                       </div>
                     )}
@@ -1020,7 +1016,7 @@ export default function MarketScreenHorizontalProductList() {
                         <div className="absolute top-full left-0 right-0 mt-1 bg-slate-700 border border-white/20 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
                           {searchSuggestions.products.length === 0 && searchSuggestions.shops.length === 0 && (
                             <div className="p-4 text-center text-gray-400">
-                              <div className="text-sm">"{searchTerm}" için sonuç bulunamadı</div>
+                              <div className="text-sm">&quot;{searchTerm}&quot; için sonuç bulunamadı</div>
                             </div>
                           )}
                           
@@ -1331,7 +1327,7 @@ export default function MarketScreenHorizontalProductList() {
                       className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded focus:ring-blue-500"
                     />
                     <label htmlFor="editShowViewAll" className="text-sm text-gray-300">
-                      "Tümünü Gör" Butonu Göster
+                      &quot;Tümünü Gör&quot; Butonu Göster
                     </label>
                   </div>
                 </div>
