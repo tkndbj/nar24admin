@@ -17,6 +17,7 @@ import {
   Layout,
   Database,
   Zap,
+  List,
   TrendingUp,
   DollarSign,
   Activity,
@@ -356,6 +357,9 @@ export default function Dashboard() {
         break;
       case "createcampaing":
         router.push("/createcampaing");
+        break;
+      case "marketscreenhorizontallist":
+        router.push("/marketscreenhorizontallist");
         break;
       default:
         break;
@@ -917,6 +921,18 @@ export default function Dashboard() {
                   </h4>
                 </div>
                 <p className="text-xs text-gray-300">Özel Günler İçin Kampanya Oluştur</p>
+              </button>
+              <button
+                onClick={() => handleNavigation("marketscreenhorizontallist")}
+                className="p-3 bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 rounded-lg text-left transition-colors group"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <List className="w-4 h-4 text-orange-400 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-white text-sm">
+                    Ana Ekran Yatay Ürün Listesi
+                  </h4>
+                </div>
+                <p className="text-xs text-gray-300">Ana Ekran Yatay Ürün Listesi</p>
               </button>
             </div>
           </div>
