@@ -1,30 +1,39 @@
 "use client";
 
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { getAuth, sendPasswordResetEmail } from "firebase/auth";
+import { httpsCallable } from "firebase/functions";
 import {
   ArrowLeft,
   ArrowRight,
-  User,  
+  User,
   ShoppingBag,
   Store,
-  Edit,  
+  Edit,
   X,
   Check,
   Loader2,
   Image as ImageIcon,
   Package,
-  MapPin,  
+  MapPin,
   Star,
   Eye,
   Heart,
   TrendingUp,
-  Activity,  
+  Activity,
   Search,
   Grid,
-  List,  
-  Users,  
+  List,
+  Users,
 } from "lucide-react";
-import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+  Suspense,
+} from "react";
 import {
   collection,
   doc,
@@ -37,9 +46,9 @@ import {
   startAfter,
   updateDoc,
   Timestamp,
-  DocumentSnapshot,  
+  DocumentSnapshot,
 } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { db, functions } from "../lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { toast } from "react-hot-toast";
@@ -50,62 +59,62 @@ interface UserData {
   displayName: string;
   email: string;
   phone: string;
-  gender: "Male" | "Female" | "";  
-  profileImage?: string;  
-  address?: string;  
-  playPoints?: number;  
+  gender: "Male" | "Female" | "";
+  profileImage?: string;
+  address?: string;
+  playPoints?: number;
   totalProductsSold?: number;
   averageRating?: number;
-  reviewCount?: number;  
+  reviewCount?: number;
   createdAt?: Timestamp;
-  updatedAt?: Timestamp;  
+  updatedAt?: Timestamp;
 }
 
 interface OrderData {
-    id: string;
-    buyerId: string;
-    totalPrice: number;
-    totalQuantity: number;
-    paymentMethod: 'PlayPoints' | 'Card';
-    timestamp: Timestamp;
-    address: {
-      addressLine1: string;
-      addressLine2?: string;
-      city: string;
-      phoneNumber: string;
-      location: {
-        latitude: number;
-        longitude: number;
-      };
+  id: string;
+  buyerId: string;
+  totalPrice: number;
+  totalQuantity: number;
+  paymentMethod: "PlayPoints" | "Card";
+  timestamp: Timestamp;
+  address: {
+    addressLine1: string;
+    addressLine2?: string;
+    city: string;
+    phoneNumber: string;
+    location: {
+      latitude: number;
+      longitude: number;
     };
-    itemCount: number;
-  }
-  
-  interface OrderItemData {
-    id: string;
-    orderId: string;
-    buyerId: string;
-    productId: string;
-    productName: string;
-    price: number;
-    currency: string;
-    quantity: number;
-    sellerName: string;
-    buyerName: string;
-    productImage: string;
-    selectedColor?: string;
-    selectedSize?: string;
-    selectedFootwearSize?: string;
-    selectedWaistSize?: string;
-    selectedHeightSize?: string;
-    sellerId: string;
-    shopId?: string;
-    shipmentStatus: string;
-    timestamp: Timestamp;
-    needsProductReview: boolean;
-    needsSellerReview: boolean;
-    needsAnyReview: boolean;
-  }
+  };
+  itemCount: number;
+}
+
+interface OrderItemData {
+  id: string;
+  orderId: string;
+  buyerId: string;
+  productId: string;
+  productName: string;
+  price: number;
+  currency: string;
+  quantity: number;
+  sellerName: string;
+  buyerName: string;
+  productImage: string;
+  selectedColor?: string;
+  selectedSize?: string;
+  selectedFootwearSize?: string;
+  selectedWaistSize?: string;
+  selectedHeightSize?: string;
+  sellerId: string;
+  shopId?: string;
+  shipmentStatus: string;
+  timestamp: Timestamp;
+  needsProductReview: boolean;
+  needsSellerReview: boolean;
+  needsAnyReview: boolean;
+}
 
 interface ProductData {
   id: string;
@@ -157,7 +166,7 @@ type FilterStatus = "all" | "active" | "sold" | "featured";
 type SortBy = "newest" | "oldest" | "price_high" | "price_low" | "popular";
 
 // Create a separate component that uses useSearchParams
-function UserDetailsContent() {  
+function UserDetailsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const userId = searchParams.get("userId");
@@ -167,6 +176,11 @@ function UserDetailsContent() {
   const shopsObserverRef = useRef<IntersectionObserver | null>(null);
   const lastProductElementRef = useRef<HTMLDivElement | null>(null);
   const lastShopElementRef = useRef<HTMLDivElement | null>(null);
+
+  const deleteUserAccountCallable = httpsCallable(
+    functions,
+    "deleteUserAccount"
+  );
 
   // State Management
   const [user, setUser] = useState<UserData | null>(null);
@@ -179,12 +193,14 @@ function UserDetailsContent() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [orders, setOrders] = useState<OrderData[]>([]);
-const [orderItems, setOrderItems] = useState<OrderItemData[]>([]);
-const [ordersLoading, setOrdersLoading] = useState(false);
-const [lastOrderDoc, setLastOrderDoc] = useState<DocumentSnapshot | null>(null);
-const [hasMoreOrders, setHasMoreOrders] = useState(true);
-const ordersObserverRef = useRef<IntersectionObserver | null>(null);
-const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
+  const [orderItems, setOrderItems] = useState<OrderItemData[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [lastOrderDoc, setLastOrderDoc] = useState<DocumentSnapshot | null>(
+    null
+  );
+  const [hasMoreOrders, setHasMoreOrders] = useState(true);
+  const ordersObserverRef = useRef<IntersectionObserver | null>(null);
+  const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
 
   // Filter and Search States
   const [productSearch, setProductSearch] = useState("");
@@ -193,19 +209,70 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
   const [shopViewMode, setShopViewMode] = useState<ViewMode>("grid");
   const [productFilter, setProductFilter] = useState<FilterStatus>("all");
   const [productSort, setProductSort] = useState<SortBy>("newest");
-  const [activeTab, setActiveTab] = useState<"products" | "shops" | "orders">("products");
+  const [activeTab, setActiveTab] = useState<"products" | "shops" | "orders">(
+    "products"
+  );
 
   // Pagination
-  const [lastProductDoc, setLastProductDoc] = useState<DocumentSnapshot | null>(null);
+  const [lastProductDoc, setLastProductDoc] = useState<DocumentSnapshot | null>(
+    null
+  );
   const [lastShopDoc, setLastShopDoc] = useState<DocumentSnapshot | null>(null);
   const [hasMoreProducts, setHasMoreProducts] = useState(true);
   const [hasMoreShops, setHasMoreShops] = useState(true);
   const ITEMS_PER_PAGE = 12;
 
+  const auth = getAuth();
+
+  const handleResetPassword = async () => {
+    if (!user?.email) {
+      toast.error("E‑posta adresi bulunamadı");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      toast.success("Şifre sıfırlama e‑postası gönderildi");
+    } catch (err: unknown) {
+      console.error("Reset email error:", err);
+      const msg =
+        (err as { code?: string; message?: string }).code ===
+        "auth/user-not-found"
+          ? "Bu e‑posta adresine kayıtlı kullanıcı yok"
+          : (err as { message?: string }).message || "Bilinmeyen hata";
+      toast.error(`Hata: ${msg}`);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    // a clear, un‑missable confirmation
+    const ok = window.confirm(
+      `“${user?.displayName}” adlı kullanıcının hesabı kalıcı olarak silinecek.\n` +
+        `Bu işlem geri alınamaz. Devam etmek istediğinize emin misiniz?`
+    );
+    if (!ok) return;
+
+    try {
+      // pass the target uid so the function runs in “admin” mode
+      const { data } = await deleteUserAccountCallable({ uid: userId });
+      toast.success((data as { message: string }).message);
+      router.push("/dashboard");
+    } catch (e: unknown) {
+      console.error("deleteUserAccount error:", e);
+      toast.error(
+        (e as { message?: string }).message ||
+          "Hesap silinirken bir hata oluştu. Lütfen tekrar deneyin."
+      );
+    }
+  };
+
   // Initialize editable fields
   const initializeEditableFields = useCallback((userData: UserData) => {
     setEditableFields([
-      { field: "displayName", value: userData.displayName || "", isEditing: false },
+      {
+        field: "displayName",
+        value: userData.displayName || "",
+        isEditing: false,
+      },
       { field: "email", value: userData.email || "", isEditing: false },
       { field: "phone", value: userData.phone || "", isEditing: false },
       { field: "gender", value: userData.gender || "", isEditing: false },
@@ -223,7 +290,7 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
     try {
       setLoading(true);
       const userDoc = await getDoc(doc(db, "users", userId));
-      
+
       if (!userDoc.exists()) {
         toast.error("Kullanıcı bulunamadı");
         router.push("/dashboard");
@@ -241,163 +308,179 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
     }
   }, [userId, router, initializeEditableFields]);
 
-  const fetchUserOrders = useCallback(async (append = false) => {
-    if (!userId || ordersLoading) return;
-  
-    try {
-      setOrdersLoading(true);
-      let q = query(
-        collection(db, "orders"),
-        where("buyerId", "==", userId),
-        orderBy("timestamp", "desc"),
-        limit(ITEMS_PER_PAGE)
-      );
-  
-      // Apply pagination
-      if (append && lastOrderDoc) {
-        q = query(q, startAfter(lastOrderDoc));
-      }
-  
-      const snapshot = await getDocs(q);
-      const ordersData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as OrderData[];
-  
-      // Fetch order items for each order
-      const allOrderItems: OrderItemData[] = [];
-      for (const order of ordersData) {
-        const itemsQuery = query(
-          collection(db, "orders", order.id, "items"),
-          orderBy("timestamp", "desc")
+  const fetchUserOrders = useCallback(
+    async (append = false) => {
+      if (!userId || ordersLoading) return;
+
+      try {
+        setOrdersLoading(true);
+        let q = query(
+          collection(db, "orders"),
+          where("buyerId", "==", userId),
+          orderBy("timestamp", "desc"),
+          limit(ITEMS_PER_PAGE)
         );
-        const itemsSnapshot = await getDocs(itemsQuery);
-        const items = itemsSnapshot.docs.map(doc => ({
+
+        // Apply pagination
+        if (append && lastOrderDoc) {
+          q = query(q, startAfter(lastOrderDoc));
+        }
+
+        const snapshot = await getDocs(q);
+        const ordersData = snapshot.docs.map((doc) => ({
           id: doc.id,
-          ...doc.data()
-        })) as OrderItemData[];
-        allOrderItems.push(...items);
+          ...doc.data(),
+        })) as OrderData[];
+
+        // Fetch order items for each order
+        const allOrderItems: OrderItemData[] = [];
+        for (const order of ordersData) {
+          const itemsQuery = query(
+            collection(db, "orders", order.id, "items"),
+            orderBy("timestamp", "desc")
+          );
+          const itemsSnapshot = await getDocs(itemsQuery);
+          const items = itemsSnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as OrderItemData[];
+          allOrderItems.push(...items);
+        }
+
+        if (append) {
+          setOrders((prev) => [...prev, ...ordersData]);
+          setOrderItems((prev) => [...prev, ...allOrderItems]);
+        } else {
+          setOrders(ordersData);
+          setOrderItems(allOrderItems);
+          setLastOrderDoc(null);
+        }
+
+        // Set last document for pagination
+        if (ordersData.length > 0) {
+          setLastOrderDoc(snapshot.docs[snapshot.docs.length - 1]);
+        }
+
+        setHasMoreOrders(ordersData.length === ITEMS_PER_PAGE);
+      } catch (error) {
+        console.error("Error fetching orders:", error);
+        toast.error("Siparişler yüklenirken hata oluştu");
+      } finally {
+        setOrdersLoading(false);
       }
-  
-      if (append) {
-        setOrders(prev => [...prev, ...ordersData]);
-        setOrderItems(prev => [...prev, ...allOrderItems]);
-      } else {
-        setOrders(ordersData);
-        setOrderItems(allOrderItems);
-        setLastOrderDoc(null);
-      }
-  
-      // Set last document for pagination
-      if (ordersData.length > 0) {
-        setLastOrderDoc(snapshot.docs[snapshot.docs.length - 1]);
-      }
-  
-      setHasMoreOrders(ordersData.length === ITEMS_PER_PAGE);
-    } catch (error) {
-      console.error("Error fetching orders:", error);
-      toast.error("Siparişler yüklenirken hata oluştu");
-    } finally {
-      setOrdersLoading(false);
-    }
-  }, [userId, lastOrderDoc, ordersLoading]);
+    },
+    [userId, lastOrderDoc, ordersLoading]
+  );
 
   // Fetch user products with pagination and filters
-  const fetchUserProducts = useCallback(async (append = false) => {
-    if (!userId || productsLoading) return;
+  const fetchUserProducts = useCallback(
+    async (append = false) => {
+      if (!userId || productsLoading) return;
 
-    try {
-      setProductsLoading(true);
-      
-      let q = query(
-        collection(db, "products"),
-        where("userId", "==", userId),
-        orderBy(
-          productSort === "newest" ? "createdAt" :
-          productSort === "oldest" ? "createdAt" :
-          productSort === "price_high" ? "price" :
-          productSort === "price_low" ? "price" : "clickCount",
-          productSort === "oldest" || productSort === "price_low" ? "asc" : "desc"
-        ),
-        limit(ITEMS_PER_PAGE)
-      );
+      try {
+        setProductsLoading(true);
 
-      // Apply pagination
-      if (append && lastProductDoc) {
-        q = query(q, startAfter(lastProductDoc));
+        let q = query(
+          collection(db, "products"),
+          where("userId", "==", userId),
+          orderBy(
+            productSort === "newest"
+              ? "createdAt"
+              : productSort === "oldest"
+              ? "createdAt"
+              : productSort === "price_high"
+              ? "price"
+              : productSort === "price_low"
+              ? "price"
+              : "clickCount",
+            productSort === "oldest" || productSort === "price_low"
+              ? "asc"
+              : "desc"
+          ),
+          limit(ITEMS_PER_PAGE)
+        );
+
+        // Apply pagination
+        if (append && lastProductDoc) {
+          q = query(q, startAfter(lastProductDoc));
+        }
+
+        const snapshot = await getDocs(q);
+        const newProducts = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as ProductData[];
+
+        if (append) {
+          setProducts((prev) => [...prev, ...newProducts]);
+        } else {
+          setProducts(newProducts);
+          setLastProductDoc(null);
+        }
+
+        // Set last document for pagination
+        if (newProducts.length > 0) {
+          setLastProductDoc(snapshot.docs[snapshot.docs.length - 1]);
+        }
+
+        setHasMoreProducts(newProducts.length === ITEMS_PER_PAGE);
+      } catch (error) {
+        console.error("Error fetching products:", error);
+        toast.error("Ürünler yüklenirken hata oluştu");
+      } finally {
+        setProductsLoading(false);
       }
-
-      const snapshot = await getDocs(q);
-      const newProducts = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as ProductData[];
-
-      if (append) {
-        setProducts(prev => [...prev, ...newProducts]);
-      } else {
-        setProducts(newProducts);
-        setLastProductDoc(null);
-      }
-
-      // Set last document for pagination
-      if (newProducts.length > 0) {
-        setLastProductDoc(snapshot.docs[snapshot.docs.length - 1]);
-      }
-
-      setHasMoreProducts(newProducts.length === ITEMS_PER_PAGE);
-    } catch (error) {
-      console.error("Error fetching products:", error);
-      toast.error("Ürünler yüklenirken hata oluştu");
-    } finally {
-      setProductsLoading(false);
-    }
-  }, [userId, productSort, lastProductDoc, productsLoading]);
+    },
+    [userId, productSort, lastProductDoc, productsLoading]
+  );
 
   // Fetch user shops
-  const fetchUserShops = useCallback(async (append = false) => {
-    if (!userId || shopsLoading) return;
+  const fetchUserShops = useCallback(
+    async (append = false) => {
+      if (!userId || shopsLoading) return;
 
-    try {
-      setShopsLoading(true);
-      let q = query(
-        collection(db, "shops"),
-        where("ownerId", "==", userId),
-        orderBy("createdAt", "desc"),
-        limit(ITEMS_PER_PAGE)
-      );
+      try {
+        setShopsLoading(true);
+        let q = query(
+          collection(db, "shops"),
+          where("ownerId", "==", userId),
+          orderBy("createdAt", "desc"),
+          limit(ITEMS_PER_PAGE)
+        );
 
-      // Apply pagination
-      if (append && lastShopDoc) {
-        q = query(q, startAfter(lastShopDoc));
+        // Apply pagination
+        if (append && lastShopDoc) {
+          q = query(q, startAfter(lastShopDoc));
+        }
+
+        const snapshot = await getDocs(q);
+        const shopsData = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as ShopData[];
+
+        if (append) {
+          setShops((prev) => [...prev, ...shopsData]);
+        } else {
+          setShops(shopsData);
+          setLastShopDoc(null);
+        }
+
+        // Set last document for pagination
+        if (shopsData.length > 0) {
+          setLastShopDoc(snapshot.docs[snapshot.docs.length - 1]);
+        }
+
+        setHasMoreShops(shopsData.length === ITEMS_PER_PAGE);
+      } catch (error) {
+        console.error("Error fetching shops:", error);
+        toast.error("Mağazalar yüklenirken hata oluştu");
+      } finally {
+        setShopsLoading(false);
       }
-
-      const snapshot = await getDocs(q);
-      const shopsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as ShopData[];
-
-      if (append) {
-        setShops(prev => [...prev, ...shopsData]);
-      } else {
-        setShops(shopsData);
-        setLastShopDoc(null);
-      }
-
-      // Set last document for pagination
-      if (shopsData.length > 0) {
-        setLastShopDoc(snapshot.docs[snapshot.docs.length - 1]);
-      }
-
-      setHasMoreShops(shopsData.length === ITEMS_PER_PAGE);
-    } catch (error) {
-      console.error("Error fetching shops:", error);
-      toast.error("Mağazalar yüklenirken hata oluştu");
-    } finally {
-      setShopsLoading(false);
-    }
-  }, [userId, lastShopDoc, shopsLoading]);
+    },
+    [userId, lastShopDoc, shopsLoading]
+  );
 
   // Setup infinite scroll for products
   const setupProductsInfiniteScroll = useCallback(() => {
@@ -443,7 +526,7 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
     if (ordersObserverRef.current) {
       ordersObserverRef.current.disconnect();
     }
-  
+
     ordersObserverRef.current = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasMoreOrders && !ordersLoading) {
@@ -452,7 +535,7 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
       },
       { threshold: 0.1 }
     );
-  
+
     if (lastOrderElementRef.current) {
       ordersObserverRef.current.observe(lastOrderElementRef.current);
     }
@@ -465,16 +548,17 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
     // Apply search filter
     if (productSearch.trim()) {
       const searchTerm = productSearch.toLowerCase().trim();
-      filtered = filtered.filter(product =>
-        product.productName?.toLowerCase().includes(searchTerm) ||
-        product.category?.toLowerCase().includes(searchTerm) ||
-        product.subcategory?.toLowerCase().includes(searchTerm)
+      filtered = filtered.filter(
+        (product) =>
+          product.productName?.toLowerCase().includes(searchTerm) ||
+          product.category?.toLowerCase().includes(searchTerm) ||
+          product.subcategory?.toLowerCase().includes(searchTerm)
       );
     }
 
     // Apply status filter
     if (productFilter !== "all") {
-      filtered = filtered.filter(product => {
+      filtered = filtered.filter((product) => {
         switch (productFilter) {
           case "active":
             return !product.sold;
@@ -494,48 +578,48 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
   // Filter shops based on search
   const filteredShops = useMemo(() => {
     if (!shopSearch.trim()) return shops;
-    
+
     const searchTerm = shopSearch.toLowerCase().trim();
-    return shops.filter(shop =>
-      shop.name?.toLowerCase().includes(searchTerm) ||
-      (shop.categories && shop.categories.some(cat => cat.toLowerCase().includes(searchTerm)))
+    return shops.filter(
+      (shop) =>
+        shop.name?.toLowerCase().includes(searchTerm) ||
+        (shop.categories &&
+          shop.categories.some((cat) => cat.toLowerCase().includes(searchTerm)))
     );
   }, [shops, shopSearch]);
 
   // Handle field editing
   const handleFieldEdit = (field: keyof UserData) => {
-    setEditableFields(prev =>
-      prev.map(item =>
+    setEditableFields((prev) =>
+      prev.map((item) =>
         item.field === field ? { ...item, isEditing: true } : item
       )
     );
   };
 
   const handleFieldChange = (field: keyof UserData, value: string) => {
-    setEditableFields(prev =>
-      prev.map(item =>
-        item.field === field ? { ...item, value } : item
-      )
+    setEditableFields((prev) =>
+      prev.map((item) => (item.field === field ? { ...item, value } : item))
     );
   };
 
   const handleFieldSave = async (field: keyof UserData) => {
     if (!userId || !user) return;
 
-    const fieldData = editableFields.find(item => item.field === field);
+    const fieldData = editableFields.find((item) => item.field === field);
     if (!fieldData) return;
 
     try {
       setIsSaving(true);
-      
+
       await updateDoc(doc(db, "users", userId), {
         [field]: fieldData.value,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       });
 
-      setUser(prev => prev ? { ...prev, [field]: fieldData.value } : null);
-      setEditableFields(prev =>
-        prev.map(item =>
+      setUser((prev) => (prev ? { ...prev, [field]: fieldData.value } : null));
+      setEditableFields((prev) =>
+        prev.map((item) =>
           item.field === field ? { ...item, isEditing: false } : item
         )
       );
@@ -551,8 +635,8 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
 
   const handleFieldCancel = (field: keyof UserData) => {
     const originalValue = user?.[field]?.toString() || "";
-    setEditableFields(prev =>
-      prev.map(item =>
+    setEditableFields((prev) =>
+      prev.map((item) =>
         item.field === field
           ? { ...item, value: originalValue, isEditing: false }
           : item
@@ -590,32 +674,39 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
       setLastProductDoc(null);
       setHasMoreProducts(true);
       fetchUserProducts();
-
     }
   }, [productSort]);
 
   // Setup infinite scroll
   useEffect(() => {
-  if (activeTab === "products") {
-    setupProductsInfiniteScroll();
-  } else if (activeTab === "shops") {
-    setupShopsInfiniteScroll();
-  } else if (activeTab === "orders") {
-    setupOrdersInfiniteScroll();
-  }
+    if (activeTab === "products") {
+      setupProductsInfiniteScroll();
+    } else if (activeTab === "shops") {
+      setupShopsInfiniteScroll();
+    } else if (activeTab === "orders") {
+      setupOrdersInfiniteScroll();
+    }
 
-  return () => {
-    if (productsObserverRef.current) {
-      productsObserverRef.current.disconnect();
-    }
-    if (shopsObserverRef.current) {
-      shopsObserverRef.current.disconnect();
-    }
-    if (ordersObserverRef.current) {
-      ordersObserverRef.current.disconnect();
-    }
-  };
-}, [activeTab, filteredProducts.length, filteredShops.length, orders.length, setupProductsInfiniteScroll, setupShopsInfiniteScroll, setupOrdersInfiniteScroll]);
+    return () => {
+      if (productsObserverRef.current) {
+        productsObserverRef.current.disconnect();
+      }
+      if (shopsObserverRef.current) {
+        shopsObserverRef.current.disconnect();
+      }
+      if (ordersObserverRef.current) {
+        ordersObserverRef.current.disconnect();
+      }
+    };
+  }, [
+    activeTab,
+    filteredProducts.length,
+    filteredShops.length,
+    orders.length,
+    setupProductsInfiniteScroll,
+    setupShopsInfiniteScroll,
+    setupOrdersInfiniteScroll,
+  ]);
 
   if (loading) {
     return (
@@ -639,12 +730,16 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
     );
   }
 
-  const EditableField = ({ field, label, type = "text" }: {
+  const EditableField = ({
+    field,
+    label,
+    type = "text",
+  }: {
     field: keyof UserData;
     label: string;
     type?: string;
   }) => {
-    const fieldData = editableFields.find(item => item.field === field);
+    const fieldData = editableFields.find((item) => item.field === field);
     if (!fieldData) return null;
 
     return (
@@ -658,12 +753,27 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
                   value={fieldData.value}
                   onChange={(e) => handleFieldChange(field, e.target.value)}
                   className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  style={{ color: 'white' }}
+                  style={{ color: "white" }}
                   disabled={isSaving}
                 >
-                  <option value="" style={{ backgroundColor: '#1f2937', color: 'white' }}>Seçiniz</option>
-                  <option value="Male" style={{ backgroundColor: '#1f2937', color: 'white' }}>Erkek</option>
-                  <option value="Female" style={{ backgroundColor: '#1f2937', color: 'white' }}>Kadın</option>
+                  <option
+                    value=""
+                    style={{ backgroundColor: "#1f2937", color: "white" }}
+                  >
+                    Seçiniz
+                  </option>
+                  <option
+                    value="Male"
+                    style={{ backgroundColor: "#1f2937", color: "white" }}
+                  >
+                    Erkek
+                  </option>
+                  <option
+                    value="Female"
+                    style={{ backgroundColor: "#1f2937", color: "white" }}
+                  >
+                    Kadın
+                  </option>
                 </select>
               ) : (
                 <input
@@ -680,7 +790,11 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
                 disabled={isSaving}
                 className="p-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
               >
-                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                {isSaving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4" />
+                )}
               </button>
               <button
                 onClick={() => handleFieldCancel(field)}
@@ -708,27 +822,31 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
     );
   };
 
-  const ProductCard = ({ product, viewMode, isLast = false }: { 
-    product: ProductData; 
+  const ProductCard = ({
+    product,
+    viewMode,
+    isLast = false,
+  }: {
+    product: ProductData;
     viewMode: ViewMode;
     isLast?: boolean;
   }) => {
     const formatPrice = (price: number, currency: string) => {
-      return new Intl.NumberFormat('tr-TR', {
-        style: 'currency',
-        currency: currency === 'TL' ? 'TRY' : currency,
-        minimumFractionDigits: 0
+      return new Intl.NumberFormat("tr-TR", {
+        style: "currency",
+        currency: currency === "TL" ? "TRY" : currency,
+        minimumFractionDigits: 0,
       }).format(price);
     };
-  
+
     // Add click handler
     const handleProductClick = () => {
       router.push(`/productdetails?productId=${product.id}`);
     };
-  
+
     if (viewMode === "list") {
       return (
-        <div 
+        <div
           ref={isLast ? lastProductElementRef : null}
           onClick={handleProductClick}
           className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4 transition-all duration-200 hover:bg-white/15 hover:border-white/30 cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group"
@@ -738,7 +856,7 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
               {product.imageUrls?.[0] ? (
                 <Image
                   src={product.imageUrls[0]}
-                  alt={product.productName || 'Product'}
+                  alt={product.productName || "Product"}
                   fill
                   className="object-cover"
                 />
@@ -748,18 +866,25 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
                 </div>
               )}
             </div>
-            
+
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-white truncate group-hover:text-blue-300">{product.productName || 'Ürün Adı Yok'}</h3>
-              <p className="text-sm text-gray-400">{product.category || 'Kategori Yok'} • {product.subcategory || 'Alt Kategori Yok'}</p>
+              <h3 className="font-semibold text-white truncate group-hover:text-blue-300">
+                {product.productName || "Ürün Adı Yok"}
+              </h3>
+              <p className="text-sm text-gray-400">
+                {product.category || "Kategori Yok"} •{" "}
+                {product.subcategory || "Alt Kategori Yok"}
+              </p>
               <div className="flex items-center gap-4 mt-1">
                 <span className="text-lg font-bold text-green-400">
-                  {formatPrice(product.price || 0, product.currency || 'TRY')}
+                  {formatPrice(product.price || 0, product.currency || "TRY")}
                 </span>
-                <span className="text-xs text-gray-400">{product.condition || 'Durum Belirtilmemiş'}</span>
+                <span className="text-xs text-gray-400">
+                  {product.condition || "Durum Belirtilmemiş"}
+                </span>
               </div>
             </div>
-  
+
             <div className="flex items-center gap-6 text-sm text-gray-400">
               <div className="flex items-center gap-1">
                 <Eye className="w-4 h-4" />
@@ -774,7 +899,7 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
                 <span>{product.purchaseCount || 0}</span>
               </div>
             </div>
-  
+
             {(product.isFeatured || product.isBoosted) && (
               <div className="flex flex-col gap-1">
                 {product.isFeatured && (
@@ -789,7 +914,7 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
                 )}
               </div>
             )}
-            
+
             {/* Add visual indicator for clickable item */}
             <div className="opacity-0 group-hover:opacity-100 transition-opacity">
               <ArrowRight className="w-5 h-5 text-blue-400" />
@@ -798,9 +923,9 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
         </div>
       );
     }
-  
+
     return (
-      <div 
+      <div
         ref={isLast ? lastProductElementRef : null}
         onClick={handleProductClick}
         className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden transition-all duration-200 hover:bg-white/15 hover:border-white/30 hover:shadow-lg group cursor-pointer hover:border-blue-500/50 hover:scale-[1.02]"
@@ -809,7 +934,7 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
           {product.imageUrls?.[0] ? (
             <Image
               src={product.imageUrls[0]}
-              alt={product.productName || 'Product'}
+              alt={product.productName || "Product"}
               fill
               className="object-cover"
             />
@@ -818,7 +943,7 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
               <ImageIcon className="w-12 h-12 text-gray-400" />
             </div>
           )}
-  
+
           {(product.isFeatured || product.isBoosted) && (
             <div className="absolute top-2 left-2 flex flex-col gap-1">
               {product.isFeatured && (
@@ -833,41 +958,55 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
               )}
             </div>
           )}
-  
+
           {/* Add visual indicator for clickable item */}
           <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
             <div className="p-1 bg-blue-600/90 rounded-full">
               <ArrowRight className="w-3 h-3 text-white" />
             </div>
           </div>
-  
+
           <div className="absolute bottom-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
             <div className="flex items-center gap-1 bg-black/50 rounded px-2 py-1">
               <Eye className="w-3 h-3 text-white" />
-              <span className="text-white text-xs">{product.clickCount || 0}</span>
+              <span className="text-white text-xs">
+                {product.clickCount || 0}
+              </span>
             </div>
             <div className="flex items-center gap-1 bg-black/50 rounded px-2 py-1">
               <Heart className="w-3 h-3 text-white" />
-              <span className="text-white text-xs">{product.favoritesCount || 0}</span>
+              <span className="text-white text-xs">
+                {product.favoritesCount || 0}
+              </span>
             </div>
           </div>
         </div>
-  
+
         <div className="p-4">
-          <h3 className="font-semibold text-white mb-1 line-clamp-2 group-hover:text-blue-300">{product.productName || 'Ürün Adı Yok'}</h3>
-          <p className="text-sm text-gray-400 mb-2">{product.category || 'Kategori Yok'}</p>
+          <h3 className="font-semibold text-white mb-1 line-clamp-2 group-hover:text-blue-300">
+            {product.productName || "Ürün Adı Yok"}
+          </h3>
+          <p className="text-sm text-gray-400 mb-2">
+            {product.category || "Kategori Yok"}
+          </p>
           <div className="flex items-center justify-between">
             <span className="text-lg font-bold text-green-400">
-              {formatPrice(product.price || 0, product.currency || 'TRY')}
+              {formatPrice(product.price || 0, product.currency || "TRY")}
             </span>
-            <span className="text-xs text-gray-400">{product.condition || 'Durum Belirtilmemiş'}</span>
+            <span className="text-xs text-gray-400">
+              {product.condition || "Durum Belirtilmemiş"}
+            </span>
           </div>
-          
+
           {product.averageRating > 0 && (
             <div className="flex items-center gap-1 mt-2">
               <Star className="w-4 h-4 text-yellow-400 fill-current" />
-              <span className="text-sm text-white">{product.averageRating.toFixed(1)}</span>
-              <span className="text-xs text-gray-400">({product.reviewCount || 0})</span>
+              <span className="text-sm text-white">
+                {product.averageRating.toFixed(1)}
+              </span>
+              <span className="text-xs text-gray-400">
+                ({product.reviewCount || 0})
+              </span>
             </div>
           )}
         </div>
@@ -875,61 +1014,81 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
     );
   };
 
-  const OrderCard = ({ order, isLast = false }: { 
-    order: OrderData; 
+  const OrderCard = ({
+    order,
+    isLast = false,
+  }: {
+    order: OrderData;
     isLast?: boolean;
   }) => {
-    const orderItemsForThisOrder = orderItems.filter(item => item.orderId === order.id);
-    
+    const orderItemsForThisOrder = orderItems.filter(
+      (item) => item.orderId === order.id
+    );
+
     const formatPrice = (price: number) => {
-      return new Intl.NumberFormat('tr-TR', {
-        style: 'currency',
-        currency: 'TRY',
-        minimumFractionDigits: 0
+      return new Intl.NumberFormat("tr-TR", {
+        style: "currency",
+        currency: "TRY",
+        minimumFractionDigits: 0,
       }).format(price);
     };
-  
+
     const formatDate = (timestamp: Timestamp) => {
-      return timestamp.toDate().toLocaleString('tr-TR', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+      return timestamp.toDate().toLocaleString("tr-TR", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
       });
     };
-  
+
     return (
-      <div 
+      <div
         ref={isLast ? lastOrderElementRef : null}
         className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6 transition-all duration-200 hover:bg-white/15 hover:border-white/30"
       >
         {/* Order Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-lg font-semibold text-white">Sipariş #{order.id.slice(-8)}</h3>
-            <p className="text-sm text-gray-400">{formatDate(order.timestamp)}</p>
+            <h3 className="text-lg font-semibold text-white">
+              Sipariş #{order.id.slice(-8)}
+            </h3>
+            <p className="text-sm text-gray-400">
+              {formatDate(order.timestamp)}
+            </p>
           </div>
           <div className="text-right">
-            <p className="text-xl font-bold text-green-400">{formatPrice(order.totalPrice)}</p>
+            <p className="text-xl font-bold text-green-400">
+              {formatPrice(order.totalPrice)}
+            </p>
             <div className="flex items-center gap-2">
-              <span className={`px-2 py-1 text-xs rounded-full ${
-                order.paymentMethod === 'PlayPoints' 
-                  ? 'bg-purple-600/20 text-purple-400' 
-                  : 'bg-blue-600/20 text-blue-400'
-              }`}>
-                {order.paymentMethod === 'PlayPoints' ? 'Play Points' : 'Kredi Kartı'}
+              <span
+                className={`px-2 py-1 text-xs rounded-full ${
+                  order.paymentMethod === "PlayPoints"
+                    ? "bg-purple-600/20 text-purple-400"
+                    : "bg-blue-600/20 text-blue-400"
+                }`}
+              >
+                {order.paymentMethod === "PlayPoints"
+                  ? "Play Points"
+                  : "Kredi Kartı"}
               </span>
             </div>
           </div>
         </div>
-  
+
         {/* Order Items */}
         <div className="space-y-3 mb-4">
-          <h4 className="text-sm font-medium text-gray-300">Ürünler ({orderItemsForThisOrder.length})</h4>
+          <h4 className="text-sm font-medium text-gray-300">
+            Ürünler ({orderItemsForThisOrder.length})
+          </h4>
           <div className="grid gap-3">
             {orderItemsForThisOrder.map((item) => (
-              <div key={item.id} className="flex items-center gap-3 bg-white/5 rounded-lg p-3">
+              <div
+                key={item.id}
+                className="flex items-center gap-3 bg-white/5 rounded-lg p-3"
+              >
                 <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
                   {item.productImage ? (
                     <Image
@@ -944,25 +1103,36 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
                     </div>
                   )}
                 </div>
-                
+
                 <div className="flex-1 min-w-0">
-                  <h5 className="font-medium text-white truncate">{item.productName}</h5>
+                  <h5 className="font-medium text-white truncate">
+                    {item.productName}
+                  </h5>
                   <div className="flex items-center gap-2 text-sm text-gray-400">
                     <span>Adet: {item.quantity}</span>
                     {item.selectedColor && <span>• {item.selectedColor}</span>}
                     {item.selectedSize && <span>• {item.selectedSize}</span>}
                   </div>
-                  <p className="text-xs text-gray-500">Satıcı: {item.sellerName}</p>
+                  <p className="text-xs text-gray-500">
+                    Satıcı: {item.sellerName}
+                  </p>
                 </div>
-                
+
                 <div className="text-right">
-                  <p className="font-semibold text-white">{formatPrice(item.price * item.quantity)}</p>
-                  <span className={`px-2 py-1 text-xs rounded ${
-                    item.shipmentStatus === 'Delivered' ? 'bg-green-600/20 text-green-400' :
-                    item.shipmentStatus === 'Shipped' ? 'bg-blue-600/20 text-blue-400' :
-                    item.shipmentStatus === 'Processing' ? 'bg-yellow-600/20 text-yellow-400' :
-                    'bg-gray-600/20 text-gray-400'
-                  }`}>
+                  <p className="font-semibold text-white">
+                    {formatPrice(item.price * item.quantity)}
+                  </p>
+                  <span
+                    className={`px-2 py-1 text-xs rounded ${
+                      item.shipmentStatus === "Delivered"
+                        ? "bg-green-600/20 text-green-400"
+                        : item.shipmentStatus === "Shipped"
+                        ? "bg-blue-600/20 text-blue-400"
+                        : item.shipmentStatus === "Processing"
+                        ? "bg-yellow-600/20 text-yellow-400"
+                        : "bg-gray-600/20 text-gray-400"
+                    }`}
+                  >
                     {item.shipmentStatus}
                   </span>
                 </div>
@@ -970,15 +1140,19 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
             ))}
           </div>
         </div>
-  
+
         {/* Order Address */}
         <div className="border-t border-white/10 pt-4">
-          <h4 className="text-sm font-medium text-gray-300 mb-2">Teslimat Adresi</h4>
+          <h4 className="text-sm font-medium text-gray-300 mb-2">
+            Teslimat Adresi
+          </h4>
           <div className="flex items-start gap-2 text-sm text-gray-400">
             <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <div>
               <p>{order.address.addressLine1}</p>
-              {order.address.addressLine2 && <p>{order.address.addressLine2}</p>}
+              {order.address.addressLine2 && (
+                <p>{order.address.addressLine2}</p>
+              )}
               <p>{order.address.city}</p>
               <p>{order.address.phoneNumber}</p>
             </div>
@@ -988,150 +1162,164 @@ const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
     );
   };
 
+  const ShopCard = ({
+    shop,
+    viewMode,
+    isLast = false,
+  }: {
+    shop: ShopData;
+    viewMode: ViewMode;
+    isLast?: boolean;
+  }) => {
+    const router = useRouter(); // Add this line to get router access
 
-const ShopCard = ({ shop, viewMode, isLast = false }: { 
-  shop: ShopData; 
-  viewMode: ViewMode;
-  isLast?: boolean;
-}) => {
-  const router = useRouter(); // Add this line to get router access
-  
-  // Safe access to categories with fallback
-  const categories = shop.categories || [];
-  const categoriesText = categories.length > 0 ? categories.join(", ") : "Kategori Belirtilmemiş";
+    // Safe access to categories with fallback
+    const categories = shop.categories || [];
+    const categoriesText =
+      categories.length > 0 ? categories.join(", ") : "Kategori Belirtilmemiş";
 
-  // Add click handler
-  const handleShopClick = () => {
-    router.push(`/shopdetails?shopId=${shop.id}`);
-  };
+    // Add click handler
+    const handleShopClick = () => {
+      router.push(`/shopdetails?shopId=${shop.id}`);
+    };
 
-  if (viewMode === "list") {
+    if (viewMode === "list") {
+      return (
+        <div
+          ref={isLast ? lastShopElementRef : null}
+          onClick={handleShopClick} // Add click handler
+          className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4 transition-all duration-200 hover:bg-white/15 hover:border-white/30 cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group" // Add cursor and hover effects
+        >
+          <div className="flex items-center gap-4">
+            <div className="relative w-16 h-16 rounded-full overflow-hidden flex-shrink-0">
+              {shop.profileImageUrl ? (
+                <Image
+                  src={shop.profileImageUrl}
+                  alt={shop.name || "Shop"}
+                  fill
+                  className="object-cover"
+                />
+              ) : (
+                <div className="w-full h-full bg-gray-700 flex items-center justify-center">
+                  <Store className="w-6 h-6 text-gray-400" />
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-white group-hover:text-blue-300">
+                {shop.name || "Mağaza Adı Yok"}
+              </h3>{" "}
+              {/* Add hover color change */}
+              <p className="text-sm text-gray-400">{categoriesText}</p>
+              <p className="text-xs text-gray-500">
+                {shop.address || "Adres Belirtilmemiş"}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-4 text-sm text-gray-400">
+              <div className="flex items-center gap-1">
+                <Users className="w-4 h-4" />
+                <span>{shop.followerCount || 0}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Star className="w-4 h-4" />
+                <span>{(shop.averageRating || 0).toFixed(1)}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Eye className="w-4 h-4" />
+                <span>{shop.clickCount || 0}</span>
+              </div>
+            </div>
+
+            {/* Add visual indicator for clickable item */}
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+              <ArrowRight className="w-5 h-5 text-blue-400" />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div 
+      <div
         ref={isLast ? lastShopElementRef : null}
         onClick={handleShopClick} // Add click handler
-        className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4 transition-all duration-200 hover:bg-white/15 hover:border-white/30 cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group" // Add cursor and hover effects
+        className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden transition-all duration-200 hover:bg-white/15 hover:border-white/30 hover:shadow-lg cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group" // Add cursor and hover effects
       >
-        <div className="flex items-center gap-4">
-          <div className="relative w-16 h-16 rounded-full overflow-hidden flex-shrink-0">
-            {shop.profileImageUrl ? (
-              <Image
-                src={shop.profileImageUrl}
-                alt={shop.name || 'Shop'}
-                fill
-                className="object-cover"
-              />
-            ) : (
-              <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                <Store className="w-6 h-6 text-gray-400" />
-              </div>
-            )}
+        <div className="relative h-32">
+          {shop.coverImageUrls?.[0] ? (
+            <Image
+              src={shop.coverImageUrls[0]}
+              alt={shop.name || "Shop"}
+              fill
+              className="object-cover"
+            />
+          ) : (
+            <div className="w-full h-full bg-gray-700 flex items-center justify-center">
+              <Store className="w-8 h-8 text-gray-400" />
+            </div>
+          )}
+
+          {shop.isBoosted && (
+            <div className="absolute top-2 left-2">
+              <span className="px-2 py-1 bg-purple-600/90 text-white text-xs rounded">
+                BOOST
+              </span>
+            </div>
+          )}
+
+          {/* Add visual indicator for clickable item */}
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <ArrowRight className="w-5 h-5 text-blue-400 bg-black/50 rounded p-1" />
           </div>
-          
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-white group-hover:text-blue-300">{shop.name || 'Mağaza Adı Yok'}</h3> {/* Add hover color change */}
-            <p className="text-sm text-gray-400">{categoriesText}</p>
-            <p className="text-xs text-gray-500">{shop.address || 'Adres Belirtilmemiş'}</p>
+        </div>
+
+        <div className="p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="relative w-12 h-12 rounded-full overflow-hidden">
+              {shop.profileImageUrl ? (
+                <Image
+                  src={shop.profileImageUrl}
+                  alt={shop.name || "Shop"}
+                  fill
+                  className="object-cover"
+                />
+              ) : (
+                <div className="w-full h-full bg-gray-700 flex items-center justify-center">
+                  <Store className="w-5 h-5 text-gray-400" />
+                </div>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-white truncate group-hover:text-blue-300">
+                {shop.name || "Mağaza Adı Yok"}
+              </h3>{" "}
+              {/* Add hover color change */}
+              <p className="text-xs text-gray-400">
+                {shop.address || "Adres Belirtilmemiş"}
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4 text-sm text-gray-400">
-            <div className="flex items-center gap-1">
-              <Users className="w-4 h-4" />
-              <span>{shop.followerCount || 0}</span>
+          <div className="space-y-2">
+            <p className="text-sm text-gray-400">{categoriesText}</p>
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-1 text-yellow-400">
+                <Star className="w-4 h-4 fill-current" />
+                <span>{(shop.averageRating || 0).toFixed(1)}</span>
+                <span className="text-gray-400">({shop.reviewCount || 0})</span>
+              </div>
+              <div className="flex items-center gap-1 text-blue-400">
+                <Users className="w-4 h-4" />
+                <span>{shop.followerCount || 0}</span>
+              </div>
             </div>
-            <div className="flex items-center gap-1">
-              <Star className="w-4 h-4" />
-              <span>{(shop.averageRating || 0).toFixed(1)}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Eye className="w-4 h-4" />
-              <span>{shop.clickCount || 0}</span>
-            </div>
-          </div>
-          
-          {/* Add visual indicator for clickable item */}
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-            <ArrowRight className="w-5 h-5 text-blue-400" />
           </div>
         </div>
       </div>
     );
-  }
-
-  return (
-    <div 
-      ref={isLast ? lastShopElementRef : null}
-      onClick={handleShopClick} // Add click handler
-      className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden transition-all duration-200 hover:bg-white/15 hover:border-white/30 hover:shadow-lg cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group" // Add cursor and hover effects
-    >
-      <div className="relative h-32">
-        {shop.coverImageUrls?.[0] ? (
-          <Image
-            src={shop.coverImageUrls[0]}
-            alt={shop.name || 'Shop'}
-            fill
-            className="object-cover"
-          />
-        ) : (
-          <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-            <Store className="w-8 h-8 text-gray-400" />
-          </div>
-        )}
-        
-        {shop.isBoosted && (
-          <div className="absolute top-2 left-2">
-            <span className="px-2 py-1 bg-purple-600/90 text-white text-xs rounded">
-              BOOST
-            </span>
-          </div>
-        )}
-        
-        {/* Add visual indicator for clickable item */}
-        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <ArrowRight className="w-5 h-5 text-blue-400 bg-black/50 rounded p-1" />
-        </div>
-      </div>
-
-      <div className="p-4">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="relative w-12 h-12 rounded-full overflow-hidden">
-            {shop.profileImageUrl ? (
-              <Image
-                src={shop.profileImageUrl}
-                alt={shop.name || 'Shop'}
-                fill
-                className="object-cover"
-              />
-            ) : (
-              <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                <Store className="w-5 h-5 text-gray-400" />
-              </div>
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-white truncate group-hover:text-blue-300">{shop.name || 'Mağaza Adı Yok'}</h3> {/* Add hover color change */}
-            <p className="text-xs text-gray-400">{shop.address || 'Adres Belirtilmemiş'}</p>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-sm text-gray-400">{categoriesText}</p>
-          <div className="flex items-center justify-between text-sm">
-            <div className="flex items-center gap-1 text-yellow-400">
-              <Star className="w-4 h-4 fill-current" />
-              <span>{(shop.averageRating || 0).toFixed(1)}</span>
-              <span className="text-gray-400">({shop.reviewCount || 0})</span>
-            </div>
-            <div className="flex items-center gap-1 text-blue-400">
-              <Users className="w-4 h-4" />
-              <span>{shop.followerCount || 0}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -1146,7 +1334,9 @@ const ShopCard = ({ shop, viewMode, isLast = false }: {
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <div>
-              <h1 className="text-xl font-bold text-white">Kullanıcı Detayları</h1>
+              <h1 className="text-xl font-bold text-white">
+                Kullanıcı Detayları
+              </h1>
               <p className="text-sm text-gray-400">{user.displayName}</p>
             </div>
           </div>
@@ -1173,20 +1363,32 @@ const ShopCard = ({ shop, viewMode, isLast = false }: {
                       <User className="w-10 h-10 text-gray-400" />
                     </div>
                   )}
-                  
                 </div>
-                
+
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
-                    <h2 className="text-2xl font-bold text-white">{user.displayName}</h2>
-                    
+                    <h2 className="text-2xl font-bold text-white">
+                      {user.displayName}
+                    </h2>
                   </div>
-                  <p className="text-gray-400 mb-1">{user.email}</p>                   
-                  
+                  <p className="text-gray-400 mb-1">{user.email}</p>
                 </div>
               </div>
-
-              {/* Editable Fields */}
+              <div className="mt-4 flex gap-2">
+                <button
+                  onClick={handleResetPassword}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition"
+                >
+                  Parola Sıfırla
+                </button>
+                <button
+                  onClick={handleDeleteAccount}
+                  className="px-4 py-2 bg-red-800 hover:bg-red-700 text-white rounded-lg transition"
+                >
+                  Hesabı Sil
+                </button>
+              </div>
+              ;{/* Editable Fields */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <EditableField field="displayName" label="Adı Soyadı" />
                 <EditableField field="email" label="E-posta" type="email" />
@@ -1199,22 +1401,28 @@ const ShopCard = ({ shop, viewMode, isLast = false }: {
           {/* Stats */}
           <div className="space-y-4">
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-              <h3 className="text-lg font-semibold text-white mb-4">İstatistikler</h3>
+              <h3 className="text-lg font-semibold text-white mb-4">
+                İstatistikler
+              </h3>
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Package className="w-4 h-4 text-blue-400" />
                     <span className="text-sm text-gray-300">Toplam Ürün</span>
                   </div>
-                  <span className="text-white font-semibold">{products.length}</span>
+                  <span className="text-white font-semibold">
+                    {products.length}
+                  </span>
                 </div>
-                
+
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Store className="w-4 h-4 text-green-400" />
                     <span className="text-sm text-gray-300">Mağaza Sayısı</span>
                   </div>
-                  <span className="text-white font-semibold">{shops.length}</span>
+                  <span className="text-white font-semibold">
+                    {shops.length}
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -1222,7 +1430,9 @@ const ShopCard = ({ shop, viewMode, isLast = false }: {
                     <TrendingUp className="w-4 h-4 text-purple-400" />
                     <span className="text-sm text-gray-300">Satılan Ürün</span>
                   </div>
-                  <span className="text-white font-semibold">{user.totalProductsSold || 0}</span>
+                  <span className="text-white font-semibold">
+                    {user.totalProductsSold || 0}
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -1240,10 +1450,12 @@ const ShopCard = ({ shop, viewMode, isLast = false }: {
                     <Activity className="w-4 h-4 text-orange-400" />
                     <span className="text-sm text-gray-300">Oyun Puanı</span>
                   </div>
-                  <span className="text-white font-semibold">{user.playPoints || 0}</span>
+                  <span className="text-white font-semibold">
+                    {user.playPoints || 0}
+                  </span>
                 </div>
               </div>
-            </div>         
+            </div>
           </div>
         </div>
 
@@ -1314,14 +1526,36 @@ const ShopCard = ({ shop, viewMode, isLast = false }: {
                   {/* Filter */}
                   <select
                     value={productFilter}
-                    onChange={(e) => setProductFilter(e.target.value as FilterStatus)}
+                    onChange={(e) =>
+                      setProductFilter(e.target.value as FilterStatus)
+                    }
                     className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    style={{ color: 'white' }}
+                    style={{ color: "white" }}
                   >
-                    <option value="all" style={{ backgroundColor: '#1f2937', color: 'white' }}>Tüm Ürünler</option>
-                    <option value="active" style={{ backgroundColor: '#1f2937', color: 'white' }}>Aktif</option>
-                    <option value="sold" style={{ backgroundColor: '#1f2937', color: 'white' }}>Satılan</option>
-                    <option value="featured" style={{ backgroundColor: '#1f2937', color: 'white' }}>Öne Çıkan</option>
+                    <option
+                      value="all"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      Tüm Ürünler
+                    </option>
+                    <option
+                      value="active"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      Aktif
+                    </option>
+                    <option
+                      value="sold"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      Satılan
+                    </option>
+                    <option
+                      value="featured"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      Öne Çıkan
+                    </option>
                   </select>
 
                   {/* Sort */}
@@ -1329,13 +1563,38 @@ const ShopCard = ({ shop, viewMode, isLast = false }: {
                     value={productSort}
                     onChange={(e) => setProductSort(e.target.value as SortBy)}
                     className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    style={{ color: 'white' }}
+                    style={{ color: "white" }}
                   >
-                    <option value="newest" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Yeni</option>
-                    <option value="oldest" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Eski</option>
-                    <option value="price_high" style={{ backgroundColor: '#1f2937', color: 'white' }}>Fiyat: Yüksek → Düşük</option>
-                    <option value="price_low" style={{ backgroundColor: '#1f2937', color: 'white' }}>Fiyat: Düşük → Yüksek</option>
-                    <option value="popular" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Popüler</option>
+                    <option
+                      value="newest"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      En Yeni
+                    </option>
+                    <option
+                      value="oldest"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      En Eski
+                    </option>
+                    <option
+                      value="price_high"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      Fiyat: Yüksek → Düşük
+                    </option>
+                    <option
+                      value="price_low"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      Fiyat: Düşük → Yüksek
+                    </option>
+                    <option
+                      value="popular"
+                      style={{ backgroundColor: "#1f2937", color: "white" }}
+                    >
+                      En Popüler
+                    </option>
                   </select>
                 </div>
 
@@ -1369,7 +1628,9 @@ const ShopCard = ({ shop, viewMode, isLast = false }: {
             {filteredProducts.length === 0 && !productsLoading ? (
               <div className="text-center py-12">
                 <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-white mb-2">Ürün Bulunamadı</h3>
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  Ürün Bulunamadı
+                </h3>
                 <p className="text-gray-400">
                   {productSearch || productFilter !== "all"
                     ? "Arama kriterlerinize uygun ürün bulunamadı."
@@ -1378,11 +1639,13 @@ const ShopCard = ({ shop, viewMode, isLast = false }: {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className={`grid gap-4 ${
-                  productViewMode === "grid"
-                    ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-                    : "grid-cols-1"
-                }`}>
+                <div
+                  className={`grid gap-4 ${
+                    productViewMode === "grid"
+                      ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                      : "grid-cols-1"
+                  }`}
+                >
                   {filteredProducts.map((product, index) => (
                     <ProductCard
                       key={product.id}
@@ -1457,7 +1720,9 @@ const ShopCard = ({ shop, viewMode, isLast = false }: {
             {filteredShops.length === 0 && !shopsLoading ? (
               <div className="text-center py-12">
                 <Store className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-white mb-2">Mağaza Bulunamadı</h3>
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  Mağaza Bulunamadı
+                </h3>
                 <p className="text-gray-400">
                   {shopSearch
                     ? "Arama kriterlerinize uygun mağaza bulunamadı."
@@ -1466,11 +1731,13 @@ const ShopCard = ({ shop, viewMode, isLast = false }: {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className={`grid gap-4 ${
-                  shopViewMode === "grid"
-                    ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-                    : "grid-cols-1"
-                }`}>
+                <div
+                  className={`grid gap-4 ${
+                    shopViewMode === "grid"
+                      ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+                      : "grid-cols-1"
+                  }`}
+                >
                   {filteredShops.map((shop, index) => (
                     <ShopCard
                       key={shop.id}
@@ -1494,7 +1761,7 @@ const ShopCard = ({ shop, viewMode, isLast = false }: {
             )}
           </div>
         )}
-        
+
         {/* Orders Tab */}
         {activeTab === "orders" && (
           <div className="space-y-6">
@@ -1502,8 +1769,12 @@ const ShopCard = ({ shop, viewMode, isLast = false }: {
             {orders.length === 0 && !ordersLoading ? (
               <div className="text-center py-12">
                 <ShoppingBag className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-white mb-2">Sipariş Bulunamadı</h3>
-                <p className="text-gray-400">Bu kullanıcının henüz siparişi bulunmuyor.</p>
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  Sipariş Bulunamadı
+                </h3>
+                <p className="text-gray-400">
+                  Bu kullanıcının henüz siparişi bulunmuyor.
+                </p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -1539,14 +1810,16 @@ const ShopCard = ({ shop, viewMode, isLast = false }: {
 export default function UserDetailsPage() {
   return (
     <ProtectedRoute>
-      <Suspense fallback={
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-          <div className="flex items-center gap-3 text-white">
-            <Loader2 className="w-6 h-6 animate-spin" />
-            <span>Sayfa yükleniyor...</span>
+      <Suspense
+        fallback={
+          <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+            <div className="flex items-center gap-3 text-white">
+              <Loader2 className="w-6 h-6 animate-spin" />
+              <span>Sayfa yükleniyor...</span>
+            </div>
           </div>
-        </div>
-      }>
+        }
+      >
         <UserDetailsContent />
       </Suspense>
     </ProtectedRoute>

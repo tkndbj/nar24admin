@@ -364,6 +364,9 @@ export default function Dashboard() {
       case "marketlayout":
         router.push("/marketlayout");
         break;
+      case "listproduct-flowmanagement":
+        router.push("/listproduct-flowmanagement");
+        break;
       default:
         break;
     }
@@ -954,6 +957,18 @@ export default function Dashboard() {
                 <p className="text-xs text-gray-300">
                   Widget sıralama ve görünürlük
                 </p>
+              </button>
+              <button
+                onClick={() => handleNavigation("listproduct-flowmanagement")}
+                className="p-3 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 rounded-lg text-left transition-colors group"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Layout className="w-4 h-4 text-indigo-400 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-white text-sm">
+                    Ürün Akış Yönetimi
+                  </h4>
+                </div>
+                <p className="text-xs text-gray-300">Ürün akış yönetimi</p>
               </button>
             </div>
           </div>
