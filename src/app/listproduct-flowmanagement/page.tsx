@@ -758,7 +758,7 @@ export default function FlowManagementPage() {
                       newScreens.length === 0
                     ) {
                       alert(
-                        "Please fill in flow name, category, and add at least one screen."
+                        "Please fill in flow name, category, and add at least one screen"
                       );
                       return;
                     }
