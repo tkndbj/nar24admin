@@ -11,6 +11,7 @@ import {
   Store,
   Search,
   Package,
+  Edit2,
   Clock,
   FileText,
   Image,
@@ -301,24 +302,43 @@ export default function Dashboard() {
     if (!searchTerm.trim()) return [];
 
     const term = searchTerm.toLowerCase().trim();
-    const results: Array<{ type: string; data: UserData | ProductData }> = [];
+    const results: Array<{
+      type: string;
+      data: UserData | ProductData | ShopData;
+    }> = [];
 
-    // Search users by displayName
+    // Search users by displayName OR ID
     users.forEach((user) => {
-      if (user.displayName?.toLowerCase().includes(term)) {
+      if (
+        user.displayName?.toLowerCase().includes(term) ||
+        user.id?.toLowerCase().includes(term)
+      ) {
         results.push({ type: "user", data: user });
       }
     });
 
-    // Search products by productName
+    // Search shops by name OR ID
+    shops.forEach((shop) => {
+      if (
+        shop.name?.toLowerCase().includes(term) ||
+        shop.id?.toLowerCase().includes(term)
+      ) {
+        results.push({ type: "shop", data: shop });
+      }
+    });
+
+    // Search products by productName OR ID
     products.forEach((product) => {
-      if (product.productName?.toLowerCase().includes(term)) {
+      if (
+        product.productName?.toLowerCase().includes(term) ||
+        product.id?.toLowerCase().includes(term)
+      ) {
         results.push({ type: "product", data: product });
       }
     });
 
     return results.slice(0, 10); // Limit results for performance
-  }, [searchTerm, users, products]);
+  }, [searchTerm, users, products, shops]);
 
   const handleLogout = async () => {
     await logout();
@@ -336,6 +356,9 @@ export default function Dashboard() {
     switch (section) {
       case "productapplications":
         router.push("/productapplications");
+        break;
+      case "editproductapplications":
+        router.push("/editproductapplications");
         break;
       case "shop-applications":
         router.push("/shopapplications");
@@ -759,7 +782,7 @@ export default function Dashboard() {
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Kullanıcı, ürün, mağaza ara"
+                  placeholder="Kullanıcı, ürün, mağaza ara (isim veya ID ile)"
                   className="w-full pl-10 pr-4 py-2.5 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-sm"
                 />
               </div>
@@ -790,7 +813,7 @@ export default function Dashboard() {
                         {searchResults.length} sonuç:
                       </p>
                       <div className="space-y-1">
-                        {searchResults.slice(0, 2).map((result) => (
+                        {searchResults.slice(0, 3).map((result) => (
                           <div
                             key={`${result.type}-${result.data.id}`}
                             className="p-2 hover:bg-white/5 rounded-lg transition-colors"
@@ -798,16 +821,30 @@ export default function Dashboard() {
                             <div className="flex items-center gap-2">
                               {result.type === "user" ? (
                                 <User className="w-3 h-3 text-blue-400" />
+                              ) : result.type === "shop" ? (
+                                <Store className="w-3 h-3 text-purple-400" />
                               ) : (
                                 <Package className="w-3 h-3 text-green-400" />
                               )}
-                              <div>
+                              <div className="flex-1">
                                 <p className="text-white font-medium text-xs">
                                   {result.type === "user"
                                     ? (result.data as UserData).displayName
+                                    : result.type === "shop"
+                                    ? (result.data as ShopData).name
                                     : (result.data as ProductData).productName}
                                 </p>
+                                <p className="text-gray-400 text-xs font-mono">
+                                  ID: {result.data.id}
+                                </p>
                               </div>
+                              <span className="text-xs text-gray-400 capitalize">
+                                {result.type === "user"
+                                  ? "Kullanıcı"
+                                  : result.type === "shop"
+                                  ? "Mağaza"
+                                  : "Ürün"}
+                              </span>
                             </div>
                           </div>
                         ))}
@@ -836,6 +873,19 @@ export default function Dashboard() {
                   <FileText className="w-4 h-4 text-blue-400 group-hover:scale-110 transition-transform" />
                   <h4 className="font-semibold text-white text-sm">
                     Ürün Başvuruları
+                  </h4>
+                </div>
+                <p className="text-xs text-gray-300">Bekleyen başvurular</p>
+              </button>
+
+              <button
+                onClick={() => handleNavigation("editproductapplications")}
+                className="p-3 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-lg text-left transition-colors group"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Edit2 className="w-4 h-4 text-blue-400 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-white text-sm">
+                    Ürün Güncellemeler
                   </h4>
                 </div>
                 <p className="text-xs text-gray-300">Bekleyen başvurular</p>

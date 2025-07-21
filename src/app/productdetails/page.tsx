@@ -1,13 +1,12 @@
 "use client";
 
+import React from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import {
   ArrowLeft,
   Package,
-  Edit,
   X,
-  Check,
   Loader2,
   Image as ImageIcon,
   Store,
@@ -19,6 +18,8 @@ import {
   Badge,
   ExternalLink,
   User,
+  Edit,
+  Check,
   Search,
   Grid,
   List,
@@ -27,6 +28,9 @@ import {
   Ruler,
   Info,
   Zap,
+  Copy,
+  Database,
+  ArrowRight,
 } from "lucide-react";
 import {
   useState,
@@ -46,15 +50,20 @@ import {
   orderBy,
   limit,
   startAfter,
-  updateDoc,
   Timestamp,
   DocumentSnapshot,
+  updateDoc,
 } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { toast } from "react-hot-toast";
 import BoostModal from "@/components/boostproduct";
+import {
+  categories,
+  subcategoriesMap,
+  subSubcategoriesMap,
+} from "@/constants/productData";
 
 // Types
 interface ProductData {
@@ -146,12 +155,6 @@ interface ReviewData {
   verified?: boolean;
 }
 
-interface EditableField {
-  field: keyof ProductData;
-  value: string | number | boolean;
-  isEditing: boolean;
-}
-
 type ViewMode = "grid" | "list";
 type FilterStatus = "all" | "active" | "sold" | "featured";
 type SortBy = "newest" | "oldest" | "price_high" | "price_low" | "popular";
@@ -178,16 +181,21 @@ function ProductDetailsContent() {
     "all"
   );
 
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categoryModalType, setCategoryModalType] = useState<
+    "category" | "subcategory" | "subsubcategory"
+  >("category");
+  const [categoryModalField, setCategoryModalField] = useState<string>("");
+
   const [relatedProducts, setRelatedProducts] = useState<ProductData[]>([]);
   const [reviews, setReviews] = useState<ReviewData[]>([]);
   const [loading, setLoading] = useState(true);
   const [relatedLoading, setRelatedLoading] = useState(false);
   const [reviewsLoading, setReviewsLoading] = useState(false);
-  const [editableFields, setEditableFields] = useState<EditableField[]>([]);
-  const [isSaving, setIsSaving] = useState(false);
 
   const [showBoostModal, setShowBoostModal] = useState(false);
   const [isBoostLoading, setIsBoostLoading] = useState(false);
+  const [savingField, setSavingField] = useState<string | null>(null);
 
   // Image Gallery State
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -213,49 +221,6 @@ function ProductDetailsContent() {
     }
     return product?.imageUrls || [];
   }, [product, selectedColor]);
-
-  // Initialize editable fields
-  const initializeEditableFields = useCallback((productData: ProductData) => {
-    setEditableFields([
-      {
-        field: "productName",
-        value: productData.productName || "",
-        isEditing: false,
-      },
-      {
-        field: "brandModel",
-        value: productData.brandModel || "",
-        isEditing: false,
-      },
-      { field: "price", value: productData.price || 0, isEditing: false },
-      {
-        field: "category",
-        value: productData.category || "",
-        isEditing: false,
-      },
-      {
-        field: "subcategory",
-        value: productData.subcategory || "",
-        isEditing: false,
-      },
-      {
-        field: "condition",
-        value: productData.condition || "",
-        isEditing: false,
-      },
-      {
-        field: "description",
-        value: productData.description || "",
-        isEditing: false,
-      },
-      { field: "stock", value: productData.stock || 0, isEditing: false },
-      {
-        field: "warranty",
-        value: productData.warranty || "",
-        isEditing: false,
-      },
-    ]);
-  }, []);
 
   // Fetch product data
   const fetchProductData = useCallback(async () => {
@@ -288,7 +253,6 @@ function ProductDetailsContent() {
         ...productDoc.data(),
       } as ProductData;
       setProduct(productData);
-      initializeEditableFields(productData);
 
       // Fetch shop data if it's a shop product
       if (isShopProduct && productData.shopId) {
@@ -307,7 +271,313 @@ function ProductDetailsContent() {
     } finally {
       setLoading(false);
     }
-  }, [productId, router, initializeEditableFields]);
+  }, [productId, router]);
+
+  const CategorySelectionModal = ({
+    isOpen,
+    onClose,
+    fieldType,
+    currentValue,
+    onSave,
+    currentCategory,
+    currentSubcategory,
+  }: {
+    isOpen: boolean;
+    onClose: () => void;
+    fieldType: "category" | "subcategory" | "subsubcategory";
+    currentValue: string;
+    onSave: (values: {
+      category?: string;
+      subcategory?: string;
+      subsubcategory?: string;
+    }) => void;
+    currentCategory?: string;
+    currentSubcategory?: string;
+  }) => {
+    const [flowState, setFlowState] = useState(() => {
+      if (fieldType === "subsubcategory") {
+        return {
+          step: "subsubcategory" as const,
+          selectedCategory: currentCategory || "",
+          selectedSubcategory: currentSubcategory || "",
+          selectedSubsubcategory: currentValue,
+        };
+      } else if (fieldType === "subcategory") {
+        return {
+          step: "subcategory" as const,
+          selectedCategory: currentCategory || "",
+          selectedSubcategory: currentValue,
+          selectedSubsubcategory: "",
+        };
+      } else {
+        return {
+          step: "category" as const,
+          selectedCategory: currentValue,
+          selectedSubcategory: "",
+          selectedSubsubcategory: "",
+        };
+      }
+    });
+
+    // Reset flow state when modal opens
+    useEffect(() => {
+      if (isOpen) {
+        if (fieldType === "subsubcategory") {
+          setFlowState({
+            step: "subsubcategory",
+            selectedCategory: currentCategory || "",
+            selectedSubcategory: currentSubcategory || "",
+            selectedSubsubcategory: currentValue,
+          });
+        } else if (fieldType === "subcategory") {
+          setFlowState({
+            step: "subcategory",
+            selectedCategory: currentCategory || "",
+            selectedSubcategory: currentValue,
+            selectedSubsubcategory: "",
+          });
+        } else {
+          setFlowState({
+            step: "category",
+            selectedCategory: currentValue,
+            selectedSubcategory: "",
+            selectedSubsubcategory: "",
+          });
+        }
+      }
+    }, [isOpen, fieldType, currentValue, currentCategory, currentSubcategory]);
+
+    if (!isOpen) return null;
+
+    const getOptions = () => {
+      switch (flowState.step) {
+        case "category":
+          return categories.map((cat) => cat.key);
+        case "subcategory":
+          return flowState.selectedCategory
+            ? subcategoriesMap[flowState.selectedCategory] || []
+            : [];
+        case "subsubcategory":
+          return flowState.selectedCategory && flowState.selectedSubcategory
+            ? subSubcategoriesMap[flowState.selectedCategory]?.[
+                flowState.selectedSubcategory
+              ] || []
+            : [];
+        default:
+          return [];
+      }
+    };
+
+    const options = getOptions();
+
+    const handleNext = () => {
+      if (flowState.step === "category") {
+        setFlowState((prev) => ({ ...prev, step: "subcategory" }));
+      } else if (flowState.step === "subcategory") {
+        setFlowState((prev) => ({ ...prev, step: "subsubcategory" }));
+      }
+    };
+
+    const handleBack = () => {
+      if (flowState.step === "subsubcategory") {
+        setFlowState((prev) => ({ ...prev, step: "subcategory" }));
+      } else if (flowState.step === "subcategory") {
+        setFlowState((prev) => ({ ...prev, step: "category" }));
+      }
+    };
+
+    const handleSave = () => {
+      const updates: {
+        category?: string;
+        subcategory?: string;
+        subsubcategory?: string;
+      } = {};
+
+      if (fieldType === "category") {
+        updates.category = flowState.selectedCategory;
+        updates.subcategory = flowState.selectedSubcategory;
+        updates.subsubcategory = flowState.selectedSubsubcategory;
+      } else if (fieldType === "subcategory") {
+        updates.subcategory = flowState.selectedSubcategory;
+        updates.subsubcategory = flowState.selectedSubsubcategory;
+      } else {
+        updates.subsubcategory = flowState.selectedSubsubcategory;
+      }
+
+      onSave(updates);
+      onClose();
+    };
+
+    const canProceed = () => {
+      switch (flowState.step) {
+        case "category":
+          return flowState.selectedCategory !== "";
+        case "subcategory":
+          return flowState.selectedSubcategory !== "";
+        case "subsubcategory":
+          return flowState.selectedSubsubcategory !== "";
+        default:
+          return false;
+      }
+    };
+
+    const isLastStep = () => {
+      if (fieldType === "subsubcategory") return true;
+      if (fieldType === "subcategory")
+        return flowState.step === "subsubcategory";
+      return flowState.step === "subsubcategory";
+    };
+
+    const getCurrentValue = () => {
+      switch (flowState.step) {
+        case "category":
+          return flowState.selectedCategory;
+        case "subcategory":
+          return flowState.selectedSubcategory;
+        case "subsubcategory":
+          return flowState.selectedSubsubcategory;
+        default:
+          return "";
+      }
+    };
+
+    const setCurrentValue = (value: string) => {
+      switch (flowState.step) {
+        case "category":
+          setFlowState((prev) => ({
+            ...prev,
+            selectedCategory: value,
+            selectedSubcategory: "",
+            selectedSubsubcategory: "",
+          }));
+          break;
+        case "subcategory":
+          setFlowState((prev) => ({
+            ...prev,
+            selectedSubcategory: value,
+            selectedSubsubcategory: "",
+          }));
+          break;
+        case "subsubcategory":
+          setFlowState((prev) => ({ ...prev, selectedSubsubcategory: value }));
+          break;
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+        <div className="relative bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 max-h-[80vh] overflow-y-auto">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-white">
+                {flowState.step === "category" && "Kategori Seç"}
+                {flowState.step === "subcategory" && "Alt Kategori Seç"}
+                {flowState.step === "subsubcategory" && "Alt Alt Kategori Seç"}
+              </h3>
+              {/* Show progress breadcrumb */}
+              <div className="text-sm text-gray-400 mt-1">
+                {flowState.step === "subcategory" &&
+                  flowState.selectedCategory && (
+                    <span>{flowState.selectedCategory}</span>
+                  )}
+                {flowState.step === "subsubcategory" &&
+                  flowState.selectedCategory &&
+                  flowState.selectedSubcategory && (
+                    <span>
+                      {flowState.selectedCategory} →{" "}
+                      {flowState.selectedSubcategory}
+                    </span>
+                  )}
+              </div>
+            </div>
+            <button onClick={onClose} className="p-1 hover:bg-white/10 rounded">
+              <X className="w-5 h-5 text-gray-400" />
+            </button>
+          </div>
+
+          {/* Warning message for cascading changes */}
+          {fieldType === "category" && flowState.step === "category" && (
+            <div className="mb-4 p-3 bg-yellow-600/20 border border-yellow-600/30 rounded-lg">
+              <p className="text-yellow-300 text-sm">
+                ⚠️ Kategori değiştirildiğinde alt kategori ve alt alt kategori
+                de seçilmelidir.
+              </p>
+            </div>
+          )}
+          {fieldType === "subcategory" && flowState.step === "subcategory" && (
+            <div className="mb-4 p-3 bg-yellow-600/20 border border-yellow-600/30 rounded-lg">
+              <p className="text-yellow-300 text-sm">
+                ⚠️ Alt kategori değiştirildiğinde alt alt kategori de
+                seçilmelidir.
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
+            {options.map((option) => (
+              <button
+                key={option}
+                onClick={() => setCurrentValue(option)}
+                className={`w-full text-left p-3 rounded-lg transition-colors ${
+                  getCurrentValue() === option
+                    ? "bg-blue-600 text-white"
+                    : "bg-white/10 text-gray-300 hover:bg-white/15"
+                }`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+
+          {options.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-gray-400">Bu kategoride seçenek bulunmuyor</p>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            {/* Back button */}
+            {flowState.step !== "category" &&
+              fieldType !== "subsubcategory" && (
+                <button
+                  onClick={handleBack}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                >
+                  Geri
+                </button>
+              )}
+
+            {/* Next/Save button */}
+            {isLastStep() ? (
+              <button
+                onClick={handleSave}
+                disabled={!canProceed()}
+                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 text-white rounded-lg transition-colors"
+              >
+                Kaydet
+              </button>
+            ) : (
+              <button
+                onClick={handleNext}
+                disabled={!canProceed()}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-white rounded-lg transition-colors"
+              >
+                İleri
+              </button>
+            )}
+
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+            >
+              İptal
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const handleBoostProduct = async (durationInMinutes: number) => {
     if (!product || !productId) return;
@@ -450,6 +720,57 @@ function ProductDetailsContent() {
       toast.error(errorMessage);
     } finally {
       setIsBoostLoading(false);
+    }
+  };
+
+  const saveIndividualField = async (
+    field: string,
+    value: string | number | boolean
+  ) => {
+    if (!productId) throw new Error("Product ID not found");
+
+    // Determine which collection to update
+    const collectionName = product?.shopId ? "shop_products" : "products";
+
+    // Update the specific field in Firestore
+    const productRef = doc(db, collectionName, productId);
+    await updateDoc(productRef, {
+      [field]: value,
+      updatedAt: Timestamp.now(),
+    });
+
+    // Update local state
+    setProduct((prev) =>
+      prev ? { ...prev, [field]: value, updatedAt: Timestamp.now() } : null
+    );
+  };
+
+  const handleCategorySave = async (values: {
+    category?: string;
+    subcategory?: string;
+    subsubcategory?: string;
+  }) => {
+    try {
+      setSavingField(categoryModalField);
+
+      // Apply all the changes
+      if (values.category !== undefined) {
+        await saveIndividualField("category", values.category);
+      }
+      if (values.subcategory !== undefined) {
+        await saveIndividualField("subcategory", values.subcategory);
+      }
+      if (values.subsubcategory !== undefined) {
+        await saveIndividualField("subsubcategory", values.subsubcategory);
+      }
+
+      setShowCategoryModal(false);
+      toast.success(`Kategori bilgileri başarıyla güncellendi!`);
+    } catch (error) {
+      console.error("Error saving category fields:", error);
+      toast.error(`Kategori bilgileri güncellenirken hata oluştu`);
+    } finally {
+      setSavingField(null);
     }
   };
 
@@ -610,70 +931,6 @@ function ProductDetailsContent() {
     return questions.filter((question) => question.answered);
   }, [questions, questionFilter]);
 
-  // Handle field editing
-  const handleFieldEdit = (field: keyof ProductData) => {
-    setEditableFields((prev) =>
-      prev.map((item) =>
-        item.field === field ? { ...item, isEditing: true } : item
-      )
-    );
-  };
-
-  const handleFieldChange = (
-    field: keyof ProductData,
-    value: string | number | boolean
-  ) => {
-    setEditableFields((prev) =>
-      prev.map((item) => (item.field === field ? { ...item, value } : item))
-    );
-  };
-
-  const handleFieldSave = async (field: keyof ProductData) => {
-    if (!productId || !product) return;
-
-    const fieldData = editableFields.find((item) => item.field === field);
-    if (!fieldData) return;
-
-    try {
-      setIsSaving(true);
-
-      // Determine which collection to update
-      const collection_name = product.shopId ? "shop_products" : "products";
-
-      await updateDoc(doc(db, collection_name, productId), {
-        [field]: fieldData.value,
-        updatedAt: new Date(),
-      });
-
-      setProduct((prev) =>
-        prev ? { ...prev, [field]: fieldData.value } : null
-      );
-      setEditableFields((prev) =>
-        prev.map((item) =>
-          item.field === field ? { ...item, isEditing: false } : item
-        )
-      );
-
-      toast.success("Bilgi başarıyla güncellendi");
-    } catch (error) {
-      console.error("Error updating field:", error);
-      toast.error("Güncelleme sırasında hata oluştu");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleFieldCancel = (field: keyof ProductData) => {
-    const originalValue = product?.[field];
-    setEditableFields((prev) =>
-      prev.map((item) =>
-        item.field === field
-          ? { ...item, value: String(originalValue || ""), isEditing: false }
-          : item
-      )
-    );
-  };
-
   // Handle color selection
   const handleColorSelect = (color: string) => {
     if (selectedColor === color) {
@@ -797,83 +1054,507 @@ function ProductDetailsContent() {
     );
   }
 
-  const EditableField = ({
-    field,
-    label,
-    type = "text",
-    multiline = false,
+  // Add this new component after the EditableField component definition:
+
+  const AllFieldsDisplay = ({
+    product,
+    onFieldSave,
+    savingField,
+    setSavingField,
   }: {
-    field: keyof ProductData;
-    label: string;
-    type?: string;
-    multiline?: boolean;
+    product: ProductData;
+    onFieldSave: (
+      field: string,
+      value: string | number | boolean
+    ) => Promise<void>;
+    savingField: string | null;
+    setSavingField: (field: string | null) => void;
   }) => {
-    const fieldData = editableFields.find((item) => item.field === field);
-    if (!fieldData) return null;
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
+    const [editingField, setEditingField] = useState<string | null>(null);
+    const [editValue, setEditValue] = useState<string>("");
+
+    // Function to format field values based on their type
+    const formatFieldValue = (
+      value: unknown
+    ): { display: string; type: string } => {
+      if (value === null) return { display: "null", type: "null" };
+      if (value === undefined)
+        return { display: "undefined", type: "undefined" };
+
+      const type = typeof value;
+
+      switch (type) {
+        case "string":
+          return { display: value as string, type: "string" };
+        case "number":
+          return { display: value.toString(), type: "number" };
+        case "boolean":
+          return { display: value.toString(), type: "boolean" };
+        case "object":
+          if (value instanceof Date) {
+            return { display: value.toLocaleString("tr-TR"), type: "date" };
+          }
+          if (
+            value &&
+            typeof value === "object" &&
+            value !== null &&
+            "toDate" in value &&
+            typeof (value as { toDate: () => Date }).toDate === "function"
+          ) {
+            // Firestore Timestamp
+            return {
+              display: (value as { toDate: () => Date })
+                .toDate()
+                .toLocaleString("tr-TR"),
+              type: "timestamp",
+            };
+          }
+          if (Array.isArray(value)) {
+            return { display: JSON.stringify(value), type: "array" };
+          }
+          if (value && typeof value === "object") {
+            return { display: JSON.stringify(value), type: "object" };
+          }
+          return { display: JSON.stringify(value), type: "object" };
+        default:
+          return { display: String(value), type: type };
+      }
+    };
+
+    // Function to get color based on type
+    const getTypeColor = (type: string): string => {
+      switch (type) {
+        case "string":
+          return "text-green-400";
+        case "number":
+          return "text-blue-400";
+        case "boolean":
+          return "text-purple-400";
+        case "timestamp":
+          return "text-yellow-400";
+        case "date":
+          return "text-yellow-400";
+        case "array":
+          return "text-orange-400";
+        case "object":
+          return "text-pink-400";
+        case "null":
+          return "text-gray-500";
+        case "undefined":
+          return "text-gray-500";
+        default:
+          return "text-white";
+      }
+    };
+
+    // Get all fields from the product object
+    const getAllFields = () => {
+      const fields: Array<{
+        key: string;
+        value: unknown;
+        type: string;
+        editable: boolean;
+      }> = [];
+
+      // Define non-editable fields
+      const nonEditableFields = [
+        "id",
+        "createdAt",
+        "updatedAt",
+        "userId",
+        "shopId",
+      ];
+
+      // Convert the product object to a plain object to get all fields
+      const productData = { ...product } as Record<string, unknown>;
+
+      Object.keys(productData).forEach((key) => {
+        const value = productData[key];
+        const { type } = formatFieldValue(value);
+        const editable = !nonEditableFields.includes(key);
+        fields.push({ key, value, type, editable });
+      });
+
+      // Sort fields alphabetically
+      return fields.sort((a, b) => a.key.localeCompare(b.key));
+    };
+
+    // Filter fields based on search term
+    const filteredFields = useMemo(() => {
+      const allFields = getAllFields();
+
+      if (!searchTerm.trim()) {
+        return allFields;
+      }
+
+      const searchLower = searchTerm.toLowerCase();
+      return allFields.filter(
+        (field) =>
+          field.key.toLowerCase().includes(searchLower) ||
+          formatFieldValue(field.value)
+            .display.toLowerCase()
+            .includes(searchLower)
+      );
+    }, [product, searchTerm]);
+
+    // Start editing a field
+    const startEditing = (fieldKey: string, currentValue: unknown) => {
+      // Check if this is a category-related field
+      if (
+        fieldKey === "category" ||
+        fieldKey === "subcategory" ||
+        fieldKey === "subsubcategory"
+      ) {
+        setCategoryModalType(
+          fieldKey as "category" | "subcategory" | "subsubcategory"
+        );
+        setCategoryModalField(fieldKey);
+        setShowCategoryModal(true);
+        return;
+      }
+
+      // For other fields, use the normal editing
+      setEditingField(fieldKey);
+      const { display } = formatFieldValue(currentValue);
+      setEditValue(display);
+    };
+
+    // Cancel editing
+    const cancelEditing = () => {
+      setEditingField(null);
+      setEditValue("");
+    };
+
+    // Save field changes
+    const saveField = async (fieldKey: string, type: string) => {
+      try {
+        setSavingField(fieldKey);
+
+        let convertedValue: string | number | boolean = editValue;
+
+        // Convert the string input to the appropriate type
+        switch (type) {
+          case "number":
+            convertedValue = editValue === "" ? 0 : Number(editValue);
+            if (isNaN(convertedValue)) {
+              toast.error("Geçersiz sayı formatı");
+              return;
+            }
+            break;
+          case "boolean":
+            convertedValue = editValue.toLowerCase() === "true";
+            break;
+          case "array":
+            try {
+              convertedValue = JSON.parse(editValue);
+              if (!Array.isArray(convertedValue)) {
+                convertedValue = [editValue] as unknown as
+                  | string
+                  | number
+                  | boolean;
+              }
+            } catch {
+              toast.error("Geçersiz JSON array formatı");
+              return;
+            }
+            break;
+          case "object":
+            try {
+              convertedValue = JSON.parse(editValue);
+            } catch {
+              toast.error("Geçersiz JSON object formatı");
+              return;
+            }
+            break;
+          default:
+            convertedValue = editValue;
+        }
+
+        await onFieldSave(fieldKey, convertedValue);
+        setEditingField(null);
+        setEditValue("");
+        toast.success(`${fieldKey} başarıyla güncellendi!`);
+      } catch (error) {
+        console.error("Error saving field:", error);
+        toast.error(`${fieldKey} güncellenirken hata oluştu`);
+      } finally {
+        setSavingField(null);
+      }
+    };
+
+    if (!isExpanded) {
+      return (
+        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+          <button
+            onClick={() => setIsExpanded(true)}
+            className="flex items-center justify-between w-full text-left"
+          >
+            <div className="flex items-center gap-2">
+              <Database className="w-5 h-5 text-blue-400" />
+              <h3 className="text-lg font-semibold text-white">
+                Tüm Ürün Alanları
+              </h3>
+              <span className="text-sm text-gray-400">
+                ({getAllFields().length} alan)
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-gray-400">
+              <span className="text-sm">Genişlet</span>
+              <ArrowRight className="w-4 h-4" />
+            </div>
+          </button>
+        </div>
+      );
+    }
 
     return (
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-300">{label}</label>
-        <div className="flex items-start gap-2">
-          {fieldData.isEditing ? (
-            <>
-              {multiline ? (
-                <textarea
-                  value={fieldData.value.toString()}
-                  onChange={(e) => handleFieldChange(field, e.target.value)}
-                  className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400 min-h-[100px] resize-vertical"
-                  disabled={isSaving}
-                  autoFocus
-                />
-              ) : (
-                <input
-                  type={type}
-                  value={fieldData.value.toString()}
-                  onChange={(e) =>
-                    handleFieldChange(
-                      field,
-                      type === "number"
-                        ? Number(e.target.value)
-                        : e.target.value
-                    )
-                  }
-                  className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
-                  disabled={isSaving}
-                  autoFocus
-                />
-              )}
-              <button
-                onClick={() => handleFieldSave(field)}
-                disabled={isSaving}
-                className="p-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
+      <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Database className="w-5 h-5 text-blue-400" />
+            <h3 className="text-lg font-semibold text-white">
+              Tüm Ürün Alanları
+            </h3>
+            <span className="text-sm text-gray-400">
+              ({filteredFields.length} alan)
+            </span>
+          </div>
+          <button
+            onClick={() => setIsExpanded(false)}
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Alan adı veya değer ara..."
+            className="w-full pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* Fields List */}
+        <div className="space-y-2 max-h-[600px] overflow-y-auto">
+          {filteredFields.map((field) => {
+            const { display, type } = formatFieldValue(field.value);
+            const isEditing = editingField === field.key;
+            const isSaving = savingField === field.key;
+            const canEdit = field.editable && type !== "timestamp";
+
+            return (
+              <div
+                key={field.key}
+                className={`border rounded-lg p-2 transition-all group ${
+                  field.editable
+                    ? "border-white/10 bg-white/5 hover:border-white/20"
+                    : "border-gray-600/50 bg-gray-800/20"
+                } ${isEditing ? "border-blue-500/50 bg-blue-600/10" : ""}`}
               >
-                {isSaving ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Check className="w-4 h-4" />
-                )}
-              </button>
-              <button
-                onClick={() => handleFieldCancel(field)}
-                disabled={isSaving}
-                className="p-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="flex-1 text-white">
-                {fieldData.value?.toString() || "Belirtilmemiş"}
-              </span>
-              <button
-                onClick={() => handleFieldEdit(field)}
-                className="p-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex-shrink-0"
-              >
-                <Edit className="w-4 h-4" />
-              </button>
-            </>
-          )}
+                <div className="flex items-start gap-3">
+                  <div className="flex-1">
+                    {/* Field Name */}
+                    <div className="flex items-center gap-2 mb-0">
+                      <span className="font-mono font-semibold text-blue-300">
+                        {field.key}
+                      </span>
+                      <span
+                        className={`text-xs px-2 py-1 rounded ${getTypeColor(
+                          type
+                        )} bg-white/10`}
+                      >
+                        {type}
+                      </span>
+                      {!field.editable && (
+                        <span className="text-xs px-2 py-1 rounded bg-gray-600/50 text-gray-400">
+                          Salt Okunur
+                        </span>
+                      )}
+                      {isEditing && (
+                        <span className="text-xs px-2 py-1 rounded bg-blue-600/50 text-blue-300">
+                          Düzenleniyor
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Field Value */}
+                    <div className="ml-1">
+                      {isEditing ? (
+                        <div className="space-y-2">
+                          {type === "boolean" ? (
+                            <select
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="w-full p-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              disabled={isSaving}
+                            >
+                              <option value="true">true</option>
+                              <option value="false">false</option>
+                            </select>
+                          ) : type === "array" || type === "object" ? (
+                            <textarea
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="w-full p-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                              rows={4}
+                              placeholder="JSON formatında giriniz"
+                              disabled={isSaving}
+                            />
+                          ) : (
+                            <input
+                              type={type === "number" ? "number" : "text"}
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="w-full p-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              disabled={isSaving}
+                            />
+                          )}
+
+                          {/* Edit Actions */}
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => saveField(field.key, type)}
+                              disabled={isSaving}
+                              className="px-3 py-1 bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 text-white rounded text-sm transition-colors flex items-center gap-1"
+                            >
+                              {isSaving ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Check className="w-3 h-3" />
+                              )}
+                              Kaydet
+                            </button>
+                            <button
+                              onClick={cancelEditing}
+                              disabled={isSaving}
+                              className="px-3 py-1 bg-red-600 hover:bg-red-700 disabled:bg-red-600/50 text-white rounded text-sm transition-colors flex items-center gap-1"
+                            >
+                              <X className="w-3 h-3" />
+                              İptal
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`font-mono text-sm ${getTypeColor(
+                              type
+                            )} flex-1`}
+                          >
+                            {type === "array" || type === "object" ? (
+                              <details className="group">
+                                <summary className="cursor-pointer hover:text-white transition-colors">
+                                  {type === "array"
+                                    ? `Array(${
+                                        Array.isArray(field.value)
+                                          ? (field.value as unknown as string[])
+                                              .length
+                                          : 0
+                                      })`
+                                    : `Object(${
+                                        field.value &&
+                                        typeof field.value === "object"
+                                          ? Object.keys(field.value).length
+                                          : 0
+                                      })`}
+                                </summary>
+                                <div className="mt-2 ml-4 p-3 bg-black/20 rounded border-l-2 border-white/20">
+                                  <pre className="text-xs overflow-x-auto whitespace-pre-wrap">
+                                    {JSON.stringify(field.value, null, 2)}
+                                  </pre>
+                                </div>
+                              </details>
+                            ) : (
+                              display
+                            )}
+                          </span>
+                          {canEdit && (
+                            <button
+                              onClick={() =>
+                                startEditing(field.key, field.value)
+                              }
+                              className="p-1 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100"
+                              title={
+                                [
+                                  "category",
+                                  "subcategory",
+                                  "subsubcategory",
+                                ].includes(field.key)
+                                  ? "Seçeneklerden seç"
+                                  : "Düzenle"
+                              }
+                            >
+                              {[
+                                "category",
+                                "subcategory",
+                                "subsubcategory",
+                              ].includes(field.key) ? (
+                                <Grid className="w-3 h-3 text-blue-400" />
+                              ) : (
+                                <Edit className="w-3 h-3 text-blue-400" />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Copy Button */}
+                  {!isEditing && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(
+                          type === "array" || type === "object"
+                            ? JSON.stringify(field.value, null, 2)
+                            : String(field.value)
+                        );
+                        toast.success("Kopyalandı!");
+                      }}
+                      className="p-1 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100"
+                      title="Değeri kopyala"
+                    >
+                      <Copy className="w-4 h-4 text-gray-400" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* No Results */}
+        {filteredFields.length === 0 && (
+          <div className="text-center py-8">
+            <Search className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+            <p className="text-gray-400">
+              Arama kriterinize uygun alan bulunamadı
+            </p>
+          </div>
+        )}
+
+        {/* Summary */}
+        <div className="mt-4 pt-4 border-t border-white/20">
+          <div className="flex flex-wrap gap-4 text-sm text-gray-400">
+            <span>Toplam: {getAllFields().length} alan</span>
+            <span>Gösterilen: {filteredFields.length} alan</span>
+            <span>
+              Düzenlenebilir: {getAllFields().filter((f) => f.editable).length}{" "}
+              alan
+            </span>
+            <span>Ürün ID: {product.id}</span>
+            {editingField && (
+              <span className="text-blue-400">Düzenlenen: {editingField}</span>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -1188,38 +1869,12 @@ function ProductDetailsContent() {
 
           {/* Product Information */}
           <div className="space-y-6">
-            {/* Basic Info */}
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
-              <div className="space-y-4">
-                <EditableField field="productName" label="Ürün Adı" />
-                <EditableField field="brandModel" label="Marka/Model" />
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <EditableField field="price" label="Fiyat" type="number" />
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-300">
-                      Para Birimi
-                    </label>
-                    <span className="block text-white">
-                      {product.currency || "TRY"}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <EditableField field="category" label="Kategori" />
-                  <EditableField field="subcategory" label="Alt Kategori" />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <EditableField field="condition" label="Durum" />
-                  <EditableField field="stock" label="Stok" type="number" />
-                </div>
-
-                <EditableField field="description" label="Açıklama" multiline />
-                <EditableField field="warranty" label="Garanti" />
-              </div>
-            </div>
+            <AllFieldsDisplay
+              product={product}
+              onFieldSave={saveIndividualField}
+              savingField={savingField}
+              setSavingField={setSavingField}
+            />
 
             {/* Statistics */}
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
@@ -1825,6 +2480,17 @@ function ProductDetailsContent() {
         onBoost={handleBoostProduct}
         productName={product.productName || "Ürün"}
         isLoading={isBoostLoading}
+      />
+      <CategorySelectionModal
+        isOpen={showCategoryModal}
+        onClose={() => setShowCategoryModal(false)}
+        fieldType={categoryModalType}
+        currentValue={String(
+          product[categoryModalField as keyof ProductData] || ""
+        )}
+        onSave={handleCategorySave}
+        currentCategory={product.category}
+        currentSubcategory={product.subcategory}
       />
     </div>
   );

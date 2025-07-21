@@ -88,44 +88,49 @@ export default function ProductApplications() {
 
   const approveApplication = async (application: ProductApplication) => {
     if (processingIds.has(application.id)) return;
-
-    setProcessingIds((prev) => new Set(prev).add(application.id));
-
+    setProcessingIds(prev => new Set(prev).add(application.id));
+  
     try {
-      const data = { ...application };
-
-      // Mark for Cloud Function sync and initialize relatedProductIds
-      data.needsSync = true;
-      data.updatedAt = Timestamp.now();
-      data.relatedProductIds = [];
-
-      // Remove the id field since we'll use ilan_no as document ID
-      delete (data as unknown as { id?: string }).id;
-
-      // Determine target collection based on shopId
-      const isShopProduct = data.shopId && data.shopId.trim() !== "";
+      // Copy all application fields except the client‑only `id`
+      const { id, ...rest } = application;
+  
+      // Ensure we have a valid string ID to write under:
+      //   prefer ilan_no, otherwise fall back to the original Firestore doc ID
+      const newDocId = typeof rest.ilan_no === "string" && rest.ilan_no.trim() !== ""
+        ? rest.ilan_no
+        : id;
+  
+      // Build the payload
+      const payload = {
+        ...rest,
+        needsSync: true,
+        updatedAt: Timestamp.now(),
+        relatedProductIds: [],
+      };
+  
+      // Determine collection
+      const isShopProduct = rest.shopId && rest.shopId.trim() !== "";
       const collectionName = isShopProduct ? "shop_products" : "products";
-
-      // Write to target collection
-      await setDoc(doc(db, collectionName, data.ilan_no), data);
-
-      // Remove from applications
-      await deleteDoc(doc(db, "product_applications", application.id));
-
-      // Show success notification
+  
+      // Write into the target collection under newDocId
+      await setDoc(doc(db, collectionName, newDocId), payload);
+  
+      // Remove the application
+      await deleteDoc(doc(db, "product_applications", id));
+  
       showNotification("Ürün başarıyla onaylandı!");
     } catch (error) {
       console.error("Onaylama hatası:", error);
       showNotification("Ürün onaylanırken hata oluştu");
     } finally {
-      setProcessingIds((prev) => {
+      setProcessingIds(prev => {
         const newSet = new Set(prev);
         newSet.delete(application.id);
         return newSet;
       });
     }
   };
-
+  
   const rejectApplication = async (application: ProductApplication) => {
     if (processingIds.has(application.id)) return;
 

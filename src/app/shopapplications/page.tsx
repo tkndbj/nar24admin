@@ -17,6 +17,8 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
+  X, // ADD THIS
+  MessageSquare,
 } from "lucide-react";
 import {
   collection,
@@ -45,6 +47,99 @@ interface ShopApplication {
   createdAt: Timestamp;
 }
 
+interface RejectionModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+  shopName: string;
+  isLoading: boolean;
+}
+
+const RejectionModal: React.FC<RejectionModalProps> = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  shopName,
+  isLoading,
+}) => {
+  const [reason, setReason] = useState("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (reason.trim()) {
+      onConfirm(reason.trim());
+    }
+  };
+
+  const handleClose = () => {
+    setReason("");
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+      <div className="bg-slate-900 border border-white/20 rounded-xl max-w-md w-full">
+        <div className="flex items-center justify-between p-4 border-b border-white/20">
+          <h3 className="text-lg font-bold text-white">Reddetme Nedeni</h3>
+          <button
+            onClick={handleClose}
+            disabled={isLoading}
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <X className="w-5 h-5 text-white" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4">
+          <p className="text-sm text-gray-300 mb-4">
+            <strong>{shopName}</strong> mağaza başvurusunu neden
+            reddediyorsunuz?
+          </p>
+
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Reddetme nedeninizi buraya yazın..."
+            className="w-full h-32 px-3 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-red-500"
+            disabled={isLoading}
+            required
+          />
+
+          <div className="flex gap-3 mt-4">
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={isLoading}
+              className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors disabled:opacity-50"
+            >
+              İptal
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading || !reason.trim()}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-600/50 text-white rounded-lg transition-colors"
+            >
+              {isLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Reddediliyor...
+                </>
+              ) : (
+                <>
+                  <MessageSquare className="w-4 h-4" />
+                  Reddet
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 export default function ShopApplicationsPage() {
   const router = useRouter();
   const [applications, setApplications] = useState<ShopApplication[]>([]);
@@ -52,6 +147,10 @@ export default function ShopApplicationsPage() {
     useState<ShopApplication | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [rejectionModal, setRejectionModal] = useState({
+    isOpen: false,
+    application: null as ShopApplication | null,
+  });
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -111,7 +210,7 @@ export default function ShopApplicationsPage() {
         .filter((url) => url.length > 0);
 
       // Create the shop
-      await addDoc(collection(db, "shops"), {
+      const shopRef = await addDoc(collection(db, "shops"), {
         ownerId: application.ownerId,
         name: application.name,
         contactNo: application.contactNo,
@@ -140,14 +239,20 @@ export default function ShopApplicationsPage() {
         verified: true,
       });
 
-      // Send notification (simplified)
+      // UPDATED: Send notification with proper fields and shopId
       await addDoc(
         collection(db, "users", application.ownerId, "notifications"),
         {
-          title: "Dükkan Başvurunuz Onaylandı",
+          type: "shop_approved",
+          shopId: shopRef.id, // ADD: The newly created shop's ID
           timestamp: serverTimestamp(),
           isRead: false,
-          type: "shop_approved",
+          // ADD: All message variants
+          message: "Tap to visit your shop.",
+          message_en: "Tap to visit your shop.",
+          message_tr: "Mağazanızı ziyaret etmek için dokunun.",
+          message_ru: "Нажмите, чтобы посетить свой магазин.",
+          // REMOVE: title field (not needed, handled by notification type)
         }
       );
 
@@ -159,31 +264,59 @@ export default function ShopApplicationsPage() {
     }
   };
 
-  const rejectApplication = async (application: ShopApplication) => {
+  const handleReject = (application: ShopApplication) => {
+    setRejectionModal({
+      isOpen: true,
+      application: application,
+    });
+  };
+
+  const handleRejectConfirm = async (rejectionReason: string) => {
+    const application = rejectionModal.application;
+    if (!application) return;
+
     setProcessing(true);
     try {
+      console.log("Rejecting shop application:", application.id);
+      console.log("Rejection reason:", rejectionReason);
+
       // Update application status
       await updateDoc(doc(db, "shopApplications", application.id), {
         status: "disapproved",
       });
 
-      // Send notification
+      // UPDATED: Send notification with rejection reason
       await addDoc(
         collection(db, "users", application.ownerId, "notifications"),
         {
-          title: "Dükkan Başvurunuz Reddedildi",
+          type: "shop_disapproved",
           timestamp: serverTimestamp(),
           isRead: false,
-          type: "shop_disapproved",
+          // ADD: All message variants with rejection reason
+          message: "Your shop application has been rejected.",
+          message_en: "Your shop application has been rejected.",
+          message_tr: "Mağaza başvurunuz reddedildi.",
+          message_ru: "Ваша заявка на магазин была отклонена.",
+          rejectionReason: rejectionReason, // ADD: Store the rejection reason
         }
       );
 
+      // Close modal and clear selection
+      setRejectionModal({ isOpen: false, application: null });
       setSelectedApplication(null);
+      alert("Başvuru başarıyla reddedildi!");
     } catch (error) {
       console.error("Error rejecting application:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Bilinmeyen hata";
+      alert(`Reddetme sırasında hata oluştu: ${errorMessage}`);
     } finally {
       setProcessing(false);
     }
+  };
+
+  const handleRejectCancel = () => {
+    setRejectionModal({ isOpen: false, application: null });
   };
 
   if (selectedApplication) {
@@ -373,7 +506,7 @@ export default function ShopApplicationsPage() {
                     Onayla
                   </button>
                   <button
-                    onClick={() => rejectApplication(selectedApplication)}
+                    onClick={() => handleReject(selectedApplication)}
                     disabled={processing}
                     className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold rounded-lg transition-all duration-200 disabled:cursor-not-allowed"
                   >
@@ -389,135 +522,145 @@ export default function ShopApplicationsPage() {
             </div>
           </main>
         </div>
+        <RejectionModal
+          isOpen={rejectionModal.isOpen}
+          onClose={handleRejectCancel}
+          onConfirm={handleRejectConfirm}
+          shopName={rejectionModal.application?.name || ""}
+          isLoading={processing}
+        />
       </ProtectedRoute>
     );
   }
 
   return (
-    <ProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-        {/* Header */}
-        <header className="backdrop-blur-xl bg-white/10 border-b border-white/20 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between py-4">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => router.back()}
-                  className="flex items-center justify-center w-8 h-8 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
-                >
-                  <ArrowLeft className="w-5 h-5 text-white" />
-                </button>
-                <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg">
-                  <Store className="w-5 h-5 text-white" />
+    <>
+      <ProtectedRoute>
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+          {/* Header */}
+          <header className="backdrop-blur-xl bg-white/10 border-b border-white/20 sticky top-0 z-50">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex items-center justify-between py-4">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => router.back()}
+                    className="flex items-center justify-center w-8 h-8 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+                  >
+                    <ArrowLeft className="w-5 h-5 text-white" />
+                  </button>
+                  <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg">
+                    <Store className="w-5 h-5 text-white" />
+                  </div>
+                  <h1 className="text-xl font-bold text-white">
+                    Dükkan Başvuruları
+                  </h1>
                 </div>
-                <h1 className="text-xl font-bold text-white">
-                  Dükkan Başvuruları
-                </h1>
+                <div className="flex items-center gap-2 px-3 py-2 bg-blue-500/20 rounded-lg">
+                  <AlertCircle className="w-4 h-4 text-blue-400" />
+                  <span className="text-sm text-blue-300">
+                    {applications.length} bekleyen başvuru
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-2 px-3 py-2 bg-blue-500/20 rounded-lg">
-                <AlertCircle className="w-4 h-4 text-blue-400" />
-                <span className="text-sm text-blue-300">
-                  {applications.length} bekleyen başvuru
+            </div>
+          </header>
+
+          {/* Main Content */}
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
+                <span className="ml-3 text-gray-300">
+                  Başvurular yükleniyor...
                 </span>
               </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
-              <span className="ml-3 text-gray-300">
-                Başvurular yükleniyor...
-              </span>
-            </div>
-          ) : applications.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="flex items-center justify-center w-16 h-16 bg-gray-500/20 rounded-full mx-auto mb-4">
-                <Store className="w-8 h-8 text-gray-400" />
+            ) : applications.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="flex items-center justify-center w-16 h-16 bg-gray-500/20 rounded-full mx-auto mb-4">
+                  <Store className="w-8 h-8 text-gray-400" />
+                </div>
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  Bekleyen başvuru yok
+                </h3>
+                <p className="text-gray-300">
+                  Şu anda onay bekleyen dükkan başvurusu bulunmuyor.
+                </p>
               </div>
-              <h3 className="text-xl font-semibold text-white mb-2">
-                Bekleyen başvuru yok
-              </h3>
-              <p className="text-gray-300">
-                Şu anda onay bekleyen dükkan başvurusu bulunmuyor.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {applications.map((application) => (
-                <div
-                  key={application.id}
-                  className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6 hover:bg-white/15 transition-all duration-200 cursor-pointer group"
-                  onClick={() => setSelectedApplication(application)}
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                      <div className="relative w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg overflow-hidden flex-shrink-0">
-                        {application.profileImageUrl ? (
-                          <Image
-                            src={application.profileImageUrl}
-                            alt={application.name}
-                            fill
-                            className="object-cover"
-                          />
-                        ) : (
-                          <div className="flex items-center justify-center h-full">
-                            <Store className="w-6 h-6 text-white" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-semibold text-white group-hover:text-blue-300 transition-colors">
-                          {application.name}
-                        </h3>
-                        <div className="flex items-center gap-4 mt-1 text-sm text-gray-300">
-                          <div className="flex items-center gap-1">
-                            <Phone className="w-4 h-4" />
-                            {application.contactNo}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4" />
-                            {formatDate(application.createdAt)}
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {(application.categories || [])
-                            .slice(0, 3)
-                            .map((category, index) => (
-                              <span
-                                key={index}
-                                className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded text-xs"
-                              >
-                                {getCategoryName(category)}
-                              </span>
-                            ))}
-                          {(application.categories || []).length > 3 && (
-                            <span className="px-2 py-1 bg-gray-500/20 text-gray-300 rounded text-xs">
-                              +{(application.categories || []).length - 3} daha
-                            </span>
+            ) : (
+              <div className="space-y-4">
+                {applications.map((application) => (
+                  <div
+                    key={application.id}
+                    className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6 hover:bg-white/15 transition-all duration-200 cursor-pointer group"
+                    onClick={() => setSelectedApplication(application)}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-4">
+                        <div className="relative w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg overflow-hidden flex-shrink-0">
+                          {application.profileImageUrl ? (
+                            <Image
+                              src={application.profileImageUrl}
+                              alt={application.name}
+                              fill
+                              className="object-cover"
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center h-full">
+                              <Store className="w-6 h-6 text-white" />
+                            </div>
                           )}
                         </div>
+                        <div className="flex-1">
+                          <h3 className="text-lg font-semibold text-white group-hover:text-blue-300 transition-colors">
+                            {application.name}
+                          </h3>
+                          <div className="flex items-center gap-4 mt-1 text-sm text-gray-300">
+                            <div className="flex items-center gap-1">
+                              <Phone className="w-4 h-4" />
+                              {application.contactNo}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Calendar className="w-4 h-4" />
+                              {formatDate(application.createdAt)}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {(application.categories || [])
+                              .slice(0, 3)
+                              .map((category, index) => (
+                                <span
+                                  key={index}
+                                  className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded text-xs"
+                                >
+                                  {getCategoryName(category)}
+                                </span>
+                              ))}
+                            {(application.categories || []).length > 3 && (
+                              <span className="px-2 py-1 bg-gray-500/20 text-gray-300 rounded text-xs">
+                                +{(application.categories || []).length - 3}{" "}
+                                daha
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2 px-3 py-1 bg-yellow-500/20 text-yellow-300 rounded-full text-sm">
-                        <AlertCircle className="w-4 h-4" />
-                        Bekliyor
-                      </div>
-                      <div className="flex items-center justify-center w-8 h-8 bg-white/10 group-hover:bg-white/20 rounded-lg transition-colors">
-                        <Eye className="w-4 h-4 text-white" />
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 px-3 py-1 bg-yellow-500/20 text-yellow-300 rounded-full text-sm">
+                          <AlertCircle className="w-4 h-4" />
+                          Bekliyor
+                        </div>
+                        <div className="flex items-center justify-center w-8 h-8 bg-white/10 group-hover:bg-white/20 rounded-lg transition-colors">
+                          <Eye className="w-4 h-4 text-white" />
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </main>
-      </div>
-    </ProtectedRoute>
+                ))}
+              </div>
+            )}
+          </main>
+        </div>
+      </ProtectedRoute>
+    </>
   );
 }

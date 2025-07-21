@@ -113,7 +113,8 @@ function SearchResultsContent() {
         const data = doc.data();
         if (
           data.displayName?.toLowerCase().includes(searchLower) ||
-          data.email?.toLowerCase().includes(searchLower)
+          data.email?.toLowerCase().includes(searchLower) ||
+          doc.id?.toLowerCase().includes(searchLower) // Added ID search
         ) {
           searchResults.push({
             id: doc.id,
@@ -130,7 +131,8 @@ function SearchResultsContent() {
         if (
           data.productName?.toLowerCase().includes(searchLower) ||
           data.description?.toLowerCase().includes(searchLower) ||
-          data.category?.toLowerCase().includes(searchLower)
+          data.category?.toLowerCase().includes(searchLower) ||
+          doc.id?.toLowerCase().includes(searchLower) // Added ID search
         ) {
           searchResults.push({
             id: doc.id,
@@ -149,7 +151,8 @@ function SearchResultsContent() {
         if (
           data.productName?.toLowerCase().includes(searchLower) ||
           data.description?.toLowerCase().includes(searchLower) ||
-          data.category?.toLowerCase().includes(searchLower)
+          data.category?.toLowerCase().includes(searchLower) ||
+          doc.id?.toLowerCase().includes(searchLower) // Added ID search
         ) {
           searchResults.push({
             id: doc.id,
@@ -167,7 +170,8 @@ function SearchResultsContent() {
           data.name?.toLowerCase().includes(searchLower) ||
           data.description?.toLowerCase().includes(searchLower) ||
           data.address?.toLowerCase().includes(searchLower) ||
-          data.category?.toLowerCase().includes(searchLower)
+          data.category?.toLowerCase().includes(searchLower) ||
+          doc.id?.toLowerCase().includes(searchLower) // Added ID search
         ) {
           searchResults.push({
             id: doc.id,
@@ -259,9 +263,7 @@ function SearchResultsContent() {
                 <span>Geri</span>
               </button>
 
-              <h1 className="text-xl font-bold text-white">
-                Arama Sonuçları
-              </h1>
+              <h1 className="text-xl font-bold text-white">Arama Sonuçları</h1>
 
               <div className="flex items-center gap-2">
                 <button
@@ -287,7 +289,7 @@ function SearchResultsContent() {
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Yeni arama yapın..."
+                  placeholder="Kullanıcı, ürün, mağaza ara (isim veya ID ile)" // Updated placeholder
                   className="w-full pl-12 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                 />
               </div>
@@ -377,138 +379,150 @@ function SearchResultsContent() {
                 : "space-y-4"
             }
           >
-         {filteredResults.map((result) => {
-  const isClickable = result.type === "user" || result.type === "shop" || result.type === "product" || result.type === "shop_product";
-  
-  const handleClick = () => {
-    if (result.type === "user") {
-      router.push(`/userdetails?userId=${result.id}`);
-    } else if (result.type === "shop") {
-      router.push(`/shopdetails?shopId=${result.id}`);
-    } else if (result.type === "product" || result.type === "shop_product") {
-      router.push(`/productdetails?productId=${result.id}`);
-    }
-  };
+            {filteredResults.map((result) => {
+              const isClickable =
+                result.type === "user" ||
+                result.type === "shop" ||
+                result.type === "product" ||
+                result.type === "shop_product";
 
-  return (
-    <div
-      key={`${result.type}-${result.id}`}
-      onClick={isClickable ? handleClick : undefined}
-      className={`backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6 transition-all duration-200 ${
-        isClickable 
-          ? 'hover:bg-white/15 cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group' 
-          : 'hover:bg-white/15'
-      }`}
-    >
-      {/* Result Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
-          {getResultIcon(result.type)}
-          <div>
-            <h3 className={`font-semibold text-white ${isClickable ? 'group-hover:text-blue-300' : ''}`}>
-              {result.type === "user"
-                ? (result as UserResult).displayName
-                : result.type === "shop"
-                ? (result as ShopResult).name
-                : (result as ProductResult).productName}
-            </h3>
-            <span className="text-sm text-gray-400">
-              {getResultTypeText(result.type)}
-            </span>
-          </div>
-        </div>
-        
-        {/* Add a visual indicator for clickable items */}
-        {isClickable && (
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-            <ArrowRight className="w-5 h-5 text-blue-400" />
-          </div>
-        )}
-      </div>
+              const handleClick = () => {
+                if (result.type === "user") {
+                  router.push(`/userdetails?userId=${result.id}`);
+                } else if (result.type === "shop") {
+                  router.push(`/shopdetails?shopId=${result.id}`);
+                } else if (
+                  result.type === "product" ||
+                  result.type === "shop_product"
+                ) {
+                  router.push(`/productdetails?productId=${result.id}`);
+                }
+              };
 
-                {/* Result Details */}
-                <div className="space-y-2">
-                  {result.type === "user" && (
-                    <>
-                      <div className="flex items-center gap-2 text-gray-300">
-                        <Mail className="w-4 h-4" />
-                        <span className="text-sm">
-                          {(result as UserResult).email}
+              return (
+                <div
+                  key={`${result.type}-${result.id}`}
+                  onClick={isClickable ? handleClick : undefined}
+                  className={`backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6 transition-all duration-200 ${
+                    isClickable
+                      ? "hover:bg-white/15 cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group"
+                      : "hover:bg-white/15"
+                  }`}
+                >
+                  {/* Result Header */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      {getResultIcon(result.type)}
+                      <div>
+                        <h3
+                          className={`font-semibold text-white ${
+                            isClickable ? "group-hover:text-blue-300" : ""
+                          }`}
+                        >
+                          {result.type === "user"
+                            ? (result as UserResult).displayName
+                            : result.type === "shop"
+                            ? (result as ShopResult).name
+                            : (result as ProductResult).productName}
+                        </h3>
+                        <span className="text-sm text-gray-400">
+                          {getResultTypeText(result.type)}
                         </span>
                       </div>
-                      {(result as UserResult).phone && (
-                        <div className="flex items-center gap-2 text-gray-300">
-                          <Phone className="w-4 h-4" />
-                          <span className="text-sm">
-                            {(result as UserResult).phone}
-                          </span>
-                        </div>
-                      )}
-                    </>
-                  )}
+                    </div>
 
-                  {(result.type === "product" ||
-                    result.type === "shop_product") && (
-                    <>
-                      {(result as ProductResult).price && (
-                        <div className="flex items-center gap-2 text-green-400">
-                          <DollarSign className="w-4 h-4" />
-                          <span className="text-sm font-medium">
-                            {(result as ProductResult).price} TL
-                          </span>
-                        </div>
-                      )}
-                      {(result as ProductResult).category && (
-                        <div className="flex items-center gap-2 text-gray-300">
-                          <Tag className="w-4 h-4" />
-                          <span className="text-sm">
-                            {(result as ProductResult).category}
-                          </span>
-                        </div>
-                      )}
-                      {(result as ProductResult).description && (
-                        <p className="text-sm text-gray-300 line-clamp-2">
-                          {(result as ProductResult).description}
-                        </p>
-                      )}
-                    </>
-                  )}
+                    {/* Add a visual indicator for clickable items */}
+                    {isClickable && (
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <ArrowRight className="w-5 h-5 text-blue-400" />
+                      </div>
+                    )}
+                  </div>
 
-                  {result.type === "shop" && (
-                    <>
-                      {(result as ShopResult).address && (
+                  {/* Result Details */}
+                  <div className="space-y-2">
+                    {result.type === "user" && (
+                      <>
                         <div className="flex items-center gap-2 text-gray-300">
-                          <MapPin className="w-4 h-4" />
+                          <Mail className="w-4 h-4" />
                           <span className="text-sm">
-                            {(result as ShopResult).address}
+                            {(result as UserResult).email}
                           </span>
                         </div>
-                      )}
-                      {(result as ShopResult).phone && (
-                        <div className="flex items-center gap-2 text-gray-300">
-                          <Phone className="w-4 h-4" />
-                          <span className="text-sm">
-                            {(result as ShopResult).phone}
-                          </span>
-                        </div>
-                      )}
-                      {(result as ShopResult).description && (
-                        <p className="text-sm text-gray-300 line-clamp-2">
-                          {(result as ShopResult).description}
-                        </p>
-                      )}
-                    </>
-                  )}
+                        {(result as UserResult).phone && (
+                          <div className="flex items-center gap-2 text-gray-300">
+                            <Phone className="w-4 h-4" />
+                            <span className="text-sm">
+                              {(result as UserResult).phone}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    )}
 
-                  <div className="flex items-center gap-2 text-gray-400 pt-2 border-t border-white/10">
-                    <Calendar className="w-4 h-4" />
-                    <span className="text-sm">
-                      {formatDate(result.createdAt)}
-                    </span>
+                    {(result.type === "product" ||
+                      result.type === "shop_product") && (
+                      <>
+                        {(result as ProductResult).price && (
+                          <div className="flex items-center gap-2 text-green-400">
+                            <DollarSign className="w-4 h-4" />
+                            <span className="text-sm font-medium">
+                              {(result as ProductResult).price} TL
+                            </span>
+                          </div>
+                        )}
+                        {(result as ProductResult).category && (
+                          <div className="flex items-center gap-2 text-gray-300">
+                            <Tag className="w-4 h-4" />
+                            <span className="text-sm">
+                              {(result as ProductResult).category}
+                            </span>
+                          </div>
+                        )}
+                        {(result as ProductResult).description && (
+                          <p className="text-sm text-gray-300 line-clamp-2">
+                            {(result as ProductResult).description}
+                          </p>
+                        )}
+                      </>
+                    )}
+
+                    {result.type === "shop" && (
+                      <>
+                        {(result as ShopResult).address && (
+                          <div className="flex items-center gap-2 text-gray-300">
+                            <MapPin className="w-4 h-4" />
+                            <span className="text-sm">
+                              {(result as ShopResult).address}
+                            </span>
+                          </div>
+                        )}
+                        {(result as ShopResult).phone && (
+                          <div className="flex items-center gap-2 text-gray-300">
+                            <Phone className="w-4 h-4" />
+                            <span className="text-sm">
+                              {(result as ShopResult).phone}
+                            </span>
+                          </div>
+                        )}
+                        {(result as ShopResult).description && (
+                          <p className="text-sm text-gray-300 line-clamp-2">
+                            {(result as ShopResult).description}
+                          </p>
+                        )}
+                      </>
+                    )}
+
+                    <div className="flex items-center gap-2 text-gray-400 pt-2 border-t border-white/10">
+                      <Calendar className="w-4 h-4" />
+                      <span className="text-sm">
+                        {formatDate(result.createdAt)}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )})}
+              );
+            })}
           </div>
         )}
 

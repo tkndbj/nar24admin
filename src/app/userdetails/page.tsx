@@ -25,6 +25,17 @@ import {
   Grid,
   List,
   Users,
+  Database,
+  Save,
+  Calendar,
+  Hash,
+  Type,
+  ToggleLeft,
+  ToggleRight,
+  Phone,
+  Mail,
+  User as UserIcon,
+  Image as ImageIconImport,
 } from "lucide-react";
 import {
   useState,
@@ -177,6 +188,15 @@ function UserDetailsContent() {
   const lastProductElementRef = useRef<HTMLDivElement | null>(null);
   const lastShopElementRef = useRef<HTMLDivElement | null>(null);
 
+  const [showDatabaseModal, setShowDatabaseModal] = useState(false);
+  const [allUserFields, setAllUserFields] = useState<
+    Record<string, string | boolean | number | string[] | Timestamp>
+  >({});
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [fieldValues, setFieldValues] = useState<
+    Record<string, string | boolean | number | string[] | Timestamp>
+  >({});
+
   const deleteUserAccountCallable = httpsCallable(
     functions,
     "deleteUserAccount"
@@ -241,6 +261,174 @@ function UserDetailsContent() {
           : (err as { message?: string }).message || "Bilinmeyen hata";
       toast.error(`Hata: ${msg}`);
     }
+  };
+
+  const fetchAllUserFields = useCallback(async () => {
+    if (!userId) return;
+
+    try {
+      const userDoc = await getDoc(doc(db, "users", userId));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        setAllUserFields(data);
+        setFieldValues(data);
+      }
+    } catch (error) {
+      console.error("Error fetching all user fields:", error);
+      toast.error("Tüm kullanıcı verileri yüklenirken hata oluştu");
+    }
+  }, [userId]);
+
+  const handleDatabaseFieldUpdate = async (
+    fieldName: string,
+    value: string | boolean | number | string[] | Timestamp
+  ) => {
+    if (!userId) return;
+
+    try {
+      await updateDoc(doc(db, "users", userId), {
+        [fieldName]: value,
+        updatedAt: new Date(),
+      });
+
+      setAllUserFields((prev) => ({ ...prev, [fieldName]: value }));
+      setFieldValues((prev) => ({ ...prev, [fieldName]: value }));
+      setEditingField(null);
+
+      // Update the main user state if it's a field that's displayed
+      if (user && fieldName in user) {
+        setUser((prev) => (prev ? { ...prev, [fieldName]: value } : null));
+      }
+
+      toast.success("Alan başarıyla güncellendi");
+    } catch (error) {
+      console.error("Error updating field:", error);
+      toast.error("Alan güncellenirken hata oluştu");
+    }
+  };
+
+  // Add this function to render different field types
+  const renderFieldInput = (
+    fieldName: string,
+    value: string | boolean | number | string[] | Timestamp,
+    type: string
+  ) => {
+    const handleChange = (
+      newValue: string | boolean | number | string[] | Timestamp
+    ) => {
+      setFieldValues((prev) => ({ ...prev, [fieldName]: newValue }));
+    };
+
+    const inputClassName =
+      "w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm";
+
+    switch (type) {
+      case "boolean":
+        return (
+          <button
+            onClick={() => handleChange(!value)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors w-full justify-center text-sm ${
+              value
+                ? "bg-green-600/20 text-green-400"
+                : "bg-gray-600/20 text-gray-400"
+            }`}
+          >
+            {value ? (
+              <ToggleRight className="w-4 h-4" />
+            ) : (
+              <ToggleLeft className="w-4 h-4" />
+            )}
+            {value ? "True" : "False"}
+          </button>
+        );
+
+      case "number":
+        return (
+          <input
+            type="number"
+            value={(value as number) || ""}
+            onChange={(e) => handleChange(Number(e.target.value))}
+            className={inputClassName}
+          />
+        );
+
+      case "date":
+        const dateValue =
+          value instanceof Timestamp
+            ? value.toDate().toISOString().slice(0, 16)
+            : "";
+        return (
+          <input
+            type="datetime-local"
+            value={dateValue}
+            onChange={(e) =>
+              handleChange(new Timestamp(new Date(e.target.value).getTime(), 0))
+            }
+            className={inputClassName}
+          />
+        );
+
+      case "array":
+        return (
+          <textarea
+            value={Array.isArray(value) ? value.join(", ") : ""}
+            onChange={(e) =>
+              handleChange(
+                e.target.value.split(", ").filter((item) => item.trim())
+              )
+            }
+            className={`${inputClassName} resize-none`}
+            rows={2}
+            placeholder="Virgülle ayırın"
+          />
+        );
+
+      default:
+        return (
+          <input
+            type="text"
+            value={(value as string) || ""}
+            onChange={(e) => handleChange(e.target.value)}
+            className={inputClassName}
+          />
+        );
+    }
+  };
+
+  // Add this function to get field type
+  const getFieldType = (
+    value: string | boolean | number | string[] | Timestamp
+  ) => {
+    if (value === null || value === undefined) return "string";
+    if (typeof value === "boolean") return "boolean";
+    if (typeof value === "number") return "number";
+    if (Array.isArray(value)) return "array";
+    if (value instanceof Timestamp) return "date"; // Firestore Timestamp
+    return "string";
+  };
+
+  // Add this function to get field icon
+  const getFieldIcon = (fieldName: string, type: string, value: boolean) => {
+    if (fieldName.includes("email") || fieldName.includes("Email"))
+      return <Mail className="w-4 h-4" />;
+    if (fieldName.includes("phone") || fieldName.includes("Phone"))
+      return <Phone className="w-4 h-4" />;
+    if (fieldName.includes("address") || fieldName.includes("Address"))
+      return <MapPin className="w-4 h-4" />;
+    if (fieldName.includes("image") || fieldName.includes("Image"))
+      return <ImageIconImport className="w-4 h-4" />;
+    if (fieldName.includes("name") || fieldName.includes("Name"))
+      return <UserIcon className="w-4 h-4" />;
+    if (fieldName.includes("id") || fieldName.includes("Id"))
+      return <Hash className="w-4 h-4" />;
+    if (type === "date") return <Calendar className="w-4 h-4" />;
+    if (type === "boolean")
+      return value ? (
+        <ToggleRight className="w-4 h-4" />
+      ) : (
+        <ToggleLeft className="w-4 h-4" />
+      );
+    return <Type className="w-4 h-4" />;
   };
 
   const handleDeleteAccount = async () => {
@@ -1321,6 +1509,378 @@ function UserDetailsContent() {
     );
   };
 
+  const DatabaseFieldRow = ({
+    fieldName,
+    fieldType,
+    isEditing,
+    displayValue,
+    fieldValues,
+    setEditingField,
+    setFieldValues,
+    allUserFields,
+    handleDatabaseFieldUpdate,
+    getFieldIcon,
+  }: {
+    fieldName: string;
+    value: string | boolean | number | string[] | Timestamp;
+    fieldType: string;
+    isEditing: boolean;
+    displayValue: string;
+    fieldValues: Record<
+      string,
+      string | boolean | number | string[] | Timestamp
+    >;
+    setEditingField: (field: string | null) => void;
+    setFieldValues: React.Dispatch<
+      React.SetStateAction<
+        Record<string, string | boolean | number | string[] | Timestamp>
+      >
+    >;
+    allUserFields: Record<
+      string,
+      string | boolean | number | string[] | Timestamp
+    >;
+    handleDatabaseFieldUpdate: (
+      fieldName: string,
+      value: string | boolean | number | string[] | Timestamp
+    ) => Promise<void>;
+    renderFieldInput: (
+      fieldName: string,
+      value: string | boolean | number | string[] | Timestamp,
+      type: string
+    ) => React.ReactNode;
+    getFieldIcon: (
+      fieldName: string,
+      type: string,
+      value: boolean
+    ) => React.ReactNode;
+  }) => {
+    const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(
+      null
+    );
+
+    // Auto-focus when entering edit mode
+    useEffect(() => {
+      if (isEditing && inputRef.current) {
+        const timer = setTimeout(() => {
+          if (inputRef.current) {
+            inputRef.current.focus();
+            // For text inputs, place cursor at the end
+            if (
+              inputRef.current instanceof HTMLInputElement ||
+              inputRef.current instanceof HTMLTextAreaElement
+            ) {
+              const length = inputRef.current.value.length;
+              inputRef.current.setSelectionRange(length, length);
+            }
+          }
+        }, 100); // Small delay to ensure DOM is updated
+
+        return () => clearTimeout(timer);
+      }
+    }, [isEditing]);
+
+    const handleEditClick = (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setEditingField(fieldName);
+    };
+
+    const handleSaveClick = async (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      await handleDatabaseFieldUpdate(fieldName, fieldValues[fieldName]);
+    };
+
+    const handleCancelClick = (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setEditingField(null);
+      setFieldValues((prev) => ({
+        ...prev,
+        [fieldName]: allUserFields[fieldName],
+      }));
+    };
+
+    // Enhanced renderFieldInput with ref support
+    const renderFieldInputWithRef = (
+      fieldName: string,
+      value: string | boolean | number | string[] | Timestamp,
+      type: string
+    ) => {
+      const handleChange = (
+        newValue: string | boolean | number | string[] | Timestamp
+      ) => {
+        setFieldValues((prev) => ({ ...prev, [fieldName]: newValue }));
+      };
+
+      const inputClassName =
+        "w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm";
+
+      switch (type) {
+        case "boolean":
+          return (
+            <button
+              onClick={() => handleChange(!value)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors w-full justify-center text-sm ${
+                value
+                  ? "bg-green-600/20 text-green-400"
+                  : "bg-gray-600/20 text-gray-400"
+              }`}
+            >
+              {value ? (
+                <ToggleRight className="w-4 h-4" />
+              ) : (
+                <ToggleLeft className="w-4 h-4" />
+              )}
+              {value ? "True" : "False"}
+            </button>
+          );
+
+        case "number":
+          return (
+            <input
+              ref={inputRef as React.RefObject<HTMLInputElement>}
+              type="number"
+              value={(value as number) || ""}
+              onChange={(e) => handleChange(Number(e.target.value))}
+              className={inputClassName}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleSaveClick(
+                    e as unknown as React.MouseEvent<HTMLButtonElement>
+                  );
+                } else if (e.key === "Escape") {
+                  handleCancelClick(
+                    e as unknown as React.MouseEvent<HTMLButtonElement>
+                  );
+                }
+              }}
+            />
+          );
+
+        case "date":
+          const dateValue =
+            value instanceof Timestamp
+              ? value.toDate().toISOString().slice(0, 16)
+              : "";
+          return (
+            <input
+              ref={inputRef as React.RefObject<HTMLInputElement>}
+              type="datetime-local"
+              value={dateValue}
+              onChange={(e) =>
+                handleChange(
+                  new Timestamp(new Date(e.target.value).getTime(), 0)
+                )
+              }
+              className={inputClassName}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleSaveClick(
+                    e as unknown as React.MouseEvent<HTMLButtonElement>
+                  );
+                } else if (e.key === "Escape") {
+                  handleCancelClick(
+                    e as unknown as React.MouseEvent<HTMLButtonElement>
+                  );
+                }
+              }}
+            />
+          );
+
+        case "array":
+          return (
+            <textarea
+              ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+              value={Array.isArray(value) ? value.join(", ") : ""}
+              onChange={(e) =>
+                handleChange(
+                  e.target.value.split(", ").filter((item) => item.trim())
+                )
+              }
+              className={`${inputClassName} resize-none`}
+              rows={2}
+              placeholder="Virgülle ayırın"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && e.ctrlKey) {
+                  handleSaveClick(
+                    e as unknown as React.MouseEvent<HTMLButtonElement>
+                  );
+                } else if (e.key === "Escape") {
+                  handleCancelClick(
+                    e as unknown as React.MouseEvent<HTMLButtonElement>
+                  );
+                }
+              }}
+            />
+          );
+
+        default:
+          return (
+            <input
+              ref={inputRef as React.RefObject<HTMLInputElement>}
+              type="text"
+              value={(value as string) || ""}
+              onChange={(e) => handleChange(e.target.value)}
+              className={inputClassName}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleSaveClick(
+                    e as unknown as React.MouseEvent<HTMLButtonElement>
+                  );
+                } else if (e.key === "Escape") {
+                  handleCancelClick(
+                    e as unknown as React.MouseEvent<HTMLButtonElement>
+                  );
+                }
+              }}
+            />
+          );
+      }
+    };
+
+    return (
+      <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-lg p-3">
+        {/* Compact header with responsive layout */}
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="flex-shrink-0">
+              {getFieldIcon(
+                fieldName,
+                fieldType,
+                fieldValues[fieldName] as boolean
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-white text-sm truncate">
+                  {fieldName}
+                </span>
+                <span className="px-1.5 py-0.5 bg-gray-700 text-gray-300 text-xs rounded flex-shrink-0">
+                  {fieldType}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action buttons - always visible */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {isEditing ? (
+              <>
+                <button
+                  onClick={handleSaveClick}
+                  className="p-1.5 bg-green-600 hover:bg-green-700 rounded transition-colors"
+                  title="Kaydet (Enter)"
+                >
+                  <Save className="w-3.5 h-3.5 text-white" />
+                </button>
+                <button
+                  onClick={handleCancelClick}
+                  className="p-1.5 bg-red-600 hover:bg-red-700 rounded transition-colors"
+                  title="İptal (Escape)"
+                >
+                  <X className="w-3.5 h-3.5 text-white" />
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handleEditClick}
+                className="p-1.5 bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                title="Düzenle"
+              >
+                <Edit className="w-3.5 h-3.5 text-white" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Field content */}
+        <div className="w-full">
+          {isEditing ? (
+            <div className="w-full">
+              {renderFieldInputWithRef(
+                fieldName,
+                fieldValues[fieldName],
+                fieldType
+              )}
+            </div>
+          ) : (
+            <div className="text-gray-300 bg-white/5 rounded p-2 border border-white/10 min-h-[2.5rem] flex items-center">
+              <span className="break-words w-full text-sm">
+                {displayValue || (
+                  <span className="text-gray-500 italic">Boş</span>
+                )}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const DatabaseModal = () => {
+    if (!showDatabaseModal) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-gray-900 border border-white/20 rounded-xl max-w-5xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between p-6 border-b border-white/20 flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <Database className="w-6 h-6 text-blue-400" />
+              <h2 className="text-xl font-bold text-white">
+                Veritabanı Alanları
+              </h2>
+            </div>
+            <button
+              onClick={() => setShowDatabaseModal(false)}
+              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="space-y-3">
+              {Object.entries(allUserFields).map(([fieldName, value]) => {
+                const fieldType = getFieldType(value);
+                const isEditing = editingField === fieldName;
+                const displayValue =
+                  fieldType === "date" && value instanceof Timestamp
+                    ? value.toDate().toLocaleString("tr-TR")
+                    : fieldType === "array" && Array.isArray(value)
+                    ? value.join(", ")
+                    : fieldType === "boolean"
+                    ? value
+                      ? "True"
+                      : "False"
+                    : String(value || "");
+
+                return (
+                  <DatabaseFieldRow
+                    key={fieldName}
+                    fieldName={fieldName}
+                    value={value}
+                    fieldType={fieldType}
+                    isEditing={isEditing}
+                    displayValue={displayValue}
+                    fieldValues={fieldValues}
+                    setEditingField={setEditingField}
+                    setFieldValues={setFieldValues}
+                    allUserFields={allUserFields}
+                    handleDatabaseFieldUpdate={handleDatabaseFieldUpdate}
+                    renderFieldInput={renderFieldInput}
+                    getFieldIcon={getFieldIcon}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       {/* Header */}
@@ -1371,6 +1931,16 @@ function UserDetailsContent() {
                       {user.displayName}
                     </h2>
                   </div>
+                  <button
+                    onClick={() => {
+                      setShowDatabaseModal(true);
+                      fetchAllUserFields();
+                    }}
+                    className="p-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                    title="Tüm Veritabanı Alanlarını Görüntüle"
+                  >
+                    <Database className="w-5 h-5 text-white" />
+                  </button>
                   <p className="text-gray-400 mb-1">{user.email}</p>
                 </div>
               </div>
@@ -1802,6 +2372,7 @@ function UserDetailsContent() {
           </div>
         )}
       </main>
+      <DatabaseModal />
     </div>
   );
 }
