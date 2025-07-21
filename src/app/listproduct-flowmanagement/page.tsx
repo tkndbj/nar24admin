@@ -13,9 +13,7 @@ import {
   CollectionReference,
   Timestamp,
   writeBatch,
-  query,
-  where,
-  getDocs,
+  FieldValue,
 } from "firebase/firestore";
 import {
   Play,
@@ -24,8 +22,7 @@ import {
   Copy,
   Trash2,
   Plus,
-  Download,
-  Upload,
+  Download,  
   Eye,
   CheckCircle,
   Users,
@@ -499,8 +496,8 @@ export default function FlowManagementPage() {
       };
 
       // Add flow hash for integrity checking
-      const flowHash = generateFlowHash(newFlowData as any);
-      (newFlowData as any).flowHash = flowHash;
+      const flowHash = generateFlowHash(newFlowData as unknown as Partial<ProductListingFlow>);
+      (newFlowData as unknown as Record<string, unknown>).flowHash = flowHash;
 
       // Validate before saving
       const tempFlow = { 
