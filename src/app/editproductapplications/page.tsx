@@ -425,14 +425,14 @@ export default function EditProductApplicationsPage() {
         "Shop ID:",
         application.shopId || application.originalProductData?.shopId || "None"
       );
-  
+
       // Determine the correct collection based on shopId
       const isShopProduct =
         application.shopId || application.originalProductData?.shopId;
       const collection_name = isShopProduct ? "shop_products" : "products";
-  
+
       console.log(`Using collection: ${collection_name}`);
-  
+
       // Check if the original product exists
       const productRef = doc(
         db,
@@ -440,7 +440,7 @@ export default function EditProductApplicationsPage() {
         application.originalProductId
       );
       const productSnapshot = await getDoc(productRef);
-  
+
       if (!productSnapshot.exists()) {
         console.error(
           `Original product not found in ${collection_name}:`,
@@ -451,36 +451,38 @@ export default function EditProductApplicationsPage() {
         );
         return;
       }
-  
+
       console.log("Original product found, proceeding with update...");
-  
+
       // CLEAN THE UPDATE DATA - Remove undefined, null values and empty arrays/objects
-      const cleanUpdateData = (obj: any): any => {
+      const cleanUpdateData = (obj: unknown): unknown => {
         if (obj === null || obj === undefined) {
           return null;
         }
-        
+
         if (Array.isArray(obj)) {
           const cleaned = obj
-            .map(item => cleanUpdateData(item))
-            .filter(item => item !== null && item !== undefined);
+            .map((item) => cleanUpdateData(item))
+            .filter((item) => item !== null && item !== undefined);
           return cleaned.length > 0 ? cleaned : null;
         }
-        
-        if (typeof obj === 'object') {
-          const cleaned: any = {};
-          Object.keys(obj).forEach(key => {
-            const cleanedValue = cleanUpdateData(obj[key]);
+
+        if (typeof obj === "object") {
+          const cleaned: Record<string, unknown> = {};
+          Object.keys(obj).forEach((key) => {
+            const cleanedValue = cleanUpdateData(
+              (obj as Record<string, unknown>)[key]
+            );
             if (cleanedValue !== null && cleanedValue !== undefined) {
               cleaned[key] = cleanedValue;
             }
           });
           return Object.keys(cleaned).length > 0 ? cleaned : null;
         }
-        
+
         return obj;
       };
-  
+
       // Build update data with cleaning
       const rawUpdateData: Partial<OriginalProductData> = {
         productName: application.productName,
@@ -499,41 +501,44 @@ export default function EditProductApplicationsPage() {
         attributes: application.attributes,
         modifiedAt: Timestamp.now(),
       };
-  
+
       if (application.videoUrl) {
         rawUpdateData.videoUrl = application.videoUrl;
       }
-  
+
       // Clean the update data
-      const updateData: any = {};
-      Object.keys(rawUpdateData).forEach(key => {
-        const cleanedValue = cleanUpdateData(rawUpdateData[key as keyof typeof rawUpdateData]);
+      const updateData: Record<string, unknown> = {};
+      Object.keys(rawUpdateData).forEach((key) => {
+        const cleanedValue = cleanUpdateData(
+          rawUpdateData[key as keyof typeof rawUpdateData]
+        );
         if (cleanedValue !== null && cleanedValue !== undefined) {
           updateData[key] = cleanedValue;
         }
       });
-  
+
       // Always include modifiedAt
       updateData.modifiedAt = Timestamp.now();
-  
+
       console.log("Cleaned update data:", updateData);
-  
-      await updateDoc(productRef, updateData);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await updateDoc(productRef, updateData as any);
       console.log("Product updated successfully");
-  
+
       // Delete the edit application
       await deleteDoc(doc(db, "product_edit_applications", application.id));
       console.log("Edit application deleted");
-  
+
       // Send notifications based on product type
       await sendNotifications(application, "approved");
       console.log("Notifications sent successfully");
-  
+
       setSelectedApplication(null);
       alert("Başvuru başarıyla onaylandı!");
     } catch (error) {
       console.error("Error approving application:", error);
-  
+
       // More specific error handling
       if (isFirebaseError(error)) {
         if (error.code === "not-found") {
