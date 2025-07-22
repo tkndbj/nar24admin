@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Brain,
-  TrendingUp,
   Package,
   Eye,
   ShoppingCart,
@@ -13,22 +12,15 @@ import {
   Activity,
   Calendar,
   Clock,
-  ArrowUp,
-  ArrowDown,
-  Minus,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
-  LineChart,
-  Line,
   AreaChart,
   Area,
   XAxis,
   YAxis,
   ResponsiveContainer,
   Tooltip,
-  BarChart,
-  Bar,
   PieChart,
   Pie,
   Cell,
@@ -64,27 +56,55 @@ interface PipelineData {
   };
 }
 
+interface ApiDataPoint {
+  timestamp: number;
+  value: number;
+}
+
+interface ApiFunctionData {
+  functionName: string;
+  executions: number;
+  dataPoints: ApiDataPoint[];
+}
+
+interface ApiResponse {
+  recommendationPipeline?: {
+    hourly: ApiFunctionData[];
+    daily: ApiFunctionData[];
+  };
+}
+
+interface TooltipPayload {
+  name: string;
+  value: number;
+  color: string;
+}
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: TooltipPayload[];
+  label?: string;
+}
+
 // Google Cloud Pricing as of July 2025
 const PRICING = {
-    // Cloud Functions pricing (Gen 2)
-    invocations: 0.0000004, // $0.40 per million (after 2M free)
-    gbSeconds: 0.0000025, // $0.0025 per GB-second (after 400K GB-s free)
-    memoryGB: 0.25, // 256MB allocation
-    
-    // Retail API pricing - CORRECTED
-    predict: {
-      tier1: 0, // First 1,000 requests/month FREE
-      tier2: 0.27, // $0.27 per 1,000 requests (1K - 5M)
-      tier3: 0.20, // $0.20 per 1,000 requests (5M - 10M)
-      tier4: 0.15, // $0.15 per 1,000 requests (10M+)
-    },
-    userEvent: {
-      import: 0, // First 50M events/month FREE
-      afterFree: 0.02, // $0.02 per 1,000 events after 50M
-    }
-  };
+  // Cloud Functions pricing (Gen 2)
+  invocations: 0.0000004, // $0.40 per million (after 2M free)
+  gbSeconds: 0.0000025, // $0.0025 per GB-second (after 400K GB-s free)
+  memoryGB: 0.25, // 256MB allocation
 
-  
+  // Retail API pricing - CORRECTED
+  predict: {
+    tier1: 0, // First 1,000 requests/month FREE
+    tier2: 0.27, // $0.27 per 1,000 requests (1K - 5M)
+    tier3: 0.2, // $0.20 per 1,000 requests (5M - 10M)
+    tier4: 0.15, // $0.15 per 1,000 requests (10M+)
+  },
+  userEvent: {
+    import: 0, // First 50M events/month FREE
+    afterFree: 0.02, // $0.02 per 1,000 events after 50M
+  },
+};
 
 export default function RecommendationsPipelineUsage() {
   const router = useRouter();
@@ -101,20 +121,17 @@ export default function RecommendationsPipelineUsage() {
     },
   });
 
-  useEffect(() => {
-    fetchPipelineData();
-    const interval = setInterval(fetchPipelineData, 60000); // Update every minute
-    return () => clearInterval(interval);
-  }, []);
-
-  const fetchPipelineData = async () => {
+  const fetchPipelineData = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch("/api/metrics");
       if (response.ok) {
-        const data = await response.json();
+        const data: ApiResponse = await response.json();
         console.log("API Response:", data); // Debug log
-        console.log("Recommendation Pipeline Data:", data.recommendationPipeline); // Debug log
+        console.log(
+          "Recommendation Pipeline Data:",
+          data.recommendationPipeline
+        ); // Debug log
         processPipelineData(data);
       }
     } catch (error) {
@@ -122,79 +139,39 @@ export default function RecommendationsPipelineUsage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const generateMockData = () => {
-    // Generate realistic mock data
-    const now = new Date();
-    const hourlyData: TimeSeriesData[] = [];
-    const dailyData: TimeSeriesData[] = [];
+  useEffect(() => {
+    fetchPipelineData();
+    const interval = setInterval(fetchPipelineData, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, [fetchPipelineData]);
 
-    // Hourly data for last 24 hours
-    for (let i = 23; i >= 0; i--) {
-      const time = new Date(now.getTime() - i * 3600000);
-      hourlyData.push({
-        time: time.toLocaleTimeString("tr-TR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        getRecommendations: Math.floor(50 + Math.random() * 100),
-        ingestTransaction: Math.floor(10 + Math.random() * 30),
-        ingestDetailView: Math.floor(100 + Math.random() * 200),
-        ingestShopDetailView: Math.floor(150 + Math.random() * 250),
-      });
-    }
-
-    // Daily data for last 30 days
-    for (let i = 29; i >= 0; i--) {
-      const time = new Date(now.getTime() - i * 86400000);
-      dailyData.push({
-        time: time.toLocaleDateString("tr-TR", {
-          day: "2-digit",
-          month: "2-digit",
-        }),
-        getRecommendations: Math.floor(1000 + Math.random() * 2000),
-        ingestTransaction: Math.floor(200 + Math.random() * 500),
-        ingestDetailView: Math.floor(2000 + Math.random() * 4000),
-        ingestShopDetailView: Math.floor(3000 + Math.random() * 5000),
-      });
-    }
-
-    return {
-      functions: {
-        "10min": [],
-        "30min": [],
-        "1hr": [],
-        "4hr": [],
-        "8hr": [],
-      },
-      hourly: hourlyData,
-      daily: dailyData,
-    };
-  };
-
-  const processPipelineData = (data: any) => {
+  const processPipelineData = (data: ApiResponse) => {
     // Check if we have recommendation pipeline data
     if (!data.recommendationPipeline) {
       console.error("No recommendationPipeline data in response");
       return;
     }
-  
+
     const recommendationHourly = data.recommendationPipeline.hourly || [];
     const recommendationDaily = data.recommendationPipeline.daily || [];
-  
+
     // Transform the data into time series format
-    const hourlyTimeSeriesMap = new Map<string, any>();
-    const dailyTimeSeriesMap = new Map<string, any>();
-  
+    const hourlyTimeSeriesMap = new Map<string, TimeSeriesData>();
+    const dailyTimeSeriesMap = new Map<string, TimeSeriesData>();
+
     // Process hourly data
-    recommendationHourly.forEach((func: any) => {
-      func.dataPoints.forEach((point: any) => {
-        const time = new Date(point.timestamp * 1000).toLocaleTimeString("tr-TR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-        
+    recommendationHourly.forEach((func: ApiFunctionData) => {
+      func.dataPoints.forEach((point: ApiDataPoint) => {
+        const time = new Date(point.timestamp * 1000).toLocaleTimeString(
+          "tr-TR",
+          {
+            hour: "2-digit",
+            minute: "2-digit",
+          }
+        );
+
         if (!hourlyTimeSeriesMap.has(time)) {
           hourlyTimeSeriesMap.set(time, {
             time,
@@ -204,32 +181,35 @@ export default function RecommendationsPipelineUsage() {
             ingestShopDetailView: 0,
           });
         }
-        
-        const timeData = hourlyTimeSeriesMap.get(time);
-        
+
+        const timeData = hourlyTimeSeriesMap.get(time)!;
+
         // Map function names to the expected keys
-        const keyMap: { [key: string]: string } = {
+        const keyMap: { [key: string]: keyof Omit<TimeSeriesData, "time"> } = {
           getRecommendations: "getRecommendations",
           ingestTransactionEvent: "ingestTransaction",
           ingestDetailViewEvent: "ingestDetailView",
           ingestShopProductDetailViewEvent: "ingestShopDetailView",
         };
-        
+
         const key = keyMap[func.functionName];
         if (key) {
           timeData[key] = point.value;
         }
       });
     });
-  
+
     // Process daily data similarly
-    recommendationDaily.forEach((func: any) => {
-      func.dataPoints.forEach((point: any) => {
-        const time = new Date(point.timestamp * 1000).toLocaleDateString("tr-TR", {
-          day: "2-digit",
-          month: "2-digit",
-        });
-        
+    recommendationDaily.forEach((func: ApiFunctionData) => {
+      func.dataPoints.forEach((point: ApiDataPoint) => {
+        const time = new Date(point.timestamp * 1000).toLocaleDateString(
+          "tr-TR",
+          {
+            day: "2-digit",
+            month: "2-digit",
+          }
+        );
+
         if (!dailyTimeSeriesMap.has(time)) {
           dailyTimeSeriesMap.set(time, {
             time,
@@ -239,67 +219,68 @@ export default function RecommendationsPipelineUsage() {
             ingestShopDetailView: 0,
           });
         }
-        
-        const timeData = dailyTimeSeriesMap.get(time);
-        
-        const keyMap: { [key: string]: string } = {
+
+        const timeData = dailyTimeSeriesMap.get(time)!;
+
+        const keyMap: { [key: string]: keyof Omit<TimeSeriesData, "time"> } = {
           getRecommendations: "getRecommendations",
           ingestTransactionEvent: "ingestTransaction",
           ingestDetailViewEvent: "ingestDetailView",
           ingestShopProductDetailViewEvent: "ingestShopDetailView",
         };
-        
+
         const key = keyMap[func.functionName];
         if (key) {
           timeData[key] = point.value;
         }
       });
     });
-  
+
     // Convert maps to arrays
-    const hourlyData = Array.from(hourlyTimeSeriesMap.values()).sort((a, b) => 
+    const hourlyData = Array.from(hourlyTimeSeriesMap.values()).sort((a, b) =>
       a.time.localeCompare(b.time)
     );
-    const dailyData = Array.from(dailyTimeSeriesMap.values()).sort((a, b) => 
+    const dailyData = Array.from(dailyTimeSeriesMap.values()).sort((a, b) =>
       a.time.localeCompare(b.time)
     );
-  
+
     // Calculate function metrics from the recommendation pipeline data
-    const functions: FunctionMetric[] = recommendationHourly.map((func: any) => {
+    const functions: FunctionMetric[] = recommendationHourly.map(
+      (func: ApiFunctionData) => {
         const displayNames: { [key: string]: string } = {
           getRecommendations: "Öneri Getir",
           ingestTransactionEvent: "İşlem Kaydı",
           ingestDetailViewEvent: "Ürün Görüntüleme",
           ingestShopProductDetailViewEvent: "Mağaza Ürün Görüntüleme",
         };
-      
+
         const colors: { [key: string]: string } = {
           getRecommendations: "#3B82F6",
           ingestTransactionEvent: "#10B981",
           ingestDetailViewEvent: "#F59E0B",
           ingestShopProductDetailViewEvent: "#8B5CF6",
         };
-      
+
         const icons: { [key: string]: React.ReactNode } = {
           getRecommendations: <Brain className="w-5 h-5" />,
           ingestTransactionEvent: <ShoppingCart className="w-5 h-5" />,
           ingestDetailViewEvent: <Eye className="w-5 h-5" />,
           ingestShopProductDetailViewEvent: <Package className="w-5 h-5" />,
         };
-      
+
         const avgDurations: { [key: string]: number } = {
           getRecommendations: 250,
           ingestTransactionEvent: 150,
           ingestDetailViewEvent: 100,
           ingestShopProductDetailViewEvent: 100,
         };
-      
+
         // Calculate monthly projections based on hourly data
         // Assuming this is last hour's data, project to monthly
         const monthlyProjection = func.executions * 24 * 30;
-      
+
         let cost = 0;
-        
+
         if (func.functionName === "getRecommendations") {
           // Retail API predict cost with free tier
           if (monthlyProjection <= 1000) {
@@ -312,23 +293,23 @@ export default function RecommendationsPipelineUsage() {
             // Tier 2 + Tier 3
             const tier2Requests = 5000000 - 1000;
             const tier3Requests = monthlyProjection - 5000000;
-            cost = (tier2Requests / 1000) * 0.27 + (tier3Requests / 1000) * 0.20;
+            cost = (tier2Requests / 1000) * 0.27 + (tier3Requests / 1000) * 0.2;
           } else {
             // Tier 2 + Tier 3 + Tier 4
             const tier2Requests = 5000000 - 1000;
             const tier3Requests = 5000000;
             const tier4Requests = monthlyProjection - 10000000;
-            cost = (tier2Requests / 1000) * 0.27 + 
-                   (tier3Requests / 1000) * 0.20 + 
-                   (tier4Requests / 1000) * 0.15;
+            cost =
+              (tier2Requests / 1000) * 0.27 +
+              (tier3Requests / 1000) * 0.2 +
+              (tier4Requests / 1000) * 0.15;
           }
-          
+
           // Convert monthly cost back to hourly for display
           cost = cost / (24 * 30);
-          
         } else {
           // User event ingestion + Cloud Function costs
-          
+
           // User events cost (first 50M free per month)
           let userEventCost = 0;
           if (monthlyProjection > 50000000) {
@@ -337,19 +318,20 @@ export default function RecommendationsPipelineUsage() {
             // Convert to hourly
             userEventCost = userEventCost / (24 * 30);
           }
-          
+
           // Cloud Functions cost (first 2M invocations free per month)
           let invocationCost = 0;
           if (monthlyProjection > 2000000) {
             const billableInvocations = monthlyProjection - 2000000;
-            invocationCost = (billableInvocations / 1000000) * 0.40;
+            invocationCost = (billableInvocations / 1000000) * 0.4;
             // Convert to hourly
             invocationCost = invocationCost / (24 * 30);
           }
-          
+
           // Compute cost (first 400,000 GB-seconds free per month)
           const avgDuration = avgDurations[func.functionName] || 100;
-          const monthlyGbSeconds = (monthlyProjection * avgDuration / 1000) * PRICING.memoryGB;
+          const monthlyGbSeconds =
+            ((monthlyProjection * avgDuration) / 1000) * PRICING.memoryGB;
           let computeCost = 0;
           if (monthlyGbSeconds > 400000) {
             const billableGbSeconds = monthlyGbSeconds - 400000;
@@ -357,10 +339,10 @@ export default function RecommendationsPipelineUsage() {
             // Convert to hourly
             computeCost = computeCost / (24 * 30);
           }
-          
+
           cost = userEventCost + invocationCost + computeCost;
         }
-      
+
         return {
           name: func.functionName,
           displayName: displayNames[func.functionName] || func.functionName,
@@ -371,13 +353,14 @@ export default function RecommendationsPipelineUsage() {
           color: colors[func.functionName] || "#6B7280",
           icon: icons[func.functionName] || <Activity className="w-5 h-5" />,
         };
-      });
-  
+      }
+    );
+
     // Calculate total costs
     const hourlyCost = functions.reduce((sum, func) => sum + func.cost, 0);
     const dailyCost = hourlyCost * 24;
     const monthlyCost = dailyCost * 30;
-  
+
     setPipelineData({
       hourly: hourlyData,
       daily: dailyData,
@@ -390,16 +373,12 @@ export default function RecommendationsPipelineUsage() {
     });
   };
 
-  const calculateTotal = (data: TimeSeriesData[], key: keyof TimeSeriesData) => {
-    return data.reduce((sum, item) => sum + (Number(item[key]) || 0), 0);
-  };
-
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-slate-800/95 border border-white/20 rounded-lg p-3 backdrop-blur-xl">
           <p className="text-white font-medium mb-2">{label}</p>
-          {payload.map((entry: any, index: number) => (
+          {payload.map((entry: TooltipPayload, index: number) => (
             <p key={index} style={{ color: entry.color }} className="text-sm">
               {`${entry.name}: ${entry.value.toLocaleString("tr-TR")}`}
             </p>
@@ -417,9 +396,8 @@ export default function RecommendationsPipelineUsage() {
     color: func.color,
   }));
 
-  const timeSeriesData = selectedPeriod === "hourly" 
-    ? pipelineData.hourly 
-    : pipelineData.daily;
+  const timeSeriesData =
+    selectedPeriod === "hourly" ? pipelineData.hourly : pipelineData.daily;
 
   const totalExecutions = pipelineData.functions.reduce(
     (sum, func) => sum + func.executions,
@@ -538,7 +516,8 @@ export default function RecommendationsPipelineUsage() {
           {/* Time Series Chart */}
           <div className="lg:col-span-2 backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
             <h3 className="text-lg font-semibold text-white mb-4">
-              Fonksiyon Kullanımı - {selectedPeriod === "hourly" ? "24 Saat" : "30 Gün"}
+              Fonksiyon Kullanımı -{" "}
+              {selectedPeriod === "hourly" ? "24 Saat" : "30 Gün"}
             </h3>
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
@@ -619,9 +598,7 @@ export default function RecommendationsPipelineUsage() {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value: number) =>
-                      value.toLocaleString("tr-TR")
-                    }
+                    formatter={(value: number) => value.toLocaleString("tr-TR")}
                   />
                 </PieChart>
               </ResponsiveContainer>
@@ -654,8 +631,12 @@ export default function RecommendationsPipelineUsage() {
                   <th className="text-left p-4 text-gray-300">Fonksiyon</th>
                   <th className="text-right p-4 text-gray-300">Çağrı Sayısı</th>
                   <th className="text-right p-4 text-gray-300">Ort. Süre</th>
-                  <th className="text-right p-4 text-gray-300">Maliyet (USD)</th>
-                  <th className="text-right p-4 text-gray-300">Maliyet Detayı</th>
+                  <th className="text-right p-4 text-gray-300">
+                    Maliyet (USD)
+                  </th>
+                  <th className="text-right p-4 text-gray-300">
+                    Maliyet Detayı
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -713,9 +694,7 @@ export default function RecommendationsPipelineUsage() {
               </div>
               <div>
                 <p className="text-gray-400 mb-1">User Event Ücreti:</p>
-                <p className="text-white font-mono">
-                  $0.02 / 1000 olay kaydı
-                </p>
+                <p className="text-white font-mono">$0.02 / 1000 olay kaydı</p>
               </div>
               <div>
                 <p className="text-gray-400 mb-1">Cloud Functions Ücreti:</p>
