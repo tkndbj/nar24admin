@@ -801,6 +801,14 @@ export default function Dashboard() {
                 <Zap className="w-4 h-4" />
                 Cloud Function Analiz
               </button>
+              <button
+                type="button"
+                onClick={() => router.push("/recommendations-pipeline-usage")}
+                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-700 hover:to-orange-700 text-white font-medium rounded-xl transition-all duration-200 text-sm"
+              >
+                <Zap className="w-4 h-4" />
+                Recommendations Pipeline Analiz
+              </button>
             </form>
 
             {/* Quick Search Preview */}

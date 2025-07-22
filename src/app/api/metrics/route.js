@@ -57,6 +57,10 @@ export async function GET() {
         hourly: generateFallbackData(true),
         daily: generateFallbackData(false),
         functions: generateFallbackFunctionData(),
+        recommendationPipeline: {
+          hourly: generateFallbackRecommendationData(true),
+          daily: generateFallbackRecommendationData(false)
+        }
       });
     }
 
@@ -67,6 +71,10 @@ export async function GET() {
         hourly: generateFallbackData(true),
         daily: generateFallbackData(false),
         functions: generateFallbackFunctionData(),
+        recommendationPipeline: {
+          hourly: generateFallbackRecommendationData(true),
+          daily: generateFallbackRecommendationData(false)
+        }
       });
     }
 
@@ -83,9 +91,12 @@ export async function GET() {
     ];
 
     // Fetch existing hourly and daily data + new function-specific data
-    const [hourlyData, dailyData, ...functionDataResults] = await Promise.all([
+    const [hourlyData, dailyData, recommendationHourly, recommendationDaily, ...functionDataResults] = await Promise.all([
       fetchMetricsData(client, projectPath, endTime - 3600, endTime, 300), // 1 hour, 5-min intervals
       fetchMetricsData(client, projectPath, endTime - 86400, endTime, 3600), // 24 hours, 1-hour intervals
+      // ADD THESE TWO NEW CALLS:
+      fetchRecommendationPipelineMetrics(client, projectPath, endTime - 3600, endTime, 300), // Hourly recommendation data
+      fetchRecommendationPipelineMetrics(client, projectPath, endTime - 86400, endTime, 3600), // Daily recommendation data
       ...timePeriods.map((period) =>
         fetchFunctionSpecificMetrics(
           client,
@@ -107,6 +118,10 @@ export async function GET() {
       hourly: hourlyData,
       daily: dailyData,
       functions: functionsByPeriod,
+      recommendationPipeline: {
+        hourly: recommendationHourly,
+        daily: recommendationDaily
+      }
     });
   } catch (error) {
     console.error("❌ Error fetching metrics:", error);
@@ -116,6 +131,10 @@ export async function GET() {
       hourly: generateFallbackData(true),
       daily: generateFallbackData(false),
       functions: generateFallbackFunctionData(),
+      recommendationPipeline: {
+        hourly: generateFallbackRecommendationData(true),
+        daily: generateFallbackRecommendationData(false)
+      }
     });
   }
 }
@@ -285,6 +304,79 @@ async function fetchFunctionSpecificMetrics(
       throw error;
     }
   }
+}
+
+async function fetchRecommendationPipelineMetrics(
+  client,
+  projectPath,
+  startTime,
+  endTime,
+  alignmentPeriod
+) {
+  // Specific function names for your recommendation pipeline
+  const recommendationFunctions = [
+    "getRecommendations",
+    "ingestTransactionEvent", 
+    "ingestDetailViewEvent",
+    "ingestShopProductDetailViewEvent"
+  ];
+
+  const functionsData = [];
+
+  // Fetch metrics for each specific function
+  for (const functionName of recommendationFunctions) {
+    const request = {
+      name: projectPath,
+      filter: `metric.type="cloudfunctions.googleapis.com/function/execution_count" AND resource.labels.function_name="${functionName}"`,
+      interval: {
+        endTime: { seconds: endTime },
+        startTime: { seconds: startTime },
+      },
+      aggregation: {
+        alignmentPeriod: { seconds: alignmentPeriod },
+        perSeriesAligner: "ALIGN_RATE",
+        crossSeriesReducer: "REDUCE_SUM",
+      },
+    };
+
+    try {
+      const [timeSeries] = await client.listTimeSeries(request);
+      
+      let totalExecutions = 0;
+      const dataPoints = [];
+      
+      if (timeSeries && timeSeries.length > 0) {
+        timeSeries[0].points?.forEach((point) => {
+          const value = parseFloat(point.value?.doubleValue || 0);
+          const executions = Math.round(value * alignmentPeriod);
+          totalExecutions += executions;
+          
+          if (point.interval?.endTime) {
+            const timestamp = parseInt(point.interval.endTime.seconds);
+            dataPoints.push({
+              timestamp,
+              value: executions
+            });
+          }
+        });
+      }
+
+      functionsData.push({
+        functionName,
+        executions: totalExecutions,
+        dataPoints
+      });
+    } catch (error) {
+      console.error(`Error fetching metrics for ${functionName}:`, error);
+      functionsData.push({
+        functionName,
+        executions: 0,
+        dataPoints: []
+      });
+    }
+  }
+
+  return functionsData;
 }
 
 function processFunctionSpecificData(
@@ -506,4 +598,19 @@ function generateFallbackFunctionData() {
   });
 
   return result;
+}
+
+function generateFallbackRecommendationData(isHourly = true) {
+  const functions = [
+    { name: "getRecommendations", baseValue: 50 },
+    { name: "ingestTransactionEvent", baseValue: 20 },
+    { name: "ingestDetailViewEvent", baseValue: 100 },
+    { name: "ingestShopProductDetailViewEvent", baseValue: 150 }
+  ];
+
+  return functions.map(func => ({
+    functionName: func.name,
+    executions: Math.floor(func.baseValue * (isHourly ? 1 : 24) * (0.8 + Math.random() * 0.4)),
+    dataPoints: []
+  }));
 }
