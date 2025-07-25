@@ -6,7 +6,7 @@ export const flutterScreens = [
     label: "Kıyafet Detayları",
     route: "/list_clothing",
   },
-  { id: "list_color", label: "Renk Seçimi", route: "/list_color_option" },
+  { id: "list_color", label: "Renk Seçimi", route: "/list_color" },
   {
     id: "list_footwear",
     label: "Ayakkabı Boyutu",
