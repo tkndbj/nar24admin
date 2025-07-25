@@ -39,17 +39,17 @@ export const flutterScreens = [
   },
   {
     id: "list_consoles",
-    label: "Mutfak Aletleri",
+    label: "Konsol",
     route: "/list_consoles",
   },
   {
     id: "list_computer_components",
-    label: "Mutfak Aletleri",
+    label: "Bilgisayar Bileşenleri",
     route: "/list_computer_components",
   },
   {
     id: "list_white_goods",
-    label: "Mutfak Aletleri",
+    label: "Beyaz Eşya",
     route: "/list_white_goods",
   },
 ];
