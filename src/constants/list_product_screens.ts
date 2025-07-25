@@ -27,4 +27,29 @@ export const flutterScreens = [
     label: "Takı/Mücevher Malzeme",
     route: "/list_product_jewelry_material",
   },
+  {
+    id: "list_gender",
+    label: "Cinsiyet",
+    route: "/list_product_gender",
+  },
+  {
+    id: "list_kitchen_appliances",
+    label: "Mutfak Aletleri",
+    route: "/list_kitchen_appliances",
+  },
+  {
+    id: "list_consoles",
+    label: "Mutfak Aletleri",
+    route: "/list_consoles",
+  },
+  {
+    id: "list_computer_components",
+    label: "Mutfak Aletleri",
+    route: "/list_computer_components",
+  },
+  {
+    id: "list_white_goods",
+    label: "Mutfak Aletleri",
+    route: "/list_white_goods",
+  },
 ];
