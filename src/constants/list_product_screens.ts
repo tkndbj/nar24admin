@@ -4,33 +4,33 @@ export const flutterScreens = [
   {
     id: "list_clothing",
     label: "Kıyafet Detayları",
-    route: "/list_clothing_details",
+    route: "/list_clothing",
   },
   { id: "list_color", label: "Renk Seçimi", route: "/list_color_option" },
   {
     id: "list_footwear",
     label: "Ayakkabı Boyutu",
-    route: "/list_product_footwear_size",
+    route: "/list_footwear",
   },
   {
     id: "list_pant",
     label: "Pantolon Detayları",
-    route: "/list_product_pant_details",
+    route: "/list_pant",
   },
   {
     id: "list_jewelry_type",
     label: "Takı/Mücevher Tipi",
-    route: "/list_product_jewelry_type",
+    route: "/list_jewelry_type",
   },
   {
     id: "list_jewelry_mat",
     label: "Takı/Mücevher Malzeme",
-    route: "/list_product_jewelry_material",
+    route: "/list_jewelry_mat",
   },
   {
     id: "list_gender",
     label: "Cinsiyet",
-    route: "/list_product_gender",
+    route: "/list_gender",
   },
   {
     id: "list_kitchen_appliances",
