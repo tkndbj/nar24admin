@@ -53,7 +53,19 @@ interface MapComponentProps {
   onMarkerClick: (point: PickupPoint) => void;
   selectedPoint: PickupPoint | null;
   editingPoint: PickupPoint | null;
+  tempLocation: { lat: number; lng: number } | null;
+  showAddForm: boolean;
 }
+
+// Check if Google Maps API is loaded
+const isGoogleMapsLoaded = () => {
+  return (
+    typeof window !== "undefined" &&
+    window.google &&
+    window.google.maps &&
+    window.google.maps.Map
+  );
+};
 
 // Google Maps Component
 const MapComponent = ({
@@ -62,129 +74,382 @@ const MapComponent = ({
   onMarkerClick,
   selectedPoint,
   editingPoint,
+  tempLocation,
+  showAddForm,
 }: MapComponentProps) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.Marker[]>([]);
+  const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  const tempMarkerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(
+    null
+  );
+  const [isMapLoaded, setIsMapLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const initializeMap = useCallback(() => {
-    if (!mapRef.current || !window.google) return;
-
-    // Cyprus coordinates
-    const cyprusCenter = { lat: 35.1264, lng: 33.4299 };
-
-    const map = new google.maps.Map(mapRef.current, {
-      zoom: 10,
-      center: cyprusCenter,
-      styles: [
-        {
-          featureType: "all",
-          elementType: "geometry",
-          stylers: [{ color: "#1f2937" }],
-        },
-        {
-          featureType: "all",
-          elementType: "labels.text.fill",
-          stylers: [{ color: "#fbbf24" }],
-        },
-        {
-          featureType: "all",
-          elementType: "labels.text.stroke",
-          stylers: [{ color: "#1f2937" }],
-        },
-        {
-          featureType: "water",
-          elementType: "geometry",
-          stylers: [{ color: "#1e40af" }],
-        },
-        {
-          featureType: "water",
-          elementType: "labels.text.fill",
-          stylers: [{ color: "#60a5fa" }],
-        },
-      ],
+  const clearMarkers = useCallback(() => {
+    markersRef.current.forEach((marker) => {
+      marker.map = null;
     });
-
-    mapInstanceRef.current = map;
-
-    // Add click listener
-    map.addListener("click", (e: google.maps.MapMouseEvent) => {
-      if (e.latLng) {
-        onMapClick(e.latLng.lat(), e.latLng.lng());
-      }
-    });
-
-    updateMarkers();
-  }, [onMapClick]);
-
-  const updateMarkers = useCallback(() => {
-    if (!mapInstanceRef.current) return;
-
-    // Clear existing markers
-    markersRef.current.forEach((marker) => marker.setMap(null));
     markersRef.current = [];
+  }, []);
 
-    // Add markers for pickup points
-    pickupPoints.forEach((point) => {
-      const isSelected = selectedPoint?.id === point.id;
-      const isEditing = editingPoint?.id === point.id;
+  const clearTempMarker = useCallback(() => {
+    if (tempMarkerRef.current) {
+      tempMarkerRef.current.map = null;
+      tempMarkerRef.current = null;
+    }
+  }, []);
 
-      const marker = new google.maps.Marker({
-        position: { lat: point.latitude, lng: point.longitude },
-        map: mapInstanceRef.current,
-        title: point.name,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: isSelected || isEditing ? 12 : 8,
-          fillColor: point.isActive
-            ? isEditing
-              ? "#f59e0b"
-              : isSelected
-              ? "#10b981"
-              : "#3b82f6"
-            : "#ef4444",
-          fillOpacity: 1,
-          strokeColor: "#ffffff",
-          strokeWeight: 2,
-        },
-      });
-
-      marker.addListener("click", () => {
-        onMarkerClick(point);
-      });
-
-      markersRef.current.push(marker);
-    });
-  }, [pickupPoints, selectedPoint, editingPoint, onMarkerClick]);
-
-  useEffect(() => {
-    const loadGoogleMaps = () => {
-      if (window.google && window.google.maps) {
-        initializeMap();
+  const createTempMarker = useCallback(
+    async (lat: number, lng: number) => {
+      if (!mapInstanceRef.current || !isGoogleMapsLoaded()) {
+        console.log("Map or Google Maps not ready for temp marker");
         return;
       }
 
-      const script = document.createElement("script");
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`;
-      script.async = true;
-      script.defer = true;
-      script.onload = initializeMap;
-      document.head.appendChild(script);
+      console.log("Creating temp marker at:", lat, lng);
+      clearTempMarker();
+
+      try {
+        // Import the marker library
+        const { AdvancedMarkerElement, PinElement } =
+          (await google.maps.importLibrary(
+            "marker"
+          )) as google.maps.MarkerLibrary;
+
+        // Create a custom pin element
+        const pinElement = new PinElement({
+          background: "#f59e0b",
+          borderColor: "#ffffff",
+          glyphColor: "#ffffff",
+          scale: 1.2,
+        });
+
+        const tempMarker = new AdvancedMarkerElement({
+          position: { lat, lng },
+          map: mapInstanceRef.current,
+          title: "Selected Location",
+          content: pinElement.element,
+        });
+
+        tempMarkerRef.current = tempMarker;
+        console.log("Temp marker created successfully");
+      } catch (error) {
+        console.error("Error creating temp marker:", error);
+      }
+    },
+    [clearTempMarker]
+  );
+
+  const updateMarkers = useCallback(async () => {
+    if (!mapInstanceRef.current || !isGoogleMapsLoaded()) {
+      console.log("Map not ready for marker update");
+      return;
+    }
+
+    console.log("Updating markers, pickup points count:", pickupPoints.length);
+    console.log(
+      "Pickup points data:",
+      pickupPoints.map((p) => ({
+        id: p.id,
+        name: p.name,
+        lat: p.latitude,
+        lng: p.longitude,
+      }))
+    );
+
+    // Clear existing markers
+    clearMarkers();
+
+    try {
+      // Import the marker library
+      const { AdvancedMarkerElement, PinElement } =
+        (await google.maps.importLibrary(
+          "marker"
+        )) as google.maps.MarkerLibrary;
+
+      // Add markers for pickup points
+      pickupPoints.forEach((point) => {
+        // Validate coordinates
+        if (
+          !point.latitude ||
+          !point.longitude ||
+          isNaN(point.latitude) ||
+          isNaN(point.longitude) ||
+          (point.latitude === 0 && point.longitude === 0)
+        ) {
+          console.warn(
+            "Invalid coordinates for point:",
+            point.name,
+            point.latitude,
+            point.longitude
+          );
+          return;
+        }
+
+        const isSelected = selectedPoint?.id === point.id;
+        const isEditing = editingPoint?.id === point.id;
+
+        try {
+          // Create a custom pin element with different colors
+          let pinColor = "#3b82f6"; // Default blue for active
+          if (!point.isActive) {
+            pinColor = "#ef4444"; // Red for inactive
+          } else if (isEditing) {
+            pinColor = "#f59e0b"; // Yellow for editing
+          } else if (isSelected) {
+            pinColor = "#10b981"; // Green for selected
+          }
+
+          const pinElement = new PinElement({
+            background: pinColor,
+            borderColor: "#ffffff",
+            glyphColor: "#ffffff",
+            scale: isSelected || isEditing ? 1.2 : 1.0,
+          });
+
+          const marker = new AdvancedMarkerElement({
+            position: { lat: point.latitude, lng: point.longitude },
+            map: mapInstanceRef.current,
+            title: point.name,
+            content: pinElement.element,
+          });
+
+          // Add click listener
+          marker.addListener("click", () => {
+            console.log("Marker clicked:", point.name);
+            onMarkerClick(point);
+          });
+
+          markersRef.current.push(marker);
+          console.log(
+            "Created marker for:",
+            point.name,
+            "at",
+            point.latitude,
+            point.longitude
+          );
+        } catch (error) {
+          console.error("Error creating marker for:", point.name, error);
+        }
+      });
+
+      console.log("Total markers created:", markersRef.current.length);
+    } catch (error) {
+      console.error("Error importing marker library:", error);
+    }
+  }, [pickupPoints, selectedPoint, editingPoint, onMarkerClick, clearMarkers]);
+
+  const initializeMap = useCallback(() => {
+    if (!mapRef.current || !isGoogleMapsLoaded()) {
+      console.log("Map ref or Google Maps not available");
+      return;
+    }
+
+    try {
+      // Cyprus coordinates
+      const cyprusCenter = { lat: 35.1264, lng: 33.4299 };
+
+      const map = new google.maps.Map(mapRef.current, {
+        zoom: 10,
+        center: cyprusCenter,
+        mapId: "DEMO_MAP_ID", // Required for AdvancedMarkerElement
+        styles: [
+          {
+            featureType: "all",
+            elementType: "geometry",
+            stylers: [{ color: "#1f2937" }],
+          },
+          {
+            featureType: "all",
+            elementType: "labels.text.fill",
+            stylers: [{ color: "#fbbf24" }],
+          },
+          {
+            featureType: "all",
+            elementType: "labels.text.stroke",
+            stylers: [{ color: "#1f2937" }],
+          },
+          {
+            featureType: "water",
+            elementType: "geometry",
+            stylers: [{ color: "#1e40af" }],
+          },
+          {
+            featureType: "water",
+            elementType: "labels.text.fill",
+            stylers: [{ color: "#60a5fa" }],
+          },
+        ],
+      });
+
+      mapInstanceRef.current = map;
+      setIsMapLoaded(true);
+      setLoadError(null);
+
+      // Add click listener for map
+      map.addListener("click", (e: google.maps.MapMouseEvent) => {
+        if (e.latLng) {
+          const lat = e.latLng.lat();
+          const lng = e.latLng.lng();
+          console.log("Map clicked:", lat, lng);
+          onMapClick(lat, lng);
+        }
+      });
+
+      console.log("Map initialized successfully");
+    } catch (error) {
+      console.error("Error initializing map:", error);
+      setLoadError("Failed to initialize map");
+    }
+  }, [onMapClick]);
+
+  const loadGoogleMapsScript = useCallback(() => {
+    // Check if script is already loaded
+    if (isGoogleMapsLoaded()) {
+      initializeMap();
+      return;
+    }
+
+    // Check if script is already loading
+    const existingScript = document.querySelector(
+      'script[src*="maps.googleapis.com"]'
+    );
+    if (existingScript) {
+      existingScript.addEventListener("load", initializeMap);
+      return;
+    }
+
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      setLoadError("Google Maps API key not found");
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker,places`;
+    script.async = true;
+    script.defer = true;
+
+    script.onload = () => {
+      console.log("Google Maps script loaded");
+      setTimeout(initializeMap, 100);
     };
 
-    loadGoogleMaps();
+    script.onerror = () => {
+      console.error("Failed to load Google Maps script");
+      setLoadError("Failed to load Google Maps");
+    };
+
+    document.head.appendChild(script);
   }, [initializeMap]);
 
   useEffect(() => {
-    updateMarkers();
-  }, [updateMarkers]);
+    loadGoogleMapsScript();
+
+    // Cleanup function
+    return () => {
+      clearMarkers();
+      clearTempMarker();
+    };
+  }, [loadGoogleMapsScript, clearMarkers, clearTempMarker]);
+
+  // Update markers when data changes - with dependency on pickup points length too
+  useEffect(() => {
+    if (isMapLoaded && mapInstanceRef.current) {
+      console.log("Effect triggered - updating markers");
+      // Add a small delay to ensure DOM is ready
+      const timeoutId = setTimeout(() => {
+        updateMarkers();
+      }, 100);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [
+    pickupPoints.length,
+    pickupPoints,
+    selectedPoint,
+    editingPoint,
+    isMapLoaded,
+    updateMarkers,
+  ]);
+
+  // Handle temp marker - only for new/editing points
+  useEffect(() => {
+    console.log(
+      "Temp marker effect - tempLocation:",
+      tempLocation,
+      "isMapLoaded:",
+      isMapLoaded,
+      "showAddForm:",
+      showAddForm,
+      "editingPoint:",
+      !!editingPoint
+    );
+
+    // Only show temp marker when actively adding or editing
+    if (
+      isMapLoaded &&
+      (showAddForm || editingPoint) &&
+      tempLocation &&
+      tempLocation.lat !== 0 &&
+      tempLocation.lng !== 0
+    ) {
+      console.log(
+        "Creating temp marker at:",
+        tempLocation.lat,
+        tempLocation.lng
+      );
+      createTempMarker(tempLocation.lat, tempLocation.lng);
+    } else {
+      console.log("Clearing temp marker");
+      clearTempMarker();
+    }
+  }, [
+    tempLocation,
+    isMapLoaded,
+    showAddForm,
+    editingPoint,
+    createTempMarker,
+    clearTempMarker,
+  ]);
+
+  if (loadError) {
+    return (
+      <div className="w-full h-full rounded-xl overflow-hidden border border-white/20 flex items-center justify-center bg-red-900/20">
+        <div className="text-center text-red-400">
+          <p className="text-lg font-semibold">Map Load Error</p>
+          <p className="text-sm">{loadError}</p>
+          <button
+            onClick={() => {
+              setLoadError(null);
+              loadGoogleMapsScript();
+            }}
+            className="mt-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div
-      ref={mapRef}
-      className="w-full h-full rounded-xl overflow-hidden border border-white/20"
-      style={{ minHeight: "500px" }}
-    />
+    <div className="w-full h-full rounded-xl overflow-hidden border border-white/20 relative">
+      {!isMapLoaded && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-900/50 z-10">
+          <div className="text-center text-gray-300">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
+            <p>Loading map...</p>
+          </div>
+        </div>
+      )}
+      <div
+        ref={mapRef}
+        className="w-full h-full"
+        style={{ minHeight: "500px" }}
+      />
+    </div>
   );
 };
 
@@ -197,6 +462,10 @@ export default function PickupPointsPage() {
   const [editingPoint, setEditingPoint] = useState<PickupPoint | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [tempLocation, setTempLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -213,13 +482,24 @@ export default function PickupPointsPage() {
 
   // Real-time listener for pickup points
   useEffect(() => {
+    console.log("Setting up Firebase listener");
     const unsubscribe = onSnapshot(
       query(collection(db, "pickup_points"), orderBy("createdAt", "desc")),
       (snapshot) => {
-        const points = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as PickupPoint[];
+        console.log(
+          "Firebase snapshot received, docs count:",
+          snapshot.docs.length
+        );
+        const points = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          console.log("Document data:", doc.id, data);
+          return {
+            id: doc.id,
+            ...data,
+          };
+        }) as PickupPoint[];
+
+        console.log("Processed pickup points:", points);
         setPickupPoints(points);
         setLoading(false);
       },
@@ -229,32 +509,66 @@ export default function PickupPointsPage() {
       }
     );
 
-    return () => unsubscribe();
+    return () => {
+      console.log("Cleaning up Firebase listener");
+      unsubscribe();
+    };
   }, []);
 
-  const handleMapClick = (lat: number, lng: number) => {
-    if (showAddForm || editingPoint) {
-      setFormData((prev) => ({
-        ...prev,
-        latitude: lat,
-        longitude: lng,
-      }));
-    }
-  };
+  const handleMapClick = useCallback(
+    (lat: number, lng: number) => {
+      console.log(
+        "Map click handler called:",
+        lat,
+        lng,
+        "showAddForm:",
+        showAddForm,
+        "editingPoint:",
+        !!editingPoint
+      );
 
-  const handleMarkerClick = (point: PickupPoint) => {
-    setSelectedPoint(point);
-  };
+      if (showAddForm || editingPoint) {
+        console.log("Updating form data and temp location");
+
+        // Update form data with coordinates
+        setFormData((prev) => ({
+          ...prev,
+          latitude: lat,
+          longitude: lng,
+        }));
+
+        // Set temp location to show marker
+        setTempLocation({ lat, lng });
+
+        console.log("Form data updated with coordinates:", lat, lng);
+        console.log("Temp location set:", { lat, lng });
+      }
+    },
+    [showAddForm, editingPoint]
+  );
+
+  const handleMarkerClick = useCallback(
+    (point: PickupPoint) => {
+      console.log("Marker click handler called:", point.name);
+      // Don't select if we're in editing mode
+      if (!showAddForm && !editingPoint) {
+        setSelectedPoint(point);
+      }
+    },
+    [showAddForm, editingPoint]
+  );
 
   const handleAddNew = () => {
+    console.log("Add new clicked");
     setShowAddForm(true);
     setEditingPoint(null);
     setSelectedPoint(null);
+    setTempLocation(null);
     setFormData({
       name: "",
       address: "",
-      latitude: 35.1264, // Default to Cyprus center
-      longitude: 33.4299,
+      latitude: 0,
+      longitude: 0,
       contactPerson: "",
       contactPhone: "",
       operatingHours: "09:00 - 18:00",
@@ -264,9 +578,14 @@ export default function PickupPointsPage() {
   };
 
   const handleEdit = (point: PickupPoint) => {
+    console.log("Edit clicked for:", point.name);
     setEditingPoint(point);
     setShowAddForm(false);
     setSelectedPoint(null);
+
+    // Set temp location for editing - this will show the yellow marker
+    setTempLocation({ lat: point.latitude, lng: point.longitude });
+
     setFormData({
       name: point.name,
       address: point.address,
@@ -282,26 +601,70 @@ export default function PickupPointsPage() {
 
   const handleSave = async () => {
     try {
+      // Validate required fields
+      if (
+        !formData.name ||
+        !formData.address ||
+        formData.latitude === 0 ||
+        formData.longitude === 0
+      ) {
+        alert("Lütfen tüm gerekli alanları doldurun ve haritadan konum seçin!");
+        return;
+      }
+
+      // Ensure coordinates are valid numbers
+      const latitude = Number(formData.latitude);
+      const longitude = Number(formData.longitude);
+
+      if (isNaN(latitude) || isNaN(longitude)) {
+        alert("Geçersiz koordinatlar!");
+        return;
+      }
+
       const data = {
-        ...formData,
+        name: formData.name.trim(),
+        address: formData.address.trim(),
+        latitude: latitude,
+        longitude: longitude,
+        contactPerson: formData.contactPerson.trim(),
+        contactPhone: formData.contactPhone.trim(),
+        operatingHours: formData.operatingHours.trim() || "09:00 - 18:00",
+        isActive: formData.isActive,
+        notes: formData.notes.trim(),
         updatedAt: Timestamp.now(),
       };
+
+      console.log("Saving pickup point with data:", data);
 
       if (editingPoint) {
         // Update existing point
         await updateDoc(doc(db, "pickup_points", editingPoint.id), data);
+        console.log("Pickup point updated successfully");
       } else {
         // Add new point
-        await addDoc(collection(db, "pickup_points"), {
+        const docRef = await addDoc(collection(db, "pickup_points"), {
           ...data,
           createdAt: Timestamp.now(),
         });
+        console.log("Pickup point added successfully with ID:", docRef.id);
       }
 
       // Reset form
       setShowAddForm(false);
       setEditingPoint(null);
       setSelectedPoint(null);
+      setTempLocation(null);
+      setFormData({
+        name: "",
+        address: "",
+        latitude: 0,
+        longitude: 0,
+        contactPerson: "",
+        contactPhone: "",
+        operatingHours: "09:00 - 18:00",
+        isActive: true,
+        notes: "",
+      });
     } catch (error) {
       console.error("Error saving pickup point:", error);
       alert("Pickup point kaydedilirken hata oluştu!");
@@ -316,6 +679,7 @@ export default function PickupPointsPage() {
     try {
       await deleteDoc(doc(db, "pickup_points", pointId));
       setSelectedPoint(null);
+      console.log("Pickup point deleted successfully");
     } catch (error) {
       console.error("Error deleting pickup point:", error);
       alert("Pickup point silinirken hata oluştu!");
@@ -326,6 +690,18 @@ export default function PickupPointsPage() {
     setShowAddForm(false);
     setEditingPoint(null);
     setSelectedPoint(null);
+    setTempLocation(null);
+    setFormData({
+      name: "",
+      address: "",
+      latitude: 0,
+      longitude: 0,
+      contactPerson: "",
+      contactPhone: "",
+      operatingHours: "09:00 - 18:00",
+      isActive: true,
+      notes: "",
+    });
   };
 
   const handleLogout = async () => {
@@ -404,6 +780,10 @@ export default function PickupPointsPage() {
                       <div className="w-3 h-3 bg-green-500 rounded-full"></div>
                       <span>Seçili</span>
                     </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                      <span>Yeni Konum</span>
+                    </div>
                   </div>
                 </div>
 
@@ -412,6 +792,18 @@ export default function PickupPointsPage() {
                     <p className="text-yellow-300 text-sm flex items-center gap-2">
                       <MapPin className="w-4 h-4" />
                       Haritaya tıklayarak pickup point konumunu seçin
+                      {tempLocation &&
+                      tempLocation.lat !== 0 &&
+                      tempLocation.lng !== 0 ? (
+                        <span className="ml-2 text-green-300 font-medium">
+                          ✓ Konum seçildi: {tempLocation.lat.toFixed(6)},{" "}
+                          {tempLocation.lng.toFixed(6)}
+                        </span>
+                      ) : (
+                        <span className="ml-2 text-red-300 font-medium">
+                          ⚠ Lütfen haritaya tıklayın
+                        </span>
+                      )}
                     </p>
                   </div>
                 )}
@@ -422,6 +814,8 @@ export default function PickupPointsPage() {
                   onMarkerClick={handleMarkerClick}
                   selectedPoint={selectedPoint}
                   editingPoint={editingPoint}
+                  tempLocation={tempLocation}
+                  showAddForm={showAddForm}
                 />
               </div>
             </div>
@@ -467,7 +861,7 @@ export default function PickupPointsPage() {
 
                     <input
                       type="text"
-                      placeholder="Nokta adı"
+                      placeholder="Nokta adı *"
                       value={formData.name}
                       onChange={(e) =>
                         setFormData({ ...formData, name: e.target.value })
@@ -477,7 +871,7 @@ export default function PickupPointsPage() {
 
                     <input
                       type="text"
-                      placeholder="Adres"
+                      placeholder="Adres *"
                       value={formData.address}
                       onChange={(e) =>
                         setFormData({ ...formData, address: e.target.value })
@@ -489,8 +883,8 @@ export default function PickupPointsPage() {
                       <input
                         type="number"
                         step="0.000001"
-                        placeholder="Enlem"
-                        value={formData.latitude}
+                        placeholder="Enlem *"
+                        value={formData.latitude || ""}
                         onChange={(e) =>
                           setFormData({
                             ...formData,
@@ -502,8 +896,8 @@ export default function PickupPointsPage() {
                       <input
                         type="number"
                         step="0.000001"
-                        placeholder="Boylam"
-                        value={formData.longitude}
+                        placeholder="Boylam *"
+                        value={formData.longitude || ""}
                         onChange={(e) =>
                           setFormData({
                             ...formData,
@@ -581,7 +975,12 @@ export default function PickupPointsPage() {
                     <div className="flex gap-2">
                       <button
                         onClick={handleSave}
-                        disabled={!formData.name || !formData.address}
+                        disabled={
+                          !formData.name ||
+                          !formData.address ||
+                          formData.latitude === 0 ||
+                          formData.longitude === 0
+                        }
                         className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-green-600/20 hover:bg-green-600/30 disabled:bg-gray-600/20 text-green-400 disabled:text-gray-400 rounded-lg transition-colors disabled:cursor-not-allowed"
                       >
                         <Save className="w-4 h-4" />
@@ -685,13 +1084,21 @@ export default function PickupPointsPage() {
                     {filteredPoints.map((point) => (
                       <div
                         key={point.id}
-                        onClick={() => setSelectedPoint(point)}
+                        onClick={() => {
+                          if (!showAddForm && !editingPoint) {
+                            setSelectedPoint(point);
+                          }
+                        }}
                         className={`p-3 rounded-lg cursor-pointer transition-colors ${
                           selectedPoint?.id === point.id
                             ? "bg-blue-600/20 border border-blue-500/30"
                             : editingPoint?.id === point.id
                             ? "bg-yellow-600/20 border border-yellow-500/30"
                             : "bg-white/5 hover:bg-white/10"
+                        } ${
+                          showAddForm || editingPoint
+                            ? "cursor-not-allowed opacity-50"
+                            : ""
                         }`}
                       >
                         <div className="flex items-center justify-between">
@@ -713,26 +1120,28 @@ export default function PickupPointsPage() {
                               ></div>
                             </div>
                           </div>
-                          <div className="flex gap-1">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleEdit(point);
-                              }}
-                              className="p-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded"
-                            >
-                              <Edit2 className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDelete(point.id);
-                              }}
-                              className="p-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
+                          {!showAddForm && !editingPoint && (
+                            <div className="flex gap-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEdit(point);
+                                }}
+                                className="p-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDelete(point.id);
+                                }}
+                                className="p-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
