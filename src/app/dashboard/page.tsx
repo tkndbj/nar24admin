@@ -25,6 +25,7 @@ import {
   Globe,
   Bell,
   Filter,
+  MapPin,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -389,6 +390,9 @@ export default function Dashboard() {
         break;
       case "listproduct-flowmanagement":
         router.push("/listproduct-flowmanagement");
+        break;
+      case "pickup-points":
+        router.push("/pickup-points");
         break;
       default:
         break;
@@ -910,6 +914,19 @@ export default function Dashboard() {
                   </h4>
                 </div>
                 <p className="text-xs text-gray-300">Yeni başvurular</p>
+              </button>
+
+              <button
+                onClick={() => handleNavigation("pickup-points")}
+                className="p-3 bg-green-600/20 hover:bg-green-600/30 border border-green-500/30 rounded-lg text-left transition-colors group"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <MapPin className="w-4 h-4 text-green-400 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-white text-sm">
+                    Teslimat Noktaları
+                  </h4>
+                </div>
+                <p className="text-xs text-gray-300">Teslimat noktaları</p>
               </button>
 
               <button
