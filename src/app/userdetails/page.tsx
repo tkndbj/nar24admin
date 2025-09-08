@@ -320,7 +320,7 @@ function UserDetailsContent() {
     };
 
     const inputClassName =
-      "w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm";
+      "w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm";
 
     switch (type) {
       case "boolean":
@@ -329,8 +329,8 @@ function UserDetailsContent() {
             onClick={() => handleChange(!value)}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors w-full justify-center text-sm ${
               value
-                ? "bg-green-600/20 text-green-400"
-                : "bg-gray-600/20 text-gray-400"
+                ? "bg-green-100 text-green-800 border border-green-300"
+                : "bg-gray-100 text-gray-600 border border-gray-300"
             }`}
           >
             {value ? (
@@ -434,13 +434,13 @@ function UserDetailsContent() {
   const handleDeleteAccount = async () => {
     // a clear, un‑missable confirmation
     const ok = window.confirm(
-      `“${user?.displayName}” adlı kullanıcının hesabı kalıcı olarak silinecek.\n` +
+      `"${user?.displayName}" adlı kullanıcının hesabı kalıcı olarak silinecek.\n` +
         `Bu işlem geri alınamaz. Devam etmek istediğinize emin misiniz?`
     );
     if (!ok) return;
 
     try {
-      // pass the target uid so the function runs in “admin” mode
+      // pass the target uid so the function runs in "admin" mode
       const { data } = await deleteUserAccountCallable({ uid: userId });
       toast.success((data as { message: string }).message);
       router.push("/dashboard");
@@ -898,8 +898,8 @@ function UserDetailsContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="flex items-center gap-3 text-white">
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="flex items-center gap-3 text-gray-600">
           <Loader2 className="w-6 h-6 animate-spin" />
           <span>Kullanıcı bilgileri yükleniyor...</span>
         </div>
@@ -909,10 +909,10 @@ function UserDetailsContent() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-center text-white">
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center text-gray-600">
           <h2 className="text-xl font-semibold mb-2">Kullanıcı Bulunamadı</h2>
-          <p className="text-gray-400">Aradığınız kullanıcı mevcut değil.</p>
+          <p className="text-gray-500">Aradığınız kullanıcı mevcut değil.</p>
         </div>
       </div>
     );
@@ -932,7 +932,7 @@ function UserDetailsContent() {
 
     return (
       <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-300">{label}</label>
+        <label className="text-sm font-medium text-gray-700">{label}</label>
         <div className="flex items-center gap-2">
           {fieldData.isEditing ? (
             <>
@@ -940,35 +940,19 @@ function UserDetailsContent() {
                 <select
                   value={fieldData.value}
                   onChange={(e) => handleFieldChange(field, e.target.value)}
-                  className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  style={{ color: "white" }}
+                  className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   disabled={isSaving}
                 >
-                  <option
-                    value=""
-                    style={{ backgroundColor: "#1f2937", color: "white" }}
-                  >
-                    Seçiniz
-                  </option>
-                  <option
-                    value="Male"
-                    style={{ backgroundColor: "#1f2937", color: "white" }}
-                  >
-                    Erkek
-                  </option>
-                  <option
-                    value="Female"
-                    style={{ backgroundColor: "#1f2937", color: "white" }}
-                  >
-                    Kadın
-                  </option>
+                  <option value="">Seçiniz</option>
+                  <option value="Male">Erkek</option>
+                  <option value="Female">Kadın</option>
                 </select>
               ) : (
                 <input
                   type={type}
                   value={fieldData.value}
                   onChange={(e) => handleFieldChange(field, e.target.value)}
-                  className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
+                  className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
                   disabled={isSaving}
                   autoFocus
                 />
@@ -976,7 +960,7 @@ function UserDetailsContent() {
               <button
                 onClick={() => handleFieldSave(field)}
                 disabled={isSaving}
-                className="p-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
+                className="p-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
               >
                 {isSaving ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -987,19 +971,19 @@ function UserDetailsContent() {
               <button
                 onClick={() => handleFieldCancel(field)}
                 disabled={isSaving}
-                className="p-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
+                className="p-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
             </>
           ) : (
             <>
-              <span className="flex-1 text-white">
+              <span className="flex-1 text-gray-900">
                 {fieldData.value || "Belirtilmemiş"}
               </span>
               <button
                 onClick={() => handleFieldEdit(field)}
-                className="p-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex-shrink-0"
+                className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex-shrink-0"
               >
                 <Edit className="w-4 h-4" />
               </button>
@@ -1037,10 +1021,10 @@ function UserDetailsContent() {
         <div
           ref={isLast ? lastProductElementRef : null}
           onClick={handleProductClick}
-          className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4 transition-all duration-200 hover:bg-white/15 hover:border-white/30 cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group"
+          className="bg-white border border-gray-200 rounded-xl p-4 transition-all duration-200 hover:shadow-md hover:border-blue-300 cursor-pointer group"
         >
           <div className="flex items-center gap-4">
-            <div className="relative w-20 h-20 rounded-lg overflow-hidden flex-shrink-0">
+            <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100">
               {product.imageUrls?.[0] ? (
                 <Image
                   src={product.imageUrls[0]}
@@ -1049,31 +1033,31 @@ function UserDetailsContent() {
                   className="object-cover"
                 />
               ) : (
-                <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                  <ImageIcon className="w-8 h-8 text-gray-400" />
+                <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                  <ImageIcon className="w-6 h-6 text-gray-400" />
                 </div>
               )}
             </div>
 
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-white truncate group-hover:text-blue-300">
+              <h3 className="font-semibold text-gray-900 truncate group-hover:text-blue-600">
                 {product.productName || "Ürün Adı Yok"}
               </h3>
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-gray-500">
                 {product.category || "Kategori Yok"} •{" "}
                 {product.subcategory || "Alt Kategori Yok"}
               </p>
               <div className="flex items-center gap-4 mt-1">
-                <span className="text-lg font-bold text-green-400">
+                <span className="text-lg font-bold text-green-600">
                   {formatPrice(product.price || 0, product.currency || "TRY")}
                 </span>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-gray-500">
                   {product.condition || "Durum Belirtilmemiş"}
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-6 text-sm text-gray-400">
+            <div className="flex items-center gap-6 text-sm text-gray-500">
               <div className="flex items-center gap-1">
                 <Eye className="w-4 h-4" />
                 <span>{product.clickCount || 0}</span>
@@ -1091,21 +1075,20 @@ function UserDetailsContent() {
             {(product.isFeatured || product.isBoosted) && (
               <div className="flex flex-col gap-1">
                 {product.isFeatured && (
-                  <span className="px-2 py-1 bg-yellow-600/20 text-yellow-400 text-xs rounded">
+                  <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded">
                     ÖNE ÇIKAN
                   </span>
                 )}
                 {product.isBoosted && (
-                  <span className="px-2 py-1 bg-purple-600/20 text-purple-400 text-xs rounded">
+                  <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded">
                     BOOST
                   </span>
                 )}
               </div>
             )}
 
-            {/* Add visual indicator for clickable item */}
             <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-              <ArrowRight className="w-5 h-5 text-blue-400" />
+              <ArrowRight className="w-5 h-5 text-blue-600" />
             </div>
           </div>
         </div>
@@ -1116,9 +1099,9 @@ function UserDetailsContent() {
       <div
         ref={isLast ? lastProductElementRef : null}
         onClick={handleProductClick}
-        className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden transition-all duration-200 hover:bg-white/15 hover:border-white/30 hover:shadow-lg group cursor-pointer hover:border-blue-500/50 hover:scale-[1.02]"
+        className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-md hover:border-blue-300 group cursor-pointer"
       >
-        <div className="relative aspect-square">
+        <div className="relative aspect-square bg-gray-100">
           {product.imageUrls?.[0] ? (
             <Image
               src={product.imageUrls[0]}
@@ -1127,7 +1110,7 @@ function UserDetailsContent() {
               className="object-cover"
             />
           ) : (
-            <div className="w-full h-full bg-gray-700 flex items-center justify-center">
+            <div className="w-full h-full bg-gray-100 flex items-center justify-center">
               <ImageIcon className="w-12 h-12 text-gray-400" />
             </div>
           )}
@@ -1135,21 +1118,20 @@ function UserDetailsContent() {
           {(product.isFeatured || product.isBoosted) && (
             <div className="absolute top-2 left-2 flex flex-col gap-1">
               {product.isFeatured && (
-                <span className="px-2 py-1 bg-yellow-600/90 text-white text-xs rounded">
+                <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded">
                   ÖNE ÇIKAN
                 </span>
               )}
               {product.isBoosted && (
-                <span className="px-2 py-1 bg-purple-600/90 text-white text-xs rounded">
+                <span className="px-2 py-1 bg-purple-600 text-white text-xs rounded">
                   BOOST
                 </span>
               )}
             </div>
           )}
 
-          {/* Add visual indicator for clickable item */}
           <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="p-1 bg-blue-600/90 rounded-full">
+            <div className="p-1 bg-blue-600 rounded-full">
               <ArrowRight className="w-3 h-3 text-white" />
             </div>
           </div>
@@ -1170,29 +1152,29 @@ function UserDetailsContent() {
           </div>
         </div>
 
-        <div className="p-4">
-          <h3 className="font-semibold text-white mb-1 line-clamp-2 group-hover:text-blue-300">
+        <div className="p-3">
+          <h3 className="font-semibold text-gray-900 mb-1 line-clamp-2 group-hover:text-blue-600 text-sm">
             {product.productName || "Ürün Adı Yok"}
           </h3>
-          <p className="text-sm text-gray-400 mb-2">
+          <p className="text-xs text-gray-500 mb-2">
             {product.category || "Kategori Yok"}
           </p>
           <div className="flex items-center justify-between">
-            <span className="text-lg font-bold text-green-400">
+            <span className="text-base font-bold text-green-600">
               {formatPrice(product.price || 0, product.currency || "TRY")}
             </span>
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-500">
               {product.condition || "Durum Belirtilmemiş"}
             </span>
           </div>
 
           {product.averageRating > 0 && (
             <div className="flex items-center gap-1 mt-2">
-              <Star className="w-4 h-4 text-yellow-400 fill-current" />
-              <span className="text-sm text-white">
+              <Star className="w-3 h-3 text-yellow-500 fill-current" />
+              <span className="text-xs text-gray-700">
                 {product.averageRating.toFixed(1)}
               </span>
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-gray-500">
                 ({product.reviewCount || 0})
               </span>
             </div>
@@ -1234,28 +1216,28 @@ function UserDetailsContent() {
     return (
       <div
         ref={isLast ? lastOrderElementRef : null}
-        className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6 transition-all duration-200 hover:bg-white/15 hover:border-white/30"
+        className="bg-white border border-gray-200 rounded-xl p-4 transition-all duration-200 hover:shadow-md"
       >
         {/* Order Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-lg font-semibold text-white">
+            <h3 className="text-lg font-semibold text-gray-900">
               Sipariş #{order.id.slice(-8)}
             </h3>
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-gray-500">
               {formatDate(order.timestamp)}
             </p>
           </div>
           <div className="text-right">
-            <p className="text-xl font-bold text-green-400">
+            <p className="text-xl font-bold text-green-600">
               {formatPrice(order.totalPrice)}
             </p>
             <div className="flex items-center gap-2">
               <span
                 className={`px-2 py-1 text-xs rounded-full ${
                   order.paymentMethod === "PlayPoints"
-                    ? "bg-purple-600/20 text-purple-400"
-                    : "bg-blue-600/20 text-blue-400"
+                    ? "bg-purple-100 text-purple-800"
+                    : "bg-blue-100 text-blue-800"
                 }`}
               >
                 {order.paymentMethod === "PlayPoints"
@@ -1268,16 +1250,16 @@ function UserDetailsContent() {
 
         {/* Order Items */}
         <div className="space-y-3 mb-4">
-          <h4 className="text-sm font-medium text-gray-300">
+          <h4 className="text-sm font-medium text-gray-700">
             Ürünler ({orderItemsForThisOrder.length})
           </h4>
           <div className="grid gap-3">
             {orderItemsForThisOrder.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center gap-3 bg-white/5 rounded-lg p-3"
+                className="flex items-center gap-3 bg-gray-50 rounded-lg p-3"
               >
-                <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
+                <div className="relative w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-gray-200">
                   {item.productImage ? (
                     <Image
                       src={item.productImage}
@@ -1286,17 +1268,17 @@ function UserDetailsContent() {
                       className="object-cover"
                     />
                   ) : (
-                    <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                      <Package className="w-5 h-5 text-gray-400" />
+                    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                      <Package className="w-4 h-4 text-gray-400" />
                     </div>
                   )}
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <h5 className="font-medium text-white truncate">
+                  <h5 className="font-medium text-gray-900 truncate text-sm">
                     {item.productName}
                   </h5>
-                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
                     <span>Adet: {item.quantity}</span>
                     {item.selectedColor && <span>• {item.selectedColor}</span>}
                     {item.selectedSize && <span>• {item.selectedSize}</span>}
@@ -1307,18 +1289,18 @@ function UserDetailsContent() {
                 </div>
 
                 <div className="text-right">
-                  <p className="font-semibold text-white">
+                  <p className="font-semibold text-gray-900 text-sm">
                     {formatPrice(item.price * item.quantity)}
                   </p>
                   <span
                     className={`px-2 py-1 text-xs rounded ${
                       item.shipmentStatus === "Delivered"
-                        ? "bg-green-600/20 text-green-400"
+                        ? "bg-green-100 text-green-800"
                         : item.shipmentStatus === "Shipped"
-                        ? "bg-blue-600/20 text-blue-400"
+                        ? "bg-blue-100 text-blue-800"
                         : item.shipmentStatus === "Processing"
-                        ? "bg-yellow-600/20 text-yellow-400"
-                        : "bg-gray-600/20 text-gray-400"
+                        ? "bg-yellow-100 text-yellow-800"
+                        : "bg-gray-100 text-gray-800"
                     }`}
                   >
                     {item.shipmentStatus}
@@ -1330,11 +1312,11 @@ function UserDetailsContent() {
         </div>
 
         {/* Order Address */}
-        <div className="border-t border-white/10 pt-4">
-          <h4 className="text-sm font-medium text-gray-300 mb-2">
+        <div className="border-t border-gray-200 pt-4">
+          <h4 className="text-sm font-medium text-gray-700 mb-2">
             Teslimat Adresi
           </h4>
-          <div className="flex items-start gap-2 text-sm text-gray-400">
+          <div className="flex items-start gap-2 text-sm text-gray-600">
             <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <div>
               <p>{order.address.addressLine1}</p>
@@ -1359,8 +1341,6 @@ function UserDetailsContent() {
     viewMode: ViewMode;
     isLast?: boolean;
   }) => {
-    const router = useRouter(); // Add this line to get router access
-
     // Safe access to categories with fallback
     const categories = shop.categories || [];
     const categoriesText =
@@ -1375,11 +1355,11 @@ function UserDetailsContent() {
       return (
         <div
           ref={isLast ? lastShopElementRef : null}
-          onClick={handleShopClick} // Add click handler
-          className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4 transition-all duration-200 hover:bg-white/15 hover:border-white/30 cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group" // Add cursor and hover effects
+          onClick={handleShopClick}
+          className="bg-white border border-gray-200 rounded-xl p-4 transition-all duration-200 hover:shadow-md hover:border-blue-300 cursor-pointer group"
         >
           <div className="flex items-center gap-4">
-            <div className="relative w-16 h-16 rounded-full overflow-hidden flex-shrink-0">
+            <div className="relative w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-gray-100">
               {shop.profileImageUrl ? (
                 <Image
                   src={shop.profileImageUrl}
@@ -1388,24 +1368,23 @@ function UserDetailsContent() {
                   className="object-cover"
                 />
               ) : (
-                <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                  <Store className="w-6 h-6 text-gray-400" />
+                <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                  <Store className="w-5 h-5 text-gray-400" />
                 </div>
               )}
             </div>
 
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-white group-hover:text-blue-300">
+              <h3 className="font-semibold text-gray-900 group-hover:text-blue-600">
                 {shop.name || "Mağaza Adı Yok"}
-              </h3>{" "}
-              {/* Add hover color change */}
-              <p className="text-sm text-gray-400">{categoriesText}</p>
+              </h3>
+              <p className="text-sm text-gray-500">{categoriesText}</p>
               <p className="text-xs text-gray-500">
                 {shop.address || "Adres Belirtilmemiş"}
               </p>
             </div>
 
-            <div className="flex items-center gap-4 text-sm text-gray-400">
+            <div className="flex items-center gap-4 text-sm text-gray-500">
               <div className="flex items-center gap-1">
                 <Users className="w-4 h-4" />
                 <span>{shop.followerCount || 0}</span>
@@ -1420,9 +1399,8 @@ function UserDetailsContent() {
               </div>
             </div>
 
-            {/* Add visual indicator for clickable item */}
             <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-              <ArrowRight className="w-5 h-5 text-blue-400" />
+              <ArrowRight className="w-5 h-5 text-blue-600" />
             </div>
           </div>
         </div>
@@ -1432,10 +1410,10 @@ function UserDetailsContent() {
     return (
       <div
         ref={isLast ? lastShopElementRef : null}
-        onClick={handleShopClick} // Add click handler
-        className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden transition-all duration-200 hover:bg-white/15 hover:border-white/30 hover:shadow-lg cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group" // Add cursor and hover effects
+        onClick={handleShopClick}
+        className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-md hover:border-blue-300 cursor-pointer group"
       >
-        <div className="relative h-32">
+        <div className="relative h-24 bg-gray-100">
           {shop.coverImageUrls?.[0] ? (
             <Image
               src={shop.coverImageUrls[0]}
@@ -1444,28 +1422,27 @@ function UserDetailsContent() {
               className="object-cover"
             />
           ) : (
-            <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-              <Store className="w-8 h-8 text-gray-400" />
+            <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+              <Store className="w-6 h-6 text-gray-400" />
             </div>
           )}
 
           {shop.isBoosted && (
             <div className="absolute top-2 left-2">
-              <span className="px-2 py-1 bg-purple-600/90 text-white text-xs rounded">
+              <span className="px-2 py-1 bg-purple-600 text-white text-xs rounded">
                 BOOST
               </span>
             </div>
           )}
 
-          {/* Add visual indicator for clickable item */}
           <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <ArrowRight className="w-5 h-5 text-blue-400 bg-black/50 rounded p-1" />
+            <ArrowRight className="w-4 h-4 text-blue-600 bg-white/80 rounded p-1" />
           </div>
         </div>
 
-        <div className="p-4">
+        <div className="p-3">
           <div className="flex items-center gap-3 mb-3">
-            <div className="relative w-12 h-12 rounded-full overflow-hidden">
+            <div className="relative w-10 h-10 rounded-full overflow-hidden bg-gray-100">
               {shop.profileImageUrl ? (
                 <Image
                   src={shop.profileImageUrl}
@@ -1474,32 +1451,31 @@ function UserDetailsContent() {
                   className="object-cover"
                 />
               ) : (
-                <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                  <Store className="w-5 h-5 text-gray-400" />
+                <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                  <Store className="w-4 h-4 text-gray-400" />
                 </div>
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-white truncate group-hover:text-blue-300">
+              <h3 className="font-semibold text-gray-900 truncate group-hover:text-blue-600 text-sm">
                 {shop.name || "Mağaza Adı Yok"}
-              </h3>{" "}
-              {/* Add hover color change */}
-              <p className="text-xs text-gray-400">
+              </h3>
+              <p className="text-xs text-gray-500">
                 {shop.address || "Adres Belirtilmemiş"}
               </p>
             </div>
           </div>
 
           <div className="space-y-2">
-            <p className="text-sm text-gray-400">{categoriesText}</p>
+            <p className="text-sm text-gray-600">{categoriesText}</p>
             <div className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-1 text-yellow-400">
-                <Star className="w-4 h-4 fill-current" />
+              <div className="flex items-center gap-1 text-yellow-600">
+                <Star className="w-3 h-3 fill-current" />
                 <span>{(shop.averageRating || 0).toFixed(1)}</span>
-                <span className="text-gray-400">({shop.reviewCount || 0})</span>
+                <span className="text-gray-500">({shop.reviewCount || 0})</span>
               </div>
-              <div className="flex items-center gap-1 text-blue-400">
-                <Users className="w-4 h-4" />
+              <div className="flex items-center gap-1 text-blue-600">
+                <Users className="w-3 h-3" />
                 <span>{shop.followerCount || 0}</span>
               </div>
             </div>
@@ -1574,7 +1550,7 @@ function UserDetailsContent() {
               inputRef.current.setSelectionRange(length, length);
             }
           }
-        }, 100); // Small delay to ensure DOM is updated
+        }, 100);
 
         return () => clearTimeout(timer);
       }
@@ -1615,7 +1591,7 @@ function UserDetailsContent() {
       };
 
       const inputClassName =
-        "w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm";
+        "w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm";
 
       switch (type) {
         case "boolean":
@@ -1624,8 +1600,8 @@ function UserDetailsContent() {
               onClick={() => handleChange(!value)}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors w-full justify-center text-sm ${
                 value
-                  ? "bg-green-600/20 text-green-400"
-                  : "bg-gray-600/20 text-gray-400"
+                  ? "bg-green-100 text-green-800 border border-green-300"
+                  : "bg-gray-100 text-gray-600 border border-gray-300"
               }`}
             >
               {value ? (
@@ -1741,11 +1717,11 @@ function UserDetailsContent() {
     };
 
     return (
-      <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-lg p-3">
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
         {/* Compact header with responsive layout */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 text-gray-600">
               {getFieldIcon(
                 fieldName,
                 fieldType,
@@ -1754,10 +1730,10 @@ function UserDetailsContent() {
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-medium text-white text-sm truncate">
+                <span className="font-medium text-gray-900 text-sm truncate">
                   {fieldName}
                 </span>
-                <span className="px-1.5 py-0.5 bg-gray-700 text-gray-300 text-xs rounded flex-shrink-0">
+                <span className="px-1.5 py-0.5 bg-gray-200 text-gray-700 text-xs rounded flex-shrink-0">
                   {fieldType}
                 </span>
               </div>
@@ -1770,26 +1746,26 @@ function UserDetailsContent() {
               <>
                 <button
                   onClick={handleSaveClick}
-                  className="p-1.5 bg-green-600 hover:bg-green-700 rounded transition-colors"
+                  className="p-1.5 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
                   title="Kaydet (Enter)"
                 >
-                  <Save className="w-3.5 h-3.5 text-white" />
+                  <Save className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={handleCancelClick}
-                  className="p-1.5 bg-red-600 hover:bg-red-700 rounded transition-colors"
+                  className="p-1.5 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
                   title="İptal (Escape)"
                 >
-                  <X className="w-3.5 h-3.5 text-white" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </>
             ) : (
               <button
                 onClick={handleEditClick}
-                className="p-1.5 bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
                 title="Düzenle"
               >
-                <Edit className="w-3.5 h-3.5 text-white" />
+                <Edit className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -1806,10 +1782,10 @@ function UserDetailsContent() {
               )}
             </div>
           ) : (
-            <div className="text-gray-300 bg-white/5 rounded p-2 border border-white/10 min-h-[2.5rem] flex items-center">
+            <div className="text-gray-700 bg-white rounded p-2 border border-gray-200 min-h-[2.5rem] flex items-center">
               <span className="break-words w-full text-sm">
                 {displayValue || (
-                  <span className="text-gray-500 italic">Boş</span>
+                  <span className="text-gray-400 italic">Boş</span>
                 )}
               </span>
             </div>
@@ -1824,19 +1800,19 @@ function UserDetailsContent() {
 
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className="bg-gray-900 border border-white/20 rounded-xl max-w-5xl w-full max-h-[85vh] overflow-hidden flex flex-col">
-          <div className="flex items-center justify-between p-6 border-b border-white/20 flex-shrink-0">
+        <div className="bg-white border border-gray-200 rounded-xl max-w-5xl w-full max-h-[85vh] overflow-hidden flex flex-col shadow-xl">
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
             <div className="flex items-center gap-3">
-              <Database className="w-6 h-6 text-blue-400" />
-              <h2 className="text-xl font-bold text-white">
+              <Database className="w-6 h-6 text-blue-600" />
+              <h2 className="text-xl font-bold text-gray-900">
                 Veritabanı Alanları
               </h2>
             </div>
             <button
               onClick={() => setShowDatabaseModal(false)}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <X className="w-5 h-5 text-white" />
+              <X className="w-5 h-5 text-gray-600" />
             </button>
           </div>
 
@@ -1882,22 +1858,22 @@ function UserDetailsContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="backdrop-blur-xl bg-white/10 border-b border-white/20 sticky top-0 z-50">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-4 py-4">
+          <div className="flex items-center gap-4 py-3">
             <button
               onClick={() => router.back()}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <ArrowLeft className="w-5 h-5 text-white" />
+              <ArrowLeft className="w-5 h-5 text-gray-600" />
             </button>
             <div>
-              <h1 className="text-xl font-bold text-white">
+              <h1 className="text-xl font-bold text-gray-900">
                 Kullanıcı Detayları
               </h1>
-              <p className="text-sm text-gray-400">{user.displayName}</p>
+              <p className="text-sm text-gray-500">{user.displayName}</p>
             </div>
           </div>
         </div>
@@ -1905,12 +1881,12 @@ function UserDetailsContent() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* User Profile Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           {/* Profile Info */}
           <div className="lg:col-span-2">
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
+            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
               <div className="flex items-start gap-6 mb-6">
-                <div className="relative w-24 h-24 rounded-full overflow-hidden flex-shrink-0">
+                <div className="relative w-20 h-20 rounded-full overflow-hidden flex-shrink-0 bg-gray-100">
                   {user.profileImage ? (
                     <Image
                       src={user.profileImage}
@@ -1919,47 +1895,48 @@ function UserDetailsContent() {
                       className="object-cover"
                     />
                   ) : (
-                    <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                      <User className="w-10 h-10 text-gray-400" />
+                    <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                      <User className="w-8 h-8 text-gray-400" />
                     </div>
                   )}
                 </div>
 
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
-                    <h2 className="text-2xl font-bold text-white">
+                    <h2 className="text-2xl font-bold text-gray-900">
                       {user.displayName}
                     </h2>
                   </div>
-                  <button
-                    onClick={() => {
-                      setShowDatabaseModal(true);
-                      fetchAllUserFields();
-                    }}
-                    className="p-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                    title="Tüm Veritabanı Alanlarını Görüntüle"
-                  >
-                    <Database className="w-5 h-5 text-white" />
-                  </button>
-                  <p className="text-gray-400 mb-1">{user.email}</p>
+                  <p className="text-gray-600 mb-3">{user.email}</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setShowDatabaseModal(true);
+                        fetchAllUserFields();
+                      }}
+                      className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                      title="Tüm Veritabanı Alanlarını Görüntüle"
+                    >
+                      <Database className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={handleResetPassword}
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
+                    >
+                      Parola Sıfırla
+                    </button>
+                    <button
+                      onClick={handleDeleteAccount}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+                    >
+                      Hesabı Sil
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div className="mt-4 flex gap-2">
-                <button
-                  onClick={handleResetPassword}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition"
-                >
-                  Parola Sıfırla
-                </button>
-                <button
-                  onClick={handleDeleteAccount}
-                  className="px-4 py-2 bg-red-800 hover:bg-red-700 text-white rounded-lg transition"
-                >
-                  Hesabı Sil
-                </button>
-              </div>
-              ;{/* Editable Fields */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+              {/* Editable Fields */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <EditableField field="displayName" label="Adı Soyadı" />
                 <EditableField field="email" label="E-posta" type="email" />
                 <EditableField field="phone" label="Telefon" type="tel" />
@@ -1970,57 +1947,57 @@ function UserDetailsContent() {
 
           {/* Stats */}
           <div className="space-y-4">
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-              <h3 className="text-lg font-semibold text-white mb-4">
+            <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
                 İstatistikler
               </h3>
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Package className="w-4 h-4 text-blue-400" />
-                    <span className="text-sm text-gray-300">Toplam Ürün</span>
+                    <Package className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm text-gray-700">Toplam Ürün</span>
                   </div>
-                  <span className="text-white font-semibold">
+                  <span className="text-gray-900 font-semibold">
                     {products.length}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Store className="w-4 h-4 text-green-400" />
-                    <span className="text-sm text-gray-300">Mağaza Sayısı</span>
+                    <Store className="w-4 h-4 text-green-600" />
+                    <span className="text-sm text-gray-700">Mağaza Sayısı</span>
                   </div>
-                  <span className="text-white font-semibold">
+                  <span className="text-gray-900 font-semibold">
                     {shops.length}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-purple-400" />
-                    <span className="text-sm text-gray-300">Satılan Ürün</span>
+                    <TrendingUp className="w-4 h-4 text-purple-600" />
+                    <span className="text-sm text-gray-700">Satılan Ürün</span>
                   </div>
-                  <span className="text-white font-semibold">
+                  <span className="text-gray-900 font-semibold">
                     {user.totalProductsSold || 0}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Star className="w-4 h-4 text-yellow-400" />
-                    <span className="text-sm text-gray-300">Ortalama Puan</span>
+                    <Star className="w-4 h-4 text-yellow-500" />
+                    <span className="text-sm text-gray-700">Ortalama Puan</span>
                   </div>
-                  <span className="text-white font-semibold">
+                  <span className="text-gray-900 font-semibold">
                     {user.averageRating ? user.averageRating.toFixed(1) : "0.0"}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-orange-400" />
-                    <span className="text-sm text-gray-300">Oyun Puanı</span>
+                    <Activity className="w-4 h-4 text-orange-500" />
+                    <span className="text-sm text-gray-700">Oyun Puanı</span>
                   </div>
-                  <span className="text-white font-semibold">
+                  <span className="text-gray-900 font-semibold">
                     {user.playPoints || 0}
                   </span>
                 </div>
@@ -2030,14 +2007,14 @@ function UserDetailsContent() {
         </div>
 
         {/* Tabs */}
-        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl mb-6">
-          <div className="flex border-b border-white/20">
+        <div className="bg-white border border-gray-200 rounded-xl mb-6 shadow-sm">
+          <div className="flex border-b border-gray-200">
             <button
               onClick={() => setActiveTab("products")}
               className={`px-6 py-3 font-medium transition-colors ${
                 activeTab === "products"
-                  ? "text-blue-400 border-b-2 border-blue-400"
-                  : "text-gray-400 hover:text-white"
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-600 hover:text-gray-900"
               }`}
             >
               <div className="flex items-center gap-2">
@@ -2049,8 +2026,8 @@ function UserDetailsContent() {
               onClick={() => setActiveTab("shops")}
               className={`px-6 py-3 font-medium transition-colors ${
                 activeTab === "shops"
-                  ? "text-blue-400 border-b-2 border-blue-400"
-                  : "text-gray-400 hover:text-white"
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-600 hover:text-gray-900"
               }`}
             >
               <div className="flex items-center gap-2">
@@ -2062,8 +2039,8 @@ function UserDetailsContent() {
               onClick={() => setActiveTab("orders")}
               className={`px-6 py-3 font-medium transition-colors ${
                 activeTab === "orders"
-                  ? "text-blue-400 border-b-2 border-blue-400"
-                  : "text-gray-400 hover:text-white"
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-600 hover:text-gray-900"
               }`}
             >
               <div className="flex items-center gap-2">
@@ -2076,9 +2053,9 @@ function UserDetailsContent() {
 
         {/* Products Tab */}
         {activeTab === "products" && (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* Product Controls */}
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+            <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
               <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
                 <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
                   {/* Search */}
@@ -2089,7 +2066,7 @@ function UserDetailsContent() {
                       value={productSearch}
                       onChange={(e) => setProductSearch(e.target.value)}
                       placeholder="Ürün ara..."
-                      className="pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+                      className="pl-10 pr-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
                     />
                   </div>
 
@@ -2099,72 +2076,25 @@ function UserDetailsContent() {
                     onChange={(e) =>
                       setProductFilter(e.target.value as FilterStatus)
                     }
-                    className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    style={{ color: "white" }}
+                    className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option
-                      value="all"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      Tüm Ürünler
-                    </option>
-                    <option
-                      value="active"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      Aktif
-                    </option>
-                    <option
-                      value="sold"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      Satılan
-                    </option>
-                    <option
-                      value="featured"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      Öne Çıkan
-                    </option>
+                    <option value="all">Tüm Ürünler</option>
+                    <option value="active">Aktif</option>
+                    <option value="sold">Satılan</option>
+                    <option value="featured">Öne Çıkan</option>
                   </select>
 
                   {/* Sort */}
                   <select
                     value={productSort}
                     onChange={(e) => setProductSort(e.target.value as SortBy)}
-                    className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    style={{ color: "white" }}
+                    className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option
-                      value="newest"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      En Yeni
-                    </option>
-                    <option
-                      value="oldest"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      En Eski
-                    </option>
-                    <option
-                      value="price_high"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      Fiyat: Yüksek → Düşük
-                    </option>
-                    <option
-                      value="price_low"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      Fiyat: Düşük → Yüksek
-                    </option>
-                    <option
-                      value="popular"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      En Popüler
-                    </option>
+                    <option value="newest">En Yeni</option>
+                    <option value="oldest">En Eski</option>
+                    <option value="price_high">Fiyat: Yüksek → Düşük</option>
+                    <option value="price_low">Fiyat: Düşük → Yüksek</option>
+                    <option value="popular">En Popüler</option>
                   </select>
                 </div>
 
@@ -2175,7 +2105,7 @@ function UserDetailsContent() {
                     className={`p-2 rounded-lg transition-colors ${
                       productViewMode === "grid"
                         ? "bg-blue-600 text-white"
-                        : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
+                        : "bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200"
                     }`}
                   >
                     <Grid className="w-4 h-4" />
@@ -2185,7 +2115,7 @@ function UserDetailsContent() {
                     className={`p-2 rounded-lg transition-colors ${
                       productViewMode === "list"
                         ? "bg-blue-600 text-white"
-                        : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
+                        : "bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200"
                     }`}
                   >
                     <List className="w-4 h-4" />
@@ -2198,10 +2128,10 @@ function UserDetailsContent() {
             {filteredProducts.length === 0 && !productsLoading ? (
               <div className="text-center py-12">
                 <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-white mb-2">
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
                   Ürün Bulunamadı
                 </h3>
-                <p className="text-gray-400">
+                <p className="text-gray-500">
                   {productSearch || productFilter !== "all"
                     ? "Arama kriterlerinize uygun ürün bulunamadı."
                     : "Bu kullanıcının henüz ürünü bulunmuyor."}
@@ -2229,7 +2159,7 @@ function UserDetailsContent() {
                 {/* Loading indicator for infinite scroll */}
                 {productsLoading && (
                   <div className="flex items-center justify-center py-8">
-                    <div className="flex items-center gap-3 text-white">
+                    <div className="flex items-center gap-3 text-gray-600">
                       <Loader2 className="w-5 h-5 animate-spin" />
                       <span>Daha fazla ürün yükleniyor...</span>
                     </div>
@@ -2242,9 +2172,9 @@ function UserDetailsContent() {
 
         {/* Shops Tab */}
         {activeTab === "shops" && (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* Shop Controls */}
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+            <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
               <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
                 <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
                   {/* Search */}
@@ -2255,7 +2185,7 @@ function UserDetailsContent() {
                       value={shopSearch}
                       onChange={(e) => setShopSearch(e.target.value)}
                       placeholder="Mağaza ara..."
-                      className="pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+                      className="pl-10 pr-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
                     />
                   </div>
                 </div>
@@ -2267,7 +2197,7 @@ function UserDetailsContent() {
                     className={`p-2 rounded-lg transition-colors ${
                       shopViewMode === "grid"
                         ? "bg-blue-600 text-white"
-                        : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
+                        : "bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200"
                     }`}
                   >
                     <Grid className="w-4 h-4" />
@@ -2277,7 +2207,7 @@ function UserDetailsContent() {
                     className={`p-2 rounded-lg transition-colors ${
                       shopViewMode === "list"
                         ? "bg-blue-600 text-white"
-                        : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
+                        : "bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200"
                     }`}
                   >
                     <List className="w-4 h-4" />
@@ -2290,10 +2220,10 @@ function UserDetailsContent() {
             {filteredShops.length === 0 && !shopsLoading ? (
               <div className="text-center py-12">
                 <Store className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-white mb-2">
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
                   Mağaza Bulunamadı
                 </h3>
-                <p className="text-gray-400">
+                <p className="text-gray-500">
                   {shopSearch
                     ? "Arama kriterlerinize uygun mağaza bulunamadı."
                     : "Bu kullanıcının henüz mağazası bulunmuyor."}
@@ -2321,7 +2251,7 @@ function UserDetailsContent() {
                 {/* Loading indicator for infinite scroll */}
                 {shopsLoading && (
                   <div className="flex items-center justify-center py-8">
-                    <div className="flex items-center gap-3 text-white">
+                    <div className="flex items-center gap-3 text-gray-600">
                       <Loader2 className="w-5 h-5 animate-spin" />
                       <span>Daha fazla mağaza yükleniyor...</span>
                     </div>
@@ -2334,21 +2264,21 @@ function UserDetailsContent() {
 
         {/* Orders Tab */}
         {activeTab === "orders" && (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* Orders List */}
             {orders.length === 0 && !ordersLoading ? (
               <div className="text-center py-12">
                 <ShoppingBag className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-white mb-2">
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
                   Sipariş Bulunamadı
                 </h3>
-                <p className="text-gray-400">
+                <p className="text-gray-500">
                   Bu kullanıcının henüz siparişi bulunmuyor.
                 </p>
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="grid gap-6">
+                <div className="grid gap-4">
                   {orders.map((order, index) => (
                     <OrderCard
                       key={order.id}
@@ -2361,7 +2291,7 @@ function UserDetailsContent() {
                 {/* Loading indicator for infinite scroll */}
                 {ordersLoading && (
                   <div className="flex items-center justify-center py-8">
-                    <div className="flex items-center gap-3 text-white">
+                    <div className="flex items-center gap-3 text-gray-600">
                       <Loader2 className="w-5 h-5 animate-spin" />
                       <span>Daha fazla sipariş yükleniyor...</span>
                     </div>
@@ -2383,8 +2313,8 @@ export default function UserDetailsPage() {
     <ProtectedRoute>
       <Suspense
         fallback={
-          <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-            <div className="flex items-center gap-3 text-white">
+          <div className="min-h-screen bg-white flex items-center justify-center">
+            <div className="flex items-center gap-3 text-gray-600">
               <Loader2 className="w-6 h-6 animate-spin" />
               <span>Sayfa yükleniyor...</span>
             </div>
