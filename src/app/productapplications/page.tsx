@@ -17,15 +17,12 @@ import {
   Package,
   X,
   Calendar,
-  Tag,
-  DollarSign,
   User,
   Store,
   Image as ImageIcon,
   Loader2,
   CheckCircle,
   XCircle,
-  Clock,
 } from "lucide-react";
 
 interface ProductApplication {
@@ -88,49 +85,41 @@ export default function ProductApplications() {
 
   const approveApplication = async (application: ProductApplication) => {
     if (processingIds.has(application.id)) return;
-    setProcessingIds(prev => new Set(prev).add(application.id));
-  
+    setProcessingIds((prev) => new Set(prev).add(application.id));
+
     try {
-      // Copy all application fields except the client‑only `id`
       const { id, ...rest } = application;
-  
-      // Ensure we have a valid string ID to write under:
-      //   prefer ilan_no, otherwise fall back to the original Firestore doc ID
-      const newDocId = typeof rest.ilan_no === "string" && rest.ilan_no.trim() !== ""
-        ? rest.ilan_no
-        : id;
-  
-      // Build the payload
+      const newDocId =
+        typeof rest.ilan_no === "string" && rest.ilan_no.trim() !== ""
+          ? rest.ilan_no
+          : id;
+
       const payload = {
         ...rest,
         needsSync: true,
         updatedAt: Timestamp.now(),
         relatedProductIds: [],
       };
-  
-      // Determine collection
+
       const isShopProduct = rest.shopId && rest.shopId.trim() !== "";
       const collectionName = isShopProduct ? "shop_products" : "products";
-  
-      // Write into the target collection under newDocId
+
       await setDoc(doc(db, collectionName, newDocId), payload);
-  
-      // Remove the application
       await deleteDoc(doc(db, "product_applications", id));
-  
+
       showNotification("Ürün başarıyla onaylandı!");
     } catch (error) {
       console.error("Onaylama hatası:", error);
       showNotification("Ürün onaylanırken hata oluştu");
     } finally {
-      setProcessingIds(prev => {
+      setProcessingIds((prev) => {
         const newSet = new Set(prev);
         newSet.delete(application.id);
         return newSet;
       });
     }
   };
-  
+
   const rejectApplication = async (application: ProductApplication) => {
     if (processingIds.has(application.id)) return;
 
@@ -152,23 +141,21 @@ export default function ProductApplications() {
   };
 
   const showNotification = (message: string) => {
-    // You can integrate with a toast library here
-    // For now, using a simple alert
     alert(message);
   };
 
   const formatDate = (timestamp: Timestamp) => {
-    if (!timestamp) return "Tarih yok";
+    if (!timestamp) return "—";
     try {
       return timestamp.toDate().toLocaleDateString("tr-TR", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
       });
     } catch {
-      return "Tarih yok";
+      return "—";
     }
   };
 
@@ -178,49 +165,46 @@ export default function ProductApplications() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      <div className="min-h-screen bg-gray-50">
         {/* Header */}
-        <header className="backdrop-blur-xl bg-white/10 border-b border-white/20 sticky top-0 z-40">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <header className="bg-white border-b border-gray-200 shadow-sm">
+          <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <button
                   onClick={() => router.back()}
-                  className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
+                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-100"
                 >
-                  <ArrowLeft className="w-5 h-5" />
-                  <span>Geri</span>
+                  <ArrowLeft className="w-4 h-4" />
+                  <span className="font-medium">Geri</span>
                 </button>
 
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-r from-orange-500 to-red-600 rounded-lg">
-                    <Package className="w-5 h-5 text-white" />
+                  <div className="flex items-center justify-center w-8 h-8 bg-blue-600 rounded-lg">
+                    <Package className="w-4 h-4 text-white" />
                   </div>
-                  <h1 className="text-xl font-bold text-white">
+                  <h1 className="text-xl font-semibold text-gray-900">
                     Ürün Başvuruları
                   </h1>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <p className="text-sm text-gray-300">Toplam Başvuru</p>
-                  <p className="text-lg font-bold text-white">
-                    {loading ? "..." : applications.length}
-                  </p>
-                </div>
+              <div className="bg-blue-50 px-4 py-2 rounded-lg border border-blue-200">
+                <span className="text-sm text-blue-700 font-medium">
+                  {loading ? "Yükleniyor..." : `${applications.length} Başvuru`}
+                </span>
               </div>
             </div>
           </div>
         </header>
 
         {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <main className="max-w-7xl mx-auto px-6 py-6">
           {/* Loading State */}
           {loading && (
             <div className="flex items-center justify-center py-12">
-              <div className="flex items-center gap-3 text-white">
-                <Loader2 className="w-6 h-6 animate-spin" />
+              <div className="flex items-center gap-3 text-gray-600">
+                <Loader2 className="w-5 h-5 animate-spin" />
                 <span>Başvurular yükleniyor...</span>
               </div>
             </div>
@@ -228,206 +212,213 @@ export default function ProductApplications() {
 
           {/* No Applications */}
           {!loading && applications.length === 0 && (
-            <div className="text-center py-12">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-600/20 rounded-full mb-4">
-                <Package className="w-8 h-8 text-gray-400" />
+            <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+              <div className="inline-flex items-center justify-center w-12 h-12 bg-gray-100 rounded-lg mb-4">
+                <Package className="w-6 h-6 text-gray-400" />
               </div>
-              <h3 className="text-xl font-semibold text-white mb-2">
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
                 Başvuru bulunamadı
               </h3>
-              <p className="text-gray-300">
+              <p className="text-gray-500">
                 Henüz onay bekleyen ürün başvurusu bulunmamaktadır.
               </p>
             </div>
           )}
 
-          {/* Applications Grid */}
+          {/* Applications Table */}
           {!loading && applications.length > 0 && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-              {applications.map((application) => (
-                <div
-                  key={application.id}
-                  className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden hover:bg-white/15 transition-all duration-200"
-                >
-                  {/* Application Header */}
-                  <div className="p-6 border-b border-white/10">
-                    <div className="flex items-start justify-between mb-3">
-                      <h3 className="text-lg font-bold text-white line-clamp-2">
-                        {application.productName}
-                      </h3>
-                      <div className="flex items-center gap-1 text-orange-400">
-                        <Clock className="w-4 h-4" />
-                      </div>
-                    </div>
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              {/* Table Header */}
+              <div className="bg-gray-50 border-b border-gray-200 px-6 py-3">
+                <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-700 uppercase tracking-wide">
+                  <div className="col-span-1">Görsel</div>
+                  <div className="col-span-3">Ürün Bilgileri</div>
+                  <div className="col-span-2">Kategori</div>
+                  <div className="col-span-1">Fiyat</div>
+                  <div className="col-span-1">Tip</div>
+                  <div className="col-span-2">Tarih</div>
+                  <div className="col-span-2 text-center">İşlemler</div>
+                </div>
+              </div>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-gray-300">
-                        <Tag className="w-4 h-4" />
-                        <span className="text-sm">
+              {/* Table Body */}
+              <div className="divide-y divide-gray-200">
+                {applications.map((application) => (
+                  <div
+                    key={application.id}
+                    className="px-6 py-4 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="grid grid-cols-12 gap-4 items-center">
+                      {/* Image */}
+                      <div className="col-span-1">
+                        {application.imageUrls &&
+                        application.imageUrls.length > 0 ? (
+                          <div className="relative">
+                            <img
+                              src={application.imageUrls[0]}
+                              alt="Ürün"
+                              className="w-12 h-12 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => {
+                                setSelectedApplication(application);
+                                setSelectedImageIndex(0);
+                                setShowImageModal(true);
+                              }}
+                            />
+                            {application.imageUrls.length > 1 && (
+                              <div className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium">
+                                {application.imageUrls.length}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="w-12 h-12 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
+                            <ImageIcon className="w-5 h-5 text-gray-400" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Product Info */}
+                      <div className="col-span-3">
+                        <h3 className="font-medium text-gray-900 line-clamp-1 mb-1">
+                          {application.productName}
+                        </h3>
+                        <p className="text-sm text-gray-600 line-clamp-2">
+                          {application.description}
+                        </p>
+                      </div>
+
+                      {/* Category */}
+                      <div className="col-span-2">
+                        <div className="text-sm text-gray-900 font-medium">
                           {application.category}
-                          {application.subcategory &&
-                            ` • ${application.subcategory}`}
-                        </span>
+                        </div>
+                        {application.subcategory && (
+                          <div className="text-xs text-gray-500">
+                            {application.subcategory}
+                          </div>
+                        )}
                       </div>
 
-                      <div className="flex items-center gap-2 text-green-400">
-                        <DollarSign className="w-4 h-4" />
-                        <span className="text-sm font-medium">
+                      {/* Price */}
+                      <div className="col-span-1">
+                        <span className="text-sm font-semibold text-green-600">
                           {formatPrice(application.price, application.currency)}
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2 text-gray-300">
-                        {application.shopId ? (
-                          <Store className="w-4 h-4" />
-                        ) : (
-                          <User className="w-4 h-4" />
-                        )}
-                        <span className="text-sm">
-                          {application.shopId
-                            ? "Mağaza Ürünü"
-                            : "Bireysel Ürün"}
-                        </span>
+                      {/* Type */}
+                      <div className="col-span-1">
+                        <div className="flex items-center gap-2">
+                          {application.shopId ? (
+                            <>
+                              <Store className="w-4 h-4 text-blue-600" />
+                              <span className="text-sm text-blue-600 font-medium">
+                                Mağaza
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <User className="w-4 h-4 text-gray-600" />
+                              <span className="text-sm text-gray-600 font-medium">
+                                Bireysel
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-2 text-gray-400">
-                        <Calendar className="w-4 h-4" />
-                        <span className="text-xs">
-                          {formatDate(application.createdAt)}
-                        </span>
+                      {/* Date */}
+                      <div className="col-span-2">
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Calendar className="w-4 h-4" />
+                          <span>{formatDate(application.createdAt)}</span>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="col-span-2">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => approveApplication(application)}
+                            disabled={processingIds.has(application.id)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                          >
+                            {processingIds.has(application.id) ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <CheckCircle className="w-4 h-4" />
+                            )}
+                            <span>Onayla</span>
+                          </button>
+
+                          <button
+                            onClick={() => rejectApplication(application)}
+                            disabled={processingIds.has(application.id)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                          >
+                            {processingIds.has(application.id) ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <XCircle className="w-4 h-4" />
+                            )}
+                            <span>Reddet</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
-
-                  {/* Description */}
-                  <div className="p-6 border-b border-white/10">
-                    <p className="text-gray-300 text-sm line-clamp-3">
-                      {application.description}
-                    </p>
-                  </div>
-
-                  {/* Images */}
-                  {application.imageUrls &&
-                    application.imageUrls.length > 0 && (
-                      <div className="p-6 border-b border-white/10">
-                        <div className="flex items-center gap-2 mb-3">
-                          <ImageIcon className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm text-gray-300">
-                            {application.imageUrls.length} Görsel
-                          </span>
-                        </div>
-                        <div className="flex gap-2 overflow-x-auto">
-                          {application.imageUrls
-                            .slice(0, 4)
-                            .map((url, index) => (
-                              <div
-                                key={index}
-                                className="relative flex-shrink-0 w-16 h-16 bg-white/5 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
-                                onClick={() => {
-                                  setSelectedApplication(application);
-                                  setSelectedImageIndex(index);
-                                  setShowImageModal(true);
-                                }}
-                              >
-                                <img
-                                  src={url}
-                                  alt={`Ürün görseli ${index + 1}`}
-                                  className="w-full h-full object-cover"
-                                />
-                                {index === 3 &&
-                                  application.imageUrls.length > 4 && (
-                                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                                      <span className="text-white text-xs font-medium">
-                                        +{application.imageUrls.length - 4}
-                                      </span>
-                                    </div>
-                                  )}
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-                    )}
-
-                  {/* Action Buttons */}
-                  <div className="p-6">
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => approveApplication(application)}
-                        disabled={processingIds.has(application.id)}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-gray-600 disabled:to-gray-600 text-white font-medium rounded-lg transition-all duration-200 disabled:cursor-not-allowed"
-                      >
-                        {processingIds.has(application.id) ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <CheckCircle className="w-4 h-4" />
-                        )}
-                        <span>Onayla</span>
-                      </button>
-
-                      <button
-                        onClick={() => rejectApplication(application)}
-                        disabled={processingIds.has(application.id)}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 disabled:from-gray-600 disabled:to-gray-600 text-white font-medium rounded-lg transition-all duration-200 disabled:cursor-not-allowed"
-                      >
-                        {processingIds.has(application.id) ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <XCircle className="w-4 h-4" />
-                        )}
-                        <span>Reddet</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
         </main>
 
         {/* Image Modal */}
         {showImageModal && selectedApplication && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="relative max-w-4xl max-h-full bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl overflow-hidden">
-              <div className="flex items-center justify-between p-4 border-b border-white/20">
-                <h3 className="text-lg font-semibold text-white">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="relative max-w-4xl max-h-full bg-white rounded-xl overflow-hidden shadow-2xl">
+              <div className="flex items-center justify-between p-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900">
                   {selectedApplication.productName} - Görseller
                 </h3>
                 <button
                   onClick={() => setShowImageModal(false)}
-                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <X className="w-5 h-5 text-white" />
+                  <X className="w-5 h-5 text-gray-500" />
                 </button>
               </div>
 
-              <div className="p-4">
+              <div className="p-6">
                 <div className="mb-4">
                   <img
                     src={selectedApplication.imageUrls[selectedImageIndex]}
                     alt={`Ürün görseli ${selectedImageIndex + 1}`}
-                    className="w-full max-h-96 object-contain rounded-lg"
+                    className="w-full max-h-96 object-contain rounded-lg border border-gray-200"
                   />
                 </div>
 
-                <div className="flex gap-2 overflow-x-auto">
-                  {selectedApplication.imageUrls.map((url, index) => (
-                    <button
-                      key={index}
-                      onClick={() => setSelectedImageIndex(index)}
-                      className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
-                        index === selectedImageIndex
-                          ? "border-blue-400"
-                          : "border-white/20 hover:border-white/40"
-                      }`}
-                    >
-                      <img
-                        src={url}
-                        alt={`Thumbnail ${index + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                    </button>
-                  ))}
-                </div>
+                {selectedApplication.imageUrls.length > 1 && (
+                  <div className="flex gap-2 overflow-x-auto">
+                    {selectedApplication.imageUrls.map((url, index) => (
+                      <button
+                        key={index}
+                        onClick={() => setSelectedImageIndex(index)}
+                        className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+                          index === selectedImageIndex
+                            ? "border-blue-500"
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        <img
+                          src={url}
+                          alt={`Thumbnail ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>

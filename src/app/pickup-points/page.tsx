@@ -14,8 +14,11 @@ import {
   User,
   Navigation,
   Search,
-  Shield,
   LogOut,
+  ArrowLeft,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
@@ -111,13 +114,11 @@ const MapComponent = ({
       clearTempMarker();
 
       try {
-        // Import the marker library
         const { AdvancedMarkerElement, PinElement } =
           (await google.maps.importLibrary(
             "marker"
           )) as google.maps.MarkerLibrary;
 
-        // Create a custom pin element
         const pinElement = new PinElement({
           background: "#f59e0b",
           borderColor: "#ffffff",
@@ -148,29 +149,15 @@ const MapComponent = ({
     }
 
     console.log("Updating markers, pickup points count:", pickupPoints.length);
-    console.log(
-      "Pickup points data:",
-      pickupPoints.map((p) => ({
-        id: p.id,
-        name: p.name,
-        lat: p.latitude,
-        lng: p.longitude,
-      }))
-    );
-
-    // Clear existing markers
     clearMarkers();
 
     try {
-      // Import the marker library
       const { AdvancedMarkerElement, PinElement } =
         (await google.maps.importLibrary(
           "marker"
         )) as google.maps.MarkerLibrary;
 
-      // Add markers for pickup points
       pickupPoints.forEach((point) => {
-        // Validate coordinates
         if (
           !point.latitude ||
           !point.longitude ||
@@ -191,14 +178,13 @@ const MapComponent = ({
         const isEditing = editingPoint?.id === point.id;
 
         try {
-          // Create a custom pin element with different colors
-          let pinColor = "#3b82f6"; // Default blue for active
+          let pinColor = "#2563eb";
           if (!point.isActive) {
-            pinColor = "#ef4444"; // Red for inactive
+            pinColor = "#ef4444";
           } else if (isEditing) {
-            pinColor = "#f59e0b"; // Yellow for editing
+            pinColor = "#f59e0b";
           } else if (isSelected) {
-            pinColor = "#10b981"; // Green for selected
+            pinColor = "#059669";
           }
 
           const pinElement = new PinElement({
@@ -215,7 +201,6 @@ const MapComponent = ({
             content: pinElement.element,
           });
 
-          // Add click listener
           marker.addListener("click", () => {
             console.log("Marker clicked:", point.name);
             onMarkerClick(point);
@@ -247,47 +232,19 @@ const MapComponent = ({
     }
 
     try {
-      // Cyprus coordinates
       const cyprusCenter = { lat: 35.1264, lng: 33.4299 };
 
       const map = new google.maps.Map(mapRef.current, {
         zoom: 10,
         center: cyprusCenter,
-        mapId: "DEMO_MAP_ID", // Required for AdvancedMarkerElement
-        styles: [
-          {
-            featureType: "all",
-            elementType: "geometry",
-            stylers: [{ color: "#1f2937" }],
-          },
-          {
-            featureType: "all",
-            elementType: "labels.text.fill",
-            stylers: [{ color: "#fbbf24" }],
-          },
-          {
-            featureType: "all",
-            elementType: "labels.text.stroke",
-            stylers: [{ color: "#1f2937" }],
-          },
-          {
-            featureType: "water",
-            elementType: "geometry",
-            stylers: [{ color: "#1e40af" }],
-          },
-          {
-            featureType: "water",
-            elementType: "labels.text.fill",
-            stylers: [{ color: "#60a5fa" }],
-          },
-        ],
+        mapId: "DEMO_MAP_ID",
+        styles: [],
       });
 
       mapInstanceRef.current = map;
       setIsMapLoaded(true);
       setLoadError(null);
 
-      // Add click listener for map
       map.addListener("click", (e: google.maps.MapMouseEvent) => {
         if (e.latLng) {
           const lat = e.latLng.lat();
@@ -305,13 +262,11 @@ const MapComponent = ({
   }, [onMapClick]);
 
   const loadGoogleMapsScript = useCallback(() => {
-    // Check if script is already loaded
     if (isGoogleMapsLoaded()) {
       initializeMap();
       return;
     }
 
-    // Check if script is already loading
     const existingScript = document.querySelector(
       'script[src*="maps.googleapis.com"]'
     );
@@ -346,23 +301,18 @@ const MapComponent = ({
 
   useEffect(() => {
     loadGoogleMapsScript();
-
-    // Cleanup function
     return () => {
       clearMarkers();
       clearTempMarker();
     };
   }, [loadGoogleMapsScript, clearMarkers, clearTempMarker]);
 
-  // Update markers when data changes - with dependency on pickup points length too
   useEffect(() => {
     if (isMapLoaded && mapInstanceRef.current) {
       console.log("Effect triggered - updating markers");
-      // Add a small delay to ensure DOM is ready
       const timeoutId = setTimeout(() => {
         updateMarkers();
       }, 100);
-
       return () => clearTimeout(timeoutId);
     }
   }, [
@@ -374,7 +324,6 @@ const MapComponent = ({
     updateMarkers,
   ]);
 
-  // Handle temp marker - only for new/editing points
   useEffect(() => {
     console.log(
       "Temp marker effect - tempLocation:",
@@ -387,7 +336,6 @@ const MapComponent = ({
       !!editingPoint
     );
 
-    // Only show temp marker when actively adding or editing
     if (
       isMapLoaded &&
       (showAddForm || editingPoint) &&
@@ -416,16 +364,17 @@ const MapComponent = ({
 
   if (loadError) {
     return (
-      <div className="w-full h-full rounded-xl overflow-hidden border border-white/20 flex items-center justify-center bg-red-900/20">
-        <div className="text-center text-red-400">
-          <p className="text-lg font-semibold">Map Load Error</p>
-          <p className="text-sm">{loadError}</p>
+      <div className="w-full h-full rounded-lg border border-red-200 flex items-center justify-center bg-red-50">
+        <div className="text-center text-red-600">
+          <AlertCircle className="w-8 h-8 mx-auto mb-2" />
+          <p className="font-medium">Map Load Error</p>
+          <p className="text-sm text-red-500">{loadError}</p>
           <button
             onClick={() => {
               setLoadError(null);
               loadGoogleMapsScript();
             }}
-            className="mt-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors"
+            className="mt-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition-colors"
           >
             Retry
           </button>
@@ -435,10 +384,10 @@ const MapComponent = ({
   }
 
   return (
-    <div className="w-full h-full rounded-xl overflow-hidden border border-white/20 relative">
+    <div className="w-full h-full rounded-lg border border-gray-200 overflow-hidden relative bg-white">
       {!isMapLoaded && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-900/50 z-10">
-          <div className="text-center text-gray-300">
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
+          <div className="text-center text-gray-600">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
             <p>Loading map...</p>
           </div>
@@ -467,7 +416,6 @@ export default function PickupPointsPage() {
     lng: number;
   } | null>(null);
 
-  // Form state
   const [formData, setFormData] = useState({
     name: "",
     address: "",
@@ -480,7 +428,6 @@ export default function PickupPointsPage() {
     notes: "",
   });
 
-  // Real-time listener for pickup points
   useEffect(() => {
     console.log("Setting up Firebase listener");
     const unsubscribe = onSnapshot(
@@ -530,14 +477,12 @@ export default function PickupPointsPage() {
       if (showAddForm || editingPoint) {
         console.log("Updating form data and temp location");
 
-        // Update form data with coordinates
         setFormData((prev) => ({
           ...prev,
           latitude: lat,
           longitude: lng,
         }));
 
-        // Set temp location to show marker
         setTempLocation({ lat, lng });
 
         console.log("Form data updated with coordinates:", lat, lng);
@@ -550,7 +495,6 @@ export default function PickupPointsPage() {
   const handleMarkerClick = useCallback(
     (point: PickupPoint) => {
       console.log("Marker click handler called:", point.name);
-      // Don't select if we're in editing mode
       if (!showAddForm && !editingPoint) {
         setSelectedPoint(point);
       }
@@ -583,7 +527,6 @@ export default function PickupPointsPage() {
     setShowAddForm(false);
     setSelectedPoint(null);
 
-    // Set temp location for editing - this will show the yellow marker
     setTempLocation({ lat: point.latitude, lng: point.longitude });
 
     setFormData({
@@ -601,7 +544,6 @@ export default function PickupPointsPage() {
 
   const handleSave = async () => {
     try {
-      // Validate required fields
       if (
         !formData.name ||
         !formData.address ||
@@ -612,7 +554,6 @@ export default function PickupPointsPage() {
         return;
       }
 
-      // Ensure coordinates are valid numbers
       const latitude = Number(formData.latitude);
       const longitude = Number(formData.longitude);
 
@@ -637,11 +578,9 @@ export default function PickupPointsPage() {
       console.log("Saving pickup point with data:", data);
 
       if (editingPoint) {
-        // Update existing point
         await updateDoc(doc(db, "pickup_points", editingPoint.id), data);
         console.log("Pickup point updated successfully");
       } else {
-        // Add new point
         const docRef = await addDoc(collection(db, "pickup_points"), {
           ...data,
           createdAt: Timestamp.now(),
@@ -649,7 +588,6 @@ export default function PickupPointsPage() {
         console.log("Pickup point added successfully with ID:", docRef.id);
       }
 
-      // Reset form
       setShowAddForm(false);
       setEditingPoint(null);
       setSelectedPoint(null);
@@ -708,7 +646,6 @@ export default function PickupPointsPage() {
     await logout();
   };
 
-  // Filter pickup points based on search
   const filteredPoints = pickupPoints.filter(
     (point) =>
       point.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -718,120 +655,142 @@ export default function PickupPointsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      <div className="min-h-screen bg-gray-50">
         {/* Header */}
-        <header className="backdrop-blur-xl bg-white/10 border-b border-white/20 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center py-3">
-              <div className="flex items-center gap-3">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-4">
                 <button
                   onClick={() => router.push("/dashboard")}
-                  className="flex items-center justify-center w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg hover:scale-105 transition-transform"
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <Shield className="w-5 h-5 text-white" />
+                  <ArrowLeft className="w-5 h-5 text-gray-600" />
                 </button>
-                <h1 className="text-xl font-bold text-white">
-                  Pickup Points Yönetimi
-                </h1>
-                <div className="flex items-center gap-2 text-gray-300">
-                  <MapPin className="w-4 h-4" />
-                  <span className="text-sm">{pickupPoints.length} nokta</span>
+
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <MapPin className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-semibold text-gray-900">
+                      Pickup Points
+                    </h1>
+                    <p className="text-sm text-gray-500">
+                      Teslimat noktaları yönetimi
+                    </p>
+                  </div>
+                </div>
+
+                <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-lg">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  <span className="text-sm text-gray-600">
+                    {pickupPoints.length} nokta
+                  </span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 text-gray-300">
+              <div className="flex items-center gap-3">
+                <div className="hidden sm:flex items-center gap-2 text-gray-600">
                   <User className="w-4 h-4" />
-                  <span className="text-sm hidden sm:block">{user?.email}</span>
+                  <span className="text-sm">{user?.email}</span>
                 </div>
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-2 px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors"
+                  className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <LogOut className="w-4 h-4" />
-                  <span className="text-sm hidden sm:block">Çıkış</span>
+                  <span className="hidden sm:block">Çıkış</span>
                 </button>
               </div>
             </div>
           </div>
         </header>
 
-        {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="max-w-7xl mx-auto px-6 py-6">
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
             {/* Map Section */}
-            <div className="lg:col-span-8">
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                    <Navigation className="w-5 h-5" />
-                    Kıbrıs Haritası
-                  </h2>
-                  <div className="flex items-center gap-2 text-sm text-gray-300">
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                      <span>Aktif</span>
+            <div className="xl:col-span-8">
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <div className="p-4 border-b border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Navigation className="w-5 h-5 text-gray-600" />
+                      <h2 className="text-lg font-medium text-gray-900">
+                        Kıbrıs Haritası
+                      </h2>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                      <span>Pasif</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                      <span>Seçili</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                      <span>Yeni Konum</span>
+                    <div className="flex items-center gap-4 text-sm">
+                      <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                        <span className="text-gray-600">Aktif</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                        <span className="text-gray-600">Pasif</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                        <span className="text-gray-600">Seçili</span>
+                      </div>
+                      {(showAddForm || editingPoint) && (
+                        <div className="flex items-center gap-1">
+                          <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                          <span className="text-gray-600">Yeni Konum</span>
+                        </div>
+                      )}
                     </div>
                   </div>
+
+                  {(showAddForm || editingPoint) && (
+                    <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <div className="flex items-center gap-2 text-yellow-800">
+                        <MapPin className="w-4 h-4" />
+                        <span className="text-sm font-medium">
+                          Haritaya tıklayarak konum seçin
+                        </span>
+                        {tempLocation &&
+                        tempLocation.lat !== 0 &&
+                        tempLocation.lng !== 0 ? (
+                          <span className="ml-2 text-green-700 text-sm font-medium">
+                            ✓ Konum seçildi
+                          </span>
+                        ) : (
+                          <span className="ml-2 text-red-700 text-sm font-medium">
+                            ⚠ Konum seçilmedi
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {(showAddForm || editingPoint) && (
-                  <div className="mb-4 p-3 bg-yellow-600/20 border border-yellow-500/30 rounded-lg">
-                    <p className="text-yellow-300 text-sm flex items-center gap-2">
-                      <MapPin className="w-4 h-4" />
-                      Haritaya tıklayarak pickup point konumunu seçin
-                      {tempLocation &&
-                      tempLocation.lat !== 0 &&
-                      tempLocation.lng !== 0 ? (
-                        <span className="ml-2 text-green-300 font-medium">
-                          ✓ Konum seçildi: {tempLocation.lat.toFixed(6)},{" "}
-                          {tempLocation.lng.toFixed(6)}
-                        </span>
-                      ) : (
-                        <span className="ml-2 text-red-300 font-medium">
-                          ⚠ Lütfen haritaya tıklayın
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                )}
-
-                <MapComponent
-                  pickupPoints={pickupPoints}
-                  onMapClick={handleMapClick}
-                  onMarkerClick={handleMarkerClick}
-                  selectedPoint={selectedPoint}
-                  editingPoint={editingPoint}
-                  tempLocation={tempLocation}
-                  showAddForm={showAddForm}
-                />
+                <div className="h-96 lg:h-[500px]">
+                  <MapComponent
+                    pickupPoints={pickupPoints}
+                    onMapClick={handleMapClick}
+                    onMarkerClick={handleMarkerClick}
+                    selectedPoint={selectedPoint}
+                    editingPoint={editingPoint}
+                    tempLocation={tempLocation}
+                    showAddForm={showAddForm}
+                  />
+                </div>
               </div>
             </div>
 
             {/* Sidebar */}
-            <div className="lg:col-span-4 space-y-4">
+            <div className="xl:col-span-4 space-y-6">
               {/* Controls */}
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+              <div className="bg-white rounded-lg border border-gray-200 p-4">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-white">
+                  <h3 className="text-lg font-medium text-gray-900">
                     Kontroller
                   </h3>
                   <button
                     onClick={handleAddNew}
                     disabled={showAddForm || !!editingPoint}
-                    className="flex items-center gap-2 px-3 py-2 bg-green-600/20 hover:bg-green-600/30 disabled:bg-gray-600/20 text-green-400 disabled:text-gray-400 rounded-lg transition-colors disabled:cursor-not-allowed"
+                    className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
                   >
                     <Plus className="w-4 h-4" />
                     Yeni Ekle
@@ -846,133 +805,135 @@ export default function PickupPointsPage() {
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     placeholder="Pickup point ara..."
-                    className="w-full pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
 
                 {/* Active Form */}
                 {(showAddForm || editingPoint) && (
-                  <div className="space-y-3 p-3 bg-white/5 border border-white/10 rounded-lg">
-                    <h4 className="font-semibold text-white">
+                  <div className="space-y-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                    <h4 className="font-medium text-gray-900">
                       {editingPoint
                         ? "Pickup Point Düzenle"
                         : "Yeni Pickup Point"}
                     </h4>
 
-                    <input
-                      type="text"
-                      placeholder="Nokta adı *"
-                      value={formData.name}
-                      onChange={(e) =>
-                        setFormData({ ...formData, name: e.target.value })
-                      }
-                      className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-
-                    <input
-                      type="text"
-                      placeholder="Adres *"
-                      value={formData.address}
-                      onChange={(e) =>
-                        setFormData({ ...formData, address: e.target.value })
-                      }
-                      className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-3">
                       <input
-                        type="number"
-                        step="0.000001"
-                        placeholder="Enlem *"
-                        value={formData.latitude || ""}
+                        type="text"
+                        placeholder="Nokta adı *"
+                        value={formData.name}
+                        onChange={(e) =>
+                          setFormData({ ...formData, name: e.target.value })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+
+                      <input
+                        type="text"
+                        placeholder="Adres *"
+                        value={formData.address}
+                        onChange={(e) =>
+                          setFormData({ ...formData, address: e.target.value })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="number"
+                          step="0.000001"
+                          placeholder="Enlem *"
+                          value={formData.latitude || ""}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              latitude: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                          className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <input
+                          type="number"
+                          step="0.000001"
+                          placeholder="Boylam *"
+                          value={formData.longitude || ""}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              longitude: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                          className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+
+                      <input
+                        type="text"
+                        placeholder="İletişim kişisi"
+                        value={formData.contactPerson}
                         onChange={(e) =>
                           setFormData({
                             ...formData,
-                            latitude: parseFloat(e.target.value) || 0,
+                            contactPerson: e.target.value,
                           })
                         }
-                        className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
+
                       <input
-                        type="number"
-                        step="0.000001"
-                        placeholder="Boylam *"
-                        value={formData.longitude || ""}
+                        type="text"
+                        placeholder="Telefon"
+                        value={formData.contactPhone}
                         onChange={(e) =>
                           setFormData({
                             ...formData,
-                            longitude: parseFloat(e.target.value) || 0,
+                            contactPhone: e.target.value,
                           })
                         }
-                        className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
+
+                      <input
+                        type="text"
+                        placeholder="Çalışma saatleri"
+                        value={formData.operatingHours}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            operatingHours: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+
+                      <textarea
+                        placeholder="Notlar (opsiyonel)"
+                        value={formData.notes}
+                        onChange={(e) =>
+                          setFormData({ ...formData, notes: e.target.value })
+                        }
+                        rows={2}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+
+                      <label className="flex items-center gap-2 text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={formData.isActive}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              isActive: e.target.checked,
+                            })
+                          }
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm">Aktif</span>
+                      </label>
                     </div>
 
-                    <input
-                      type="text"
-                      placeholder="İletişim kişisi"
-                      value={formData.contactPerson}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          contactPerson: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-
-                    <input
-                      type="text"
-                      placeholder="Telefon"
-                      value={formData.contactPhone}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          contactPhone: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-
-                    <input
-                      type="text"
-                      placeholder="Çalışma saatleri"
-                      value={formData.operatingHours}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          operatingHours: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-
-                    <textarea
-                      placeholder="Notlar (opsiyonel)"
-                      value={formData.notes}
-                      onChange={(e) =>
-                        setFormData({ ...formData, notes: e.target.value })
-                      }
-                      rows={2}
-                      className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-
-                    <label className="flex items-center gap-2 text-white">
-                      <input
-                        type="checkbox"
-                        checked={formData.isActive}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            isActive: e.target.checked,
-                          })
-                        }
-                        className="rounded"
-                      />
-                      Aktif
-                    </label>
-
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 pt-2">
                       <button
                         onClick={handleSave}
                         disabled={
@@ -981,14 +942,14 @@ export default function PickupPointsPage() {
                           formData.latitude === 0 ||
                           formData.longitude === 0
                         }
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-green-600/20 hover:bg-green-600/30 disabled:bg-gray-600/20 text-green-400 disabled:text-gray-400 rounded-lg transition-colors disabled:cursor-not-allowed"
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
                       >
                         <Save className="w-4 h-4" />
                         Kaydet
                       </button>
                       <button
                         onClick={handleCancel}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors"
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
                       >
                         <X className="w-4 h-4" />
                         İptal
@@ -999,21 +960,21 @@ export default function PickupPointsPage() {
 
                 {/* Selected Point Info */}
                 {selectedPoint && !showAddForm && !editingPoint && (
-                  <div className="space-y-3 p-3 bg-white/5 border border-white/10 rounded-lg">
+                  <div className="space-y-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                     <div className="flex items-center justify-between">
-                      <h4 className="font-semibold text-white">
+                      <h4 className="font-medium text-gray-900">
                         {selectedPoint.name}
                       </h4>
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleEdit(selectedPoint)}
-                          className="p-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded"
+                          className="p-1.5 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-lg transition-colors"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(selectedPoint.id)}
-                          className="p-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded"
+                          className="p-1.5 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -1021,47 +982,48 @@ export default function PickupPointsPage() {
                     </div>
 
                     <div className="space-y-2 text-sm">
-                      <div className="flex items-center gap-2 text-gray-300">
-                        <MapPin className="w-4 h-4" />
+                      <div className="flex items-center gap-2 text-gray-600">
+                        <MapPin className="w-4 h-4 flex-shrink-0" />
                         <span>{selectedPoint.address}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-gray-300">
-                        <User className="w-4 h-4" />
+                      <div className="flex items-center gap-2 text-gray-600">
+                        <User className="w-4 h-4 flex-shrink-0" />
                         <span>{selectedPoint.contactPerson}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-gray-300">
-                        <Phone className="w-4 h-4" />
+                      <div className="flex items-center gap-2 text-gray-600">
+                        <Phone className="w-4 h-4 flex-shrink-0" />
                         <span>{selectedPoint.contactPhone}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-gray-300">
-                        <Clock className="w-4 h-4" />
+                      <div className="flex items-center gap-2 text-gray-600">
+                        <Clock className="w-4 h-4 flex-shrink-0" />
                         <span>{selectedPoint.operatingHours}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`w-2 h-2 rounded-full ${
-                            selectedPoint.isActive
-                              ? "bg-green-500"
-                              : "bg-red-500"
-                          }`}
-                        ></div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        {selectedPoint.isActive ? (
+                          <CheckCircle className="w-4 h-4 text-green-600" />
+                        ) : (
+                          <XCircle className="w-4 h-4 text-red-600" />
+                        )}
                         <span
-                          className={`text-sm ${
+                          className={`text-sm font-medium ${
                             selectedPoint.isActive
-                              ? "text-green-400"
-                              : "text-red-400"
+                              ? "text-green-600"
+                              : "text-red-600"
                           }`}
                         >
                           {selectedPoint.isActive ? "Aktif" : "Pasif"}
                         </span>
                       </div>
+
                       {selectedPoint.notes && (
-                        <div className="mt-2 p-2 bg-white/5 rounded text-gray-300 text-xs">
+                        <div className="mt-2 p-2 bg-white rounded text-gray-600 text-xs border">
                           {selectedPoint.notes}
                         </div>
                       )}
-                      <div className="text-xs text-gray-400 mt-2">
-                        Koordinatlar: {selectedPoint.latitude.toFixed(6)},{" "}
+
+                      <div className="text-xs text-gray-500 pt-1 font-mono">
+                        {selectedPoint.latitude.toFixed(6)},{" "}
                         {selectedPoint.longitude.toFixed(6)}
                       </div>
                     </div>
@@ -1070,87 +1032,99 @@ export default function PickupPointsPage() {
               </div>
 
               {/* Pickup Points List */}
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-                <h3 className="text-lg font-semibold text-white mb-4">
-                  Pickup Points ({filteredPoints.length})
-                </h3>
+              <div className="bg-white rounded-lg border border-gray-200">
+                <div className="p-4 border-b border-gray-200">
+                  <h3 className="text-lg font-medium text-gray-900">
+                    Pickup Points ({filteredPoints.length})
+                  </h3>
+                </div>
 
-                {loading ? (
-                  <div className="text-center text-gray-400 py-4">
-                    Yükleniyor...
-                  </div>
-                ) : (
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {filteredPoints.map((point) => (
-                      <div
-                        key={point.id}
-                        onClick={() => {
-                          if (!showAddForm && !editingPoint) {
-                            setSelectedPoint(point);
-                          }
-                        }}
-                        className={`p-3 rounded-lg cursor-pointer transition-colors ${
-                          selectedPoint?.id === point.id
-                            ? "bg-blue-600/20 border border-blue-500/30"
-                            : editingPoint?.id === point.id
-                            ? "bg-yellow-600/20 border border-yellow-500/30"
-                            : "bg-white/5 hover:bg-white/10"
-                        } ${
-                          showAddForm || editingPoint
-                            ? "cursor-not-allowed opacity-50"
-                            : ""
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <h4 className="font-medium text-white text-sm">
-                              {point.name}
-                            </h4>
-                            <p className="text-xs text-gray-300 truncate">
-                              {point.address}
-                            </p>
-                            <div className="flex items-center gap-3 mt-1">
-                              <span className="text-xs text-gray-400">
+                <div className="p-4">
+                  {loading ? (
+                    <div className="text-center text-gray-500 py-4">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto mb-2"></div>
+                      Yükleniyor...
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {filteredPoints.map((point) => (
+                        <div
+                          key={point.id}
+                          onClick={() => {
+                            if (!showAddForm && !editingPoint) {
+                              setSelectedPoint(point);
+                            }
+                          }}
+                          className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                            selectedPoint?.id === point.id
+                              ? "bg-blue-50 border-blue-200"
+                              : editingPoint?.id === point.id
+                              ? "bg-yellow-50 border-yellow-200"
+                              : "bg-gray-50 border-gray-200 hover:bg-gray-100"
+                          } ${
+                            showAddForm || editingPoint
+                              ? "cursor-not-allowed opacity-50"
+                              : ""
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-medium text-gray-900 text-sm truncate">
+                                  {point.name}
+                                </h4>
+                                {point.isActive ? (
+                                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                ) : (
+                                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-600 truncate">
+                                {point.address}
+                              </p>
+                              <p className="text-xs text-gray-500">
                                 {point.contactPerson}
-                              </span>
-                              <div
-                                className={`w-2 h-2 rounded-full ${
-                                  point.isActive ? "bg-green-500" : "bg-red-500"
-                                }`}
-                              ></div>
+                              </p>
                             </div>
+                            {!showAddForm && !editingPoint && (
+                              <div className="flex gap-1 ml-2">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEdit(point);
+                                  }}
+                                  className="p-1 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded transition-colors"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDelete(point.id);
+                                  }}
+                                  className="p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded transition-colors"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            )}
                           </div>
-                          {!showAddForm && !editingPoint && (
-                            <div className="flex gap-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleEdit(point);
-                                }}
-                                className="p-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded"
-                              >
-                                <Edit2 className="w-3 h-3" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDelete(point.id);
-                                }}
-                                className="p-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          )}
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+
+                      {filteredPoints.length === 0 && !loading && (
+                        <div className="text-center text-gray-500 py-8">
+                          <MapPin className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                          <p>Pickup point bulunamadı</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </main>
+        </div>
       </div>
     </ProtectedRoute>
   );

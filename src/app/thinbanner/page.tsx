@@ -16,6 +16,9 @@ import {
   Store,
   Package,
   Link,
+  Calendar,
+  ExternalLink,
+  Info,
 } from "lucide-react";
 import {
   collection,
@@ -170,35 +173,30 @@ export default function ThinBannerPage() {
   const uploadBanner = async (file: File) => {
     setUploading(true);
     try {
-      // Create storage path exactly like Flutter version
       const path = `market_thin_banners/${Date.now()}_${file.name}`;
-
-      // Upload to Firebase Storage
       const storage = getStorage();
       const uploadRef = ref(storage, path);
       await uploadBytes(uploadRef, file);
-
-      // Get download URL
       const downloadUrl = await getDownloadURL(uploadRef);
 
-      // Add to Firestore exactly like Flutter version
       await addDoc(collection(db, "market_thin_banners"), {
         imageUrl: downloadUrl,
         createdAt: serverTimestamp(),
       });
     } catch (error) {
       console.error("Error uploading banner:", error);
-      // You could add a toast notification here
     } finally {
       setUploading(false);
     }
   };
 
   const deleteBanner = async (bannerId: string) => {
+    if (!confirm("Bu banner'ı silmek istediğinizden emin misiniz?")) {
+      return;
+    }
+
     try {
       await deleteDoc(doc(db, "market_thin_banners", bannerId));
-      // Note: storage file remains unless you store its path and also delete
-      // This matches the Flutter implementation
     } catch (error) {
       console.error("Error deleting banner:", error);
     }
@@ -238,7 +236,6 @@ export default function ThinBannerPage() {
     if (file && file.type.startsWith("image/")) {
       uploadBanner(file);
     }
-    // Reset input
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -288,51 +285,69 @@ export default function ThinBannerPage() {
     }
   };
 
-  const getTypeLabel = (type: string) => {
-    switch (type) {
-      case "shop":
-        return "Mağaza";
-      case "product":
-        return "Ürün";
-      case "shop_product":
-        return "Mağaza Ürünü";
-      default:
-        return "Bilinmeyen";
-    }
+  const getTypeBadge = (type: string) => {
+    const config = {
+      shop: { label: "Mağaza", color: "bg-blue-100 text-blue-700" },
+      product: { label: "Ürün", color: "bg-green-100 text-green-700" },
+      shop_product: {
+        label: "Mağaza Ürünü",
+        color: "bg-purple-100 text-purple-700",
+      },
+    };
+
+    const typeConfig = config[type as keyof typeof config] || config.product;
+
+    return (
+      <span
+        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${typeConfig.color}`}
+      >
+        {getTypeIcon(type)}
+        {typeConfig.label}
+      </span>
+    );
   };
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      <div className="min-h-screen bg-gray-50">
         {/* Header */}
-        <header className="backdrop-blur-xl bg-white/10 border-b border-white/20 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between py-4">
-              <div className="flex items-center gap-3">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
                 <button
                   onClick={() => router.back()}
-                  className="flex items-center justify-center w-8 h-8 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <ArrowLeft className="w-5 h-5 text-white" />
+                  <ArrowLeft className="w-5 h-5 text-gray-600" />
                 </button>
-                <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg">
-                  <Maximize2 className="w-5 h-5 text-white" />
+
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-orange-100 rounded-lg">
+                    <Maximize2 className="w-5 h-5 text-orange-600" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-semibold text-gray-900">
+                      İnce Banner Yönetimi
+                    </h1>
+                    <p className="text-sm text-gray-500">
+                      Ana ekran ince bannerlarını yönetin
+                    </p>
+                  </div>
                 </div>
-                <h1 className="text-xl font-bold text-white">
-                  İnce Banner Yönetimi
-                </h1>
               </div>
+
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-medium rounded-lg transition-all duration-200 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
               >
                 {uploading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Plus className="w-4 h-4" />
                 )}
-                İnce Banner Ekle
+                Banner Ekle
               </button>
             </div>
           </div>
@@ -347,14 +362,31 @@ export default function ThinBannerPage() {
           className="hidden"
         />
 
-        {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="max-w-7xl mx-auto px-6 py-6">
+          {/* Info Card */}
+          <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <h3 className="text-blue-900 font-medium mb-1">
+                  İnce Banner Kullanım Bilgisi
+                </h3>
+                <p className="text-blue-700 text-sm">
+                  İnce bannerlar uygulamanın ana ekranında yatay olarak
+                  görüntülenir. En iyi sonuç için yatay (landscape)
+                  orientasyonda, ince format resimler kullanın. Her bannerı bir
+                  mağaza veya ürüne bağlayabilirsiniz.
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Upload Zone */}
           <div
-            className={`mb-8 border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 ${
+            className={`mb-6 border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 cursor-pointer ${
               dragOver
-                ? "border-emerald-400 bg-emerald-500/10"
-                : "border-white/30 bg-white/5 hover:bg-white/10"
+                ? "border-blue-400 bg-blue-50"
+                : "border-gray-300 bg-gray-50 hover:bg-gray-100"
             }`}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
@@ -364,64 +396,46 @@ export default function ThinBannerPage() {
             <div className="flex flex-col items-center">
               {uploading ? (
                 <>
-                  <Loader2 className="w-12 h-12 text-emerald-400 animate-spin mb-4" />
-                  <p className="text-white font-medium">
-                    İnce banner yükleniyor...
+                  <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
+                  <p className="text-gray-900 font-medium">
+                    Banner yükleniyor...
                   </p>
-                  <p className="text-gray-300 text-sm mt-1">
+                  <p className="text-gray-600 text-sm mt-1">
                     Lütfen bekleyin, işlem tamamlanıyor
                   </p>
                 </>
               ) : (
                 <>
                   <Upload className="w-12 h-12 text-gray-400 mb-4" />
-                  <p className="text-white font-medium mb-2">
-                    İnce banner yüklemek için tıklayın veya sürükleyip bırakın
+                  <p className="text-gray-900 font-medium mb-2">
+                    Banner yüklemek için tıklayın veya sürükleyip bırakın
                   </p>
-                  <p className="text-gray-300 text-sm">
-                    PNG, JPG, GIF dosyaları desteklenir (İnce format önerilir)
+                  <p className="text-gray-600 text-sm">
+                    PNG, JPG, GIF dosyaları desteklenir • İnce format önerilir
                   </p>
                 </>
               )}
             </div>
           </div>
 
-          {/* Info Card */}
-          <div className="mb-8 backdrop-blur-xl bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-blue-400 mt-0.5" />
-              <div>
-                <h3 className="text-blue-300 font-medium mb-1">
-                  İnce Banner Hakkında
-                </h3>
-                <p className="text-blue-200 text-sm">
-                  İnce bannerlar uygulamanın ana ekranında horizontal olarak
-                  görüntülenir. En iyi sonuç için yatay (landscape)
-                  orientasyonda resimler kullanın. Her bannerı bir mağaza veya
-                  ürüne bağlayabilirsiniz.
-                </p>
-              </div>
-            </div>
-          </div>
-
           {/* Banners List */}
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
-              <span className="ml-3 text-gray-300">
-                İnce bannerlar yükleniyor...
+              <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+              <span className="ml-3 text-gray-600">
+                Bannerlar yükleniyor...
               </span>
             </div>
           ) : banners.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="flex items-center justify-center w-16 h-16 bg-gray-500/20 rounded-full mx-auto mb-4">
+            <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
+              <div className="flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4">
                 <Maximize2 className="w-8 h-8 text-gray-400" />
               </div>
-              <h3 className="text-xl font-semibold text-white mb-2">
-                Henüz ince banner eklenmemiş
+              <h3 className="text-xl font-medium text-gray-900 mb-2">
+                Henüz banner eklenmemiş
               </h3>
-              <p className="text-gray-300">
-                İlk ince bannerınızı eklemek için yukarıdaki alana tıklayın
+              <p className="text-gray-600">
+                İlk bannerınızı eklemek için yukarıdaki alana tıklayın
               </p>
             </div>
           ) : (
@@ -429,12 +443,12 @@ export default function ThinBannerPage() {
               {banners.map((banner) => (
                 <div
                   key={banner.id}
-                  className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden group hover:bg-white/15 transition-all duration-200"
+                  className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow"
                 >
                   <div className="flex flex-col">
-                    <div className="flex flex-col sm:flex-row">
+                    <div className="flex flex-col lg:flex-row">
                       {/* Banner Image - Thin/Wide format */}
-                      <div className="relative w-full sm:w-64 h-24 bg-gradient-to-r from-gray-800 to-gray-900 flex-shrink-0">
+                      <div className="relative w-full lg:w-80 h-32 bg-gray-100 flex-shrink-0">
                         <Image
                           src={banner.imageUrl}
                           alt="Thin Banner"
@@ -446,56 +460,67 @@ export default function ThinBannerPage() {
                       {/* Banner Info */}
                       <div className="flex-1 p-4 flex items-center justify-between">
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Maximize2 className="w-4 h-4 text-emerald-400" />
-                            <h3 className="text-white font-medium">
+                          <div className="flex items-center gap-2 mb-3">
+                            <Maximize2 className="w-5 h-5 text-orange-600" />
+                            <h3 className="text-lg font-medium text-gray-900">
                               İnce Banner
                             </h3>
+                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                              <CheckCircle className="w-3 h-3" />
+                              Aktif
+                            </span>
                           </div>
 
-                          <div className="flex items-center gap-4 text-sm text-gray-300">
-                            <div className="flex items-center gap-2">
-                              <AlertCircle className="w-4 h-4" />
+                          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-2">
+                            <div className="flex items-center gap-1">
+                              <Calendar className="w-4 h-4" />
                               <span>{formatDate(banner.createdAt)}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <CheckCircle className="w-4 h-4 text-green-400" />
-                              <span className="text-green-300">Aktif</span>
                             </div>
                           </div>
 
                           {/* Link info */}
-                          {banner.linkType && banner.linkId && (
-                            <div className="flex items-center gap-2 mt-2 text-sm">
-                              <Link className="w-4 h-4 text-blue-400" />
-                              <span className="text-blue-300">
-                                {getTypeLabel(banner.linkType)} bağlantısı var
+                          {banner.linkType && banner.linkId ? (
+                            <div className="flex items-center gap-2">
+                              <ExternalLink className="w-4 h-4 text-blue-600" />
+                              <span className="text-sm text-gray-600 mr-2">
+                                Bağlantı:
+                              </span>
+                              {getTypeBadge(banner.linkType)}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-gray-500">
+                              <AlertCircle className="w-4 h-4" />
+                              <span className="text-sm">
+                                Bağlantı eklenmemiş
                               </span>
                             </div>
                           )}
                         </div>
 
                         {/* Action Buttons */}
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-2 ml-4">
                           <button
                             onClick={() => setEditingBanner(banner.id)}
-                            className="flex items-center justify-center w-10 h-10 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                            className="flex items-center justify-center w-9 h-9 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-lg transition-colors"
+                            title="Bağlantı ekle/düzenle"
                           >
-                            <Link className="w-4 h-4 text-white" />
+                            <Link className="w-4 h-4" />
                           </button>
                           {banner.linkType && (
                             <button
                               onClick={() => removeBannerLink(banner.id)}
-                              className="flex items-center justify-center w-10 h-10 bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors"
+                              className="flex items-center justify-center w-9 h-9 bg-orange-100 hover:bg-orange-200 text-orange-600 rounded-lg transition-colors"
+                              title="Bağlantıyı kaldır"
                             >
-                              <X className="w-4 h-4 text-white" />
+                              <X className="w-4 h-4" />
                             </button>
                           )}
                           <button
                             onClick={() => deleteBanner(banner.id)}
-                            className="flex items-center justify-center w-10 h-10 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                            className="flex items-center justify-center w-9 h-9 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition-colors"
+                            title="Banner'ı sil"
                           >
-                            <Trash2 className="w-4 h-4 text-white" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
@@ -503,9 +528,9 @@ export default function ThinBannerPage() {
 
                     {/* Link Editor */}
                     {editingBanner === banner.id && (
-                      <div className="border-t border-white/20 p-4">
+                      <div className="border-t border-gray-200 p-4 bg-gray-50">
                         <div className="space-y-4">
-                          <h4 className="text-white font-medium">
+                          <h4 className="text-lg font-medium text-gray-900">
                             Banner Bağlantısı Ekle
                           </h4>
 
@@ -519,22 +544,22 @@ export default function ThinBannerPage() {
                               placeholder="Mağaza veya ürün ara..."
                               value={searchQuery}
                               onChange={(e) => setSearchQuery(e.target.value)}
-                              className="block w-full pl-10 pr-3 py-2 border border-white/20 rounded-lg bg-white/10 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             />
                           </div>
 
                           {/* Search Results */}
                           {searchLoading && (
                             <div className="flex items-center justify-center py-4">
-                              <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
-                              <span className="ml-2 text-gray-300">
+                              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                              <span className="ml-2 text-gray-600">
                                 Aranıyor...
                               </span>
                             </div>
                           )}
 
                           {searchResults.length > 0 && (
-                            <div className="max-h-48 overflow-y-auto space-y-2">
+                            <div className="max-h-48 overflow-y-auto space-y-2 border border-gray-200 rounded-lg bg-white">
                               {searchResults.map((result) => (
                                 <button
                                   key={`${result.type}-${result.id}`}
@@ -545,24 +570,35 @@ export default function ThinBannerPage() {
                                       result.id
                                     );
                                   }}
-                                  className="w-full flex items-center gap-3 p-3 bg-white/5 hover:bg-white/10 rounded-lg transition-colors text-left"
+                                  className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 transition-colors text-left border-b border-gray-100 last:border-b-0"
                                 >
-                                  <div className="flex items-center justify-center w-8 h-8 bg-blue-500/20 rounded-lg">
+                                  <div className="flex items-center justify-center w-10 h-10 bg-blue-100 rounded-lg">
                                     {getTypeIcon(result.type)}
                                   </div>
                                   <div className="flex-1">
-                                    <p className="text-white font-medium">
+                                    <p className="text-gray-900 font-medium">
                                       {result.title}
                                     </p>
-                                    <p className="text-gray-400 text-sm">
-                                      {getTypeLabel(result.type)} •{" "}
-                                      {result.subtitle}
-                                    </p>
+                                    <div className="flex items-center gap-2 mt-1">
+                                      {getTypeBadge(result.type)}
+                                      <span className="text-gray-500 text-sm">
+                                        {result.subtitle}
+                                      </span>
+                                    </div>
                                   </div>
                                 </button>
                               ))}
                             </div>
                           )}
+
+                          {searchQuery &&
+                            !searchLoading &&
+                            searchResults.length === 0 && (
+                              <div className="text-center py-4 text-gray-500">
+                                <AlertCircle className="w-6 h-6 mx-auto mb-2" />
+                                <p>Aramanızla eşleşen sonuç bulunamadı</p>
+                              </div>
+                            )}
 
                           {/* Cancel Button */}
                           <div className="flex justify-end">
@@ -585,17 +621,17 @@ export default function ThinBannerPage() {
               ))}
             </div>
           )}
-        </main>
+        </div>
 
         {/* Upload Overlay */}
         {uploading && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-8 text-center">
-              <Loader2 className="w-12 h-12 text-emerald-400 animate-spin mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-white mb-2">
-                İnce Banner Yükleniyor
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-8 text-center shadow-xl">
+              <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Banner Yükleniyor
               </h3>
-              <p className="text-gray-300">
+              <p className="text-gray-600">
                 İşlem tamamlanana kadar lütfen bekleyin...
               </p>
             </div>

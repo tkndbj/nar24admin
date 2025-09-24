@@ -402,8 +402,8 @@ export default function Dashboard() {
   const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-slate-800/95 border border-white/20 rounded-lg p-3 backdrop-blur-xl">
-          <p className="text-white font-medium">{`Saat: ${label}`}</p>
+        <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-lg">
+          <p className="text-gray-800 font-medium text-sm">{`Saat: ${label}`}</p>
           {payload.map((entry, index: number) => (
             <p key={index} style={{ color: entry.color }} className="text-sm">
               {`${entry.name}: ${entry.value}`}
@@ -417,28 +417,28 @@ export default function Dashboard() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 overflow-hidden">
+      <div className="min-h-screen bg-white">
         {/* Header */}
-        <header className="backdrop-blur-xl bg-white/10 border-b border-white/20 sticky top-0 z-50">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center py-3">
               <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg">
+                <div className="flex items-center justify-center w-8 h-8 bg-blue-600 rounded-lg">
                   <Shield className="w-5 h-5 text-white" />
                 </div>
-                <h1 className="text-xl font-bold text-white">
+                <h1 className="text-xl font-bold text-gray-900">
                   Yönetici Paneli
                 </h1>
               </div>
 
               <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 text-gray-300">
+                <div className="flex items-center gap-2 text-gray-600">
                   <User className="w-4 h-4" />
                   <span className="text-sm hidden sm:block">{user?.email}</span>
                 </div>
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-2 px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors"
+                  className="flex items-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors border border-red-200"
                 >
                   <LogOut className="w-4 h-4" />
                   <span className="text-sm hidden sm:block">Çıkış</span>
@@ -455,46 +455,46 @@ export default function Dashboard() {
             {/* Left side - Quick Stats (2 rows) */}
             <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* First row of stats */}
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 bg-blue-500/20 rounded-lg">
-                    <Users className="w-5 h-5 text-blue-400" />
+                  <div className="flex items-center justify-center w-10 h-10 bg-blue-100 rounded-lg">
+                    <Users className="w-5 h-5 text-blue-600" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-white">
+                    <h3 className="text-sm font-medium text-gray-600">
                       Kullanıcılar
                     </h3>
-                    <p className="text-xl font-bold text-blue-400">
+                    <p className="text-xl font-bold text-gray-900">
                       {loading ? "..." : users.length.toLocaleString("tr-TR")}
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 bg-green-500/20 rounded-lg">
-                    <Clock className="w-5 h-5 text-green-400" />
+                  <div className="flex items-center justify-center w-10 h-10 bg-green-100 rounded-lg">
+                    <Clock className="w-5 h-5 text-green-600" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-white">Aktif</h3>
-                    <p className="text-xl font-bold text-green-400">
+                    <h3 className="text-sm font-medium text-gray-600">Aktif</h3>
+                    <p className="text-xl font-bold text-gray-900">
                       {loading ? "..." : activeUsers.toLocaleString("tr-TR")}
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 bg-purple-500/20 rounded-lg">
-                    <Store className="w-5 h-5 text-purple-400" />
+                  <div className="flex items-center justify-center w-10 h-10 bg-purple-100 rounded-lg">
+                    <Store className="w-5 h-5 text-purple-600" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-white">
+                    <h3 className="text-sm font-medium text-gray-600">
                       Mağazalar
                     </h3>
-                    <p className="text-xl font-bold text-purple-400">
+                    <p className="text-xl font-bold text-gray-900">
                       {loading ? "..." : shops.length.toLocaleString("tr-TR")}
                     </p>
                   </div>
@@ -502,16 +502,16 @@ export default function Dashboard() {
               </div>
 
               {/* Second row of stats */}
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 bg-orange-500/20 rounded-lg">
-                    <Package className="w-5 h-5 text-orange-400" />
+                  <div className="flex items-center justify-center w-10 h-10 bg-orange-100 rounded-lg">
+                    <Package className="w-5 h-5 text-orange-600" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-white">
+                    <h3 className="text-sm font-medium text-gray-600">
                       Ürünler
                     </h3>
-                    <p className="text-xl font-bold text-orange-400">
+                    <p className="text-xl font-bold text-gray-900">
                       {loading
                         ? "..."
                         : products.length.toLocaleString("tr-TR")}
@@ -520,16 +520,16 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 bg-pink-500/20 rounded-lg">
-                    <Activity className="w-5 h-5 text-pink-400" />
+                  <div className="flex items-center justify-center w-10 h-10 bg-pink-100 rounded-lg">
+                    <Activity className="w-5 h-5 text-pink-600" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-white">
+                    <h3 className="text-sm font-medium text-gray-600">
                       API Çağrıları
                     </h3>
-                    <p className="text-xl font-bold text-pink-400">
+                    <p className="text-xl font-bold text-gray-900">
                       {metricsTotal.reads +
                         metricsTotal.writes +
                         metricsTotal.functions}
@@ -538,16 +538,16 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
+              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 bg-yellow-500/20 rounded-lg">
-                    <Globe className="w-5 h-5 text-yellow-400" />
+                  <div className="flex items-center justify-center w-10 h-10 bg-yellow-100 rounded-lg">
+                    <Globe className="w-5 h-5 text-yellow-600" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-white">
+                    <h3 className="text-sm font-medium text-gray-600">
                       Günlük Maliyet
                     </h3>
-                    <p className="text-xl font-bold text-yellow-400">
+                    <p className="text-xl font-bold text-gray-900">
                       ${dailyCosts.total.toFixed(4)}
                     </p>
                   </div>
@@ -558,11 +558,11 @@ export default function Dashboard() {
             {/* Right side - Monitoring Charts (2x2 grid) */}
             <div className="lg:col-span-7 grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Firestore Operations Chart - 60 minutes */}
-              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl p-4 relative">
+              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm relative">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <Database className="w-5 h-5 text-blue-400" />
-                    <h3 className="text-sm font-semibold text-white">
+                    <Database className="w-5 h-5 text-blue-600" />
+                    <h3 className="text-sm font-semibold text-gray-900">
                       Firestore (60dk){" "}
                       {metricsLoading && (
                         <span className="text-xs text-gray-400">⟳</span>
@@ -570,10 +570,10 @@ export default function Dashboard() {
                     </h3>
                   </div>
                   <div className="flex gap-4 text-xs">
-                    <span className="text-blue-400">
+                    <span className="text-blue-600">
                       R: {metricsTotal.reads}
                     </span>
-                    <span className="text-green-400">
+                    <span className="text-green-600">
                       W: {metricsTotal.writes}
                     </span>
                   </div>
@@ -585,7 +585,7 @@ export default function Dashboard() {
                         dataKey="time"
                         axisLine={false}
                         tickLine={false}
-                        tick={{ fontSize: 10, fill: "#9CA3AF" }}
+                        tick={{ fontSize: 10, fill: "#6B7280" }}
                         interval={14}
                       />
                       <YAxis hide />
@@ -594,25 +594,25 @@ export default function Dashboard() {
                         type="monotone"
                         dataKey="reads"
                         stackId="1"
-                        stroke="#60A5FA"
-                        fill="#60A5FA"
-                        fillOpacity={0.3}
+                        stroke="#2563EB"
+                        fill="#2563EB"
+                        fillOpacity={0.1}
                         strokeWidth={1}
                       />
                       <Area
                         type="monotone"
                         dataKey="writes"
                         stackId="1"
-                        stroke="#34D399"
-                        fill="#34D399"
-                        fillOpacity={0.3}
+                        stroke="#059669"
+                        fill="#059669"
+                        fillOpacity={0.1}
                         strokeWidth={1}
                       />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
                 {/* Cost display */}
-                <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-gray-400">
+                <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-gray-500">
                   <DollarSign className="w-3 h-3" />
                   <span>
                     ${(hourlyCosts.reads + hourlyCosts.writes).toFixed(4)}
@@ -621,11 +621,11 @@ export default function Dashboard() {
               </div>
 
               {/* Cloud Functions Chart - 60 minutes */}
-              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl p-4 relative">
+              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm relative">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <Zap className="w-5 h-5 text-yellow-400" />
-                    <h3 className="text-sm font-semibold text-white">
+                    <Zap className="w-5 h-5 text-yellow-600" />
+                    <h3 className="text-sm font-semibold text-gray-900">
                       Functions (60dk){" "}
                       {metricsLoading && (
                         <span className="text-xs text-gray-400">⟳</span>
@@ -633,8 +633,8 @@ export default function Dashboard() {
                     </h3>
                   </div>
                   <div className="flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-yellow-400" />
-                    <span className="text-xs text-yellow-400">
+                    <TrendingUp className="w-4 h-4 text-yellow-600" />
+                    <span className="text-xs text-yellow-600">
                       {metricsTotal.functions}
                     </span>
                   </div>
@@ -646,7 +646,7 @@ export default function Dashboard() {
                         dataKey="time"
                         axisLine={false}
                         tickLine={false}
-                        tick={{ fontSize: 10, fill: "#9CA3AF" }}
+                        tick={{ fontSize: 10, fill: "#6B7280" }}
                         interval={14}
                       />
                       <YAxis hide />
@@ -654,35 +654,35 @@ export default function Dashboard() {
                       <Line
                         type="monotone"
                         dataKey="functions"
-                        stroke="#FBBF24"
+                        stroke="#D97706"
                         strokeWidth={2}
                         dot={false}
-                        activeDot={{ r: 3, fill: "#FBBF24" }}
+                        activeDot={{ r: 3, fill: "#D97706" }}
                       />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
                 {/* Cost display */}
-                <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-gray-400">
+                <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-gray-500">
                   <DollarSign className="w-3 h-3" />
                   <span>${hourlyCosts.functions.toFixed(4)}</span>
                 </div>
               </div>
 
               {/* Firestore Operations Chart - 24 hours */}
-              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl p-4 relative">
+              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm relative">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <Database className="w-5 h-5 text-blue-400" />
-                    <h3 className="text-sm font-semibold text-white">
+                    <Database className="w-5 h-5 text-blue-600" />
+                    <h3 className="text-sm font-semibold text-gray-900">
                       Firestore (24sa)
                     </h3>
                   </div>
                   <div className="flex gap-4 text-xs">
-                    <span className="text-blue-400">
+                    <span className="text-blue-600">
                       R: {dailyMetricsTotal.reads}
                     </span>
-                    <span className="text-green-400">
+                    <span className="text-green-600">
                       W: {dailyMetricsTotal.writes}
                     </span>
                   </div>
@@ -694,7 +694,7 @@ export default function Dashboard() {
                         dataKey="time"
                         axisLine={false}
                         tickLine={false}
-                        tick={{ fontSize: 10, fill: "#9CA3AF" }}
+                        tick={{ fontSize: 10, fill: "#6B7280" }}
                         interval={5}
                       />
                       <YAxis hide />
@@ -703,25 +703,25 @@ export default function Dashboard() {
                         type="monotone"
                         dataKey="reads"
                         stackId="1"
-                        stroke="#60A5FA"
-                        fill="#60A5FA"
-                        fillOpacity={0.3}
+                        stroke="#2563EB"
+                        fill="#2563EB"
+                        fillOpacity={0.1}
                         strokeWidth={1}
                       />
                       <Area
                         type="monotone"
                         dataKey="writes"
                         stackId="1"
-                        stroke="#34D399"
-                        fill="#34D399"
-                        fillOpacity={0.3}
+                        stroke="#059669"
+                        fill="#059669"
+                        fillOpacity={0.1}
                         strokeWidth={1}
                       />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
                 {/* Cost display */}
-                <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-gray-400">
+                <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-gray-500">
                   <DollarSign className="w-3 h-3" />
                   <span>
                     ${(dailyCosts.reads + dailyCosts.writes).toFixed(4)}
@@ -730,17 +730,17 @@ export default function Dashboard() {
               </div>
 
               {/* Cloud Functions Chart - 24 hours */}
-              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl p-4 relative">
+              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm relative">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <Zap className="w-5 h-5 text-yellow-400" />
-                    <h3 className="text-sm font-semibold text-white">
+                    <Zap className="w-5 h-5 text-yellow-600" />
+                    <h3 className="text-sm font-semibold text-gray-900">
                       Functions (24sa)
                     </h3>
                   </div>
                   <div className="flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-yellow-400" />
-                    <span className="text-xs text-yellow-400">
+                    <TrendingUp className="w-4 h-4 text-yellow-600" />
+                    <span className="text-xs text-yellow-600">
                       {dailyMetricsTotal.functions}
                     </span>
                   </div>
@@ -752,7 +752,7 @@ export default function Dashboard() {
                         dataKey="time"
                         axisLine={false}
                         tickLine={false}
-                        tick={{ fontSize: 10, fill: "#9CA3AF" }}
+                        tick={{ fontSize: 10, fill: "#6B7280" }}
                         interval={5}
                       />
                       <YAxis hide />
@@ -760,16 +760,16 @@ export default function Dashboard() {
                       <Line
                         type="monotone"
                         dataKey="functions"
-                        stroke="#FBBF24"
+                        stroke="#D97706"
                         strokeWidth={2}
                         dot={false}
-                        activeDot={{ r: 3, fill: "#FBBF24" }}
+                        activeDot={{ r: 3, fill: "#D97706" }}
                       />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
                 {/* Cost display */}
-                <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-gray-400">
+                <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-gray-500">
                   <DollarSign className="w-3 h-3" />
                   <span>${dailyCosts.functions.toFixed(4)}</span>
                 </div>
@@ -779,7 +779,9 @@ export default function Dashboard() {
 
           {/* Search Bar */}
           <div className="mb-4">
-            <form onSubmit={handleSearch} className="flex gap-3 max-w-3xl">
+            <div className="flex gap-3">
+              {" "}
+              {/* Removed max-w-4xl to use full width */}
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -787,20 +789,21 @@ export default function Dashboard() {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Kullanıcı, ürün, mağaza ara (isim veya ID ile)"
-                  className="w-full pl-10 pr-4 py-2.5 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-sm"
+                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm"
                 />
               </div>
               <button
                 type="submit"
                 disabled={!searchTerm.trim()}
-                className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-600 text-white font-medium rounded-xl transition-all duration-200 disabled:cursor-not-allowed text-sm"
+                onClick={handleSearch}
+                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-all duration-200 disabled:cursor-not-allowed text-sm"
               >
                 Ara
               </button>
               <button
                 type="button"
                 onClick={() => router.push("/cloudfunctionmonitoring")}
-                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-700 hover:to-orange-700 text-white font-medium rounded-xl transition-all duration-200 text-sm"
+                className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-all duration-200 text-sm"
               >
                 <Zap className="w-4 h-4" />
                 Cloud Function Analiz
@@ -808,49 +811,57 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={() => router.push("/recommendations-pipeline-usage")}
-                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-700 hover:to-orange-700 text-white font-medium rounded-xl transition-all duration-200 text-sm"
+                className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-all duration-200 text-sm"
               >
-                <Zap className="w-4 h-4" />
-                Recommendations Pipeline Analiz
+                <BarChart3 className="w-4 h-4" />
+                Recommendations Pipeline
               </button>
-            </form>
+              <button
+                type="button"
+                onClick={() => router.push("/algoliamonitoring")}
+                className="flex items-center gap-2 px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-medium rounded-lg transition-all duration-200 text-sm"
+              >
+                <Search className="w-4 h-4" />
+                Algolia Monitoring
+              </button>
+            </div>
 
             {/* Quick Search Preview */}
             {searchTerm && (
               <div className="mt-3 max-w-2xl">
-                <div className="bg-slate-800/95 backdrop-blur-xl border border-white/20 rounded-xl p-3">
+                <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
                   {searchResults.length > 0 ? (
                     <div>
-                      <p className="text-gray-300 text-xs mb-2">
+                      <p className="text-gray-600 text-xs mb-2">
                         {searchResults.length} sonuç:
                       </p>
                       <div className="space-y-1">
                         {searchResults.slice(0, 3).map((result) => (
                           <div
                             key={`${result.type}-${result.data.id}`}
-                            className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+                            className="p-2 hover:bg-gray-50 rounded-lg transition-colors"
                           >
                             <div className="flex items-center gap-2">
                               {result.type === "user" ? (
-                                <User className="w-3 h-3 text-blue-400" />
+                                <User className="w-3 h-3 text-blue-600" />
                               ) : result.type === "shop" ? (
-                                <Store className="w-3 h-3 text-purple-400" />
+                                <Store className="w-3 h-3 text-purple-600" />
                               ) : (
-                                <Package className="w-3 h-3 text-green-400" />
+                                <Package className="w-3 h-3 text-green-600" />
                               )}
                               <div className="flex-1">
-                                <p className="text-white font-medium text-xs">
+                                <p className="text-gray-900 font-medium text-xs">
                                   {result.type === "user"
                                     ? (result.data as UserData).displayName
                                     : result.type === "shop"
                                     ? (result.data as ShopData).name
                                     : (result.data as ProductData).productName}
                                 </p>
-                                <p className="text-gray-400 text-xs font-mono">
+                                <p className="text-gray-500 text-xs font-mono">
                                   ID: {result.data.id}
                                 </p>
                               </div>
-                              <span className="text-xs text-gray-400 capitalize">
+                              <span className="text-xs text-gray-500 capitalize">
                                 {result.type === "user"
                                   ? "Kullanıcı"
                                   : result.type === "shop"
@@ -863,7 +874,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                   ) : (
-                    <p className="text-gray-400 text-xs">Sonuç bulunamadı</p>
+                    <p className="text-gray-500 text-xs">Sonuç bulunamadı</p>
                   )}
                 </div>
               </div>
@@ -871,179 +882,185 @@ export default function Dashboard() {
           </div>
 
           {/* Admin Panel Controls */}
-          <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-            <h3 className="text-lg font-semibold text-white mb-3">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">
               Yönetici Kontrolleri
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               <button
                 onClick={() => handleNavigation("productapplications")}
-                className="p-3 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-lg text-left transition-colors group"
+                className="p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg text-left transition-colors group"
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <FileText className="w-4 h-4 text-blue-400 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-semibold text-white text-sm">
+                  <FileText className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
                     Ürün Başvuruları
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">Bekleyen başvurular</p>
+                <p className="text-xs text-gray-600">Bekleyen başvurular</p>
               </button>
 
               <button
                 onClick={() => handleNavigation("editproductapplications")}
-                className="p-3 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-lg text-left transition-colors group"
+                className="p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg text-left transition-colors group"
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <Edit2 className="w-4 h-4 text-blue-400 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-semibold text-white text-sm">
+                  <Edit2 className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
                     Ürün Güncellemeler
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">Bekleyen başvurular</p>
+                <p className="text-xs text-gray-600">Bekleyen başvurular</p>
               </button>
 
               <button
                 onClick={() => handleNavigation("shop-applications")}
-                className="p-3 bg-green-600/20 hover:bg-green-600/30 border border-green-500/30 rounded-lg text-left transition-colors group"
+                className="p-3 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg text-left transition-colors group"
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <Store className="w-4 h-4 text-green-400 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-semibold text-white text-sm">
+                  <Store className="w-4 h-4 text-green-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
                     Dükkan Başvuruları
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">Yeni başvurular</p>
+                <p className="text-xs text-gray-600">Yeni başvurular</p>
               </button>
 
               <button
                 onClick={() => handleNavigation("pickup-points")}
-                className="p-3 bg-green-600/20 hover:bg-green-600/30 border border-green-500/30 rounded-lg text-left transition-colors group"
+                className="p-3 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg text-left transition-colors group"
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <MapPin className="w-4 h-4 text-green-400 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-semibold text-white text-sm">
+                  <MapPin className="w-4 h-4 text-green-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
                     Teslimat Noktaları
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">Teslimat noktaları</p>
+                <p className="text-xs text-gray-600">Teslimat noktaları</p>
               </button>
 
               <button
                 onClick={() => handleNavigation("main-large-banner")}
-                className="p-3 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 rounded-lg text-left transition-colors group"
+                className="p-3 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg text-left transition-colors group"
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <Image className="w-4 h-4 text-purple-400 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-semibold text-white text-sm">
+                  <Image className="w-4 h-4 text-purple-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
                     Büyük Banner
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">Ana ekran banner</p>
+                <p className="text-xs text-gray-600">Ana ekran banner</p>
               </button>
 
               <button
                 onClick={() => handleNavigation("main-thin-banner")}
-                className="p-3 bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 rounded-lg text-left transition-colors group"
+                className="p-3 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg text-left transition-colors group"
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <Layout className="w-4 h-4 text-orange-400 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-semibold text-white text-sm">
+                  <Layout className="w-4 h-4 text-orange-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
                     İnce Banner
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">İnce banner yönetimi</p>
+                <p className="text-xs text-gray-600">İnce banner yönetimi</p>
               </button>
 
               <button
                 onClick={() => handleNavigation("main-banners")}
-                className="p-3 bg-pink-600/20 hover:bg-pink-600/30 border border-pink-500/30 rounded-lg text-left transition-colors group"
+                className="p-3 bg-pink-50 hover:bg-pink-100 border border-pink-200 rounded-lg text-left transition-colors group"
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <BarChart3 className="w-4 h-4 text-pink-400 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-semibold text-white text-sm">
+                  <BarChart3 className="w-4 h-4 text-pink-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
                     Ana Bannerlar
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">Tüm banner yönetimi</p>
+                <p className="text-xs text-gray-600">Tüm banner yönetimi</p>
               </button>
+
               <button
                 onClick={() => handleNavigation("notifications")}
-                className="p-3 bg-pink-600/20 hover:bg-pink-600/30 border border-pink-500/30 rounded-lg text-left transition-colors group"
+                className="p-3 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-left transition-colors group"
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <Bell className="w-4 h-4 text-pink-400 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-semibold text-white text-sm">
+                  <Bell className="w-4 h-4 text-red-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
                     Bildirim Gönder
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">Bildirim gönderimi</p>
+                <p className="text-xs text-gray-600">Bildirim gönderimi</p>
               </button>
+
               <button
                 onClick={() => handleNavigation("marketfilters")}
-                className="p-3 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-lg text-left transition-colors group"
+                className="p-3 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-left transition-colors group"
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <Filter className="w-4 h-4 text-blue-400 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-semibold text-white text-sm">
+                  <Filter className="w-4 h-4 text-indigo-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
                     Ana Ekran Filtereleri
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">Dinamik Filtre Oluştur</p>
+                <p className="text-xs text-gray-600">Dinamik Filtre Oluştur</p>
               </button>
+
               <button
                 onClick={() => handleNavigation("createcampaing")}
-                className="p-3 bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 rounded-lg text-left transition-colors group"
+                className="p-3 bg-yellow-50 hover:bg-yellow-100 border border-yellow-200 rounded-lg text-left transition-colors group"
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <Bell className="w-4 h-4 text-orange-400 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-semibold text-white text-sm">
+                  <Bell className="w-4 h-4 text-yellow-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
                     Özel Gün Kampanyaları
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">
+                <p className="text-xs text-gray-600">
                   Özel Günler İçin Kampanya Oluştur
                 </p>
               </button>
+
               <button
                 onClick={() => handleNavigation("marketscreenhorizontallist")}
-                className="p-3 bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 rounded-lg text-left transition-colors group"
+                className="p-3 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 rounded-lg text-left transition-colors group"
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <List className="w-4 h-4 text-orange-400 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-semibold text-white text-sm">
+                  <List className="w-4 h-4 text-cyan-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
                     Ana Ekran Yatay Ürün Listesi
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">
+                <p className="text-xs text-gray-600">
                   Ana Ekran Yatay Ürün Listesi
                 </p>
               </button>
+
               <button
                 onClick={() => handleNavigation("marketlayout")}
-                className="p-3 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 rounded-lg text-left transition-colors group"
+                className="p-3 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg text-left transition-colors group"
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <Layout className="w-4 h-4 text-indigo-400 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-semibold text-white text-sm">
+                  <Layout className="w-4 h-4 text-teal-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
                     Ana Ekran Layout
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">
+                <p className="text-xs text-gray-600">
                   Widget sıralama ve görünürlük
                 </p>
               </button>
+
               <button
                 onClick={() => handleNavigation("listproduct-flowmanagement")}
-                className="p-3 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 rounded-lg text-left transition-colors group"
+                className="p-3 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-left transition-colors group"
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <Layout className="w-4 h-4 text-indigo-400 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-semibold text-white text-sm">
+                  <Activity className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
                     Ürün Akış Yönetimi
                   </h4>
                 </div>
-                <p className="text-xs text-gray-300">Ürün akış yönetimi</p>
+                <p className="text-xs text-gray-600">Ürün akış yönetimi</p>
               </button>
             </div>
           </div>

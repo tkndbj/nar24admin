@@ -4,9 +4,6 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import {
   ArrowLeft,
   Store,
-  Edit,
-  X,
-  Check,
   Loader2,
   Image as ImageIcon,
   Package,
@@ -14,23 +11,27 @@ import {
   Star,
   Eye,
   Heart,
-  TrendingUp,
-  Activity,
   Search,
-  Grid,
+  Grid3x3,
   List,
   Users,
   Phone,
   Calendar,
-  ShoppingBag,
-  Award,
-  Zap,  
-  Badge,  
-  DollarSign,  
   ExternalLink,
   User,
+  Zap,
+  BadgeCheck,
+  Building2,
+  FolderOpen,
 } from "lucide-react";
-import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+  Suspense,
+} from "react";
 import {
   collection,
   doc,
@@ -41,7 +42,6 @@ import {
   orderBy,
   limit,
   startAfter,
-  updateDoc,
   Timestamp,
   DocumentSnapshot,
 } from "firebase/firestore";
@@ -52,49 +52,49 @@ import { toast } from "react-hot-toast";
 
 // Types
 interface ShopData {
-    id: string;
-    name: string;
-    ownerId: string;
-    profileImageUrl?: string;
-    coverImageUrls?: string[];
-    homeImageUrls?: string[];
-    homeImageLinks?: { [key: string]: string };
-    categories?: string[];
-    category?: string;
-    address?: string;
-    contactNo?: string;
-    averageRating?: number;
-    reviewCount?: number;
-    followerCount?: number;
-    clickCount?: number;
-    totalProductsSold?: number;
-    isBoosted?: boolean;
-    stockBadgeAcknowledged?: boolean;
-    transactionsBadgeAcknowledged?: boolean;
-    taxPlateCertificateUrl?: string;
-    editors?: string[];
-    viewers?: string[];
-    coOwners?: string[];
-    seller_info?: {
-        info?: {
-          address?: string;
-          iban?: string;
-          ibanOwnerName?: string;
-          ibanOwnerSurname?: string;
-          phone?: string;
-          region?: string;
-        };
-      };
-    createdAt?: Timestamp;
-    updatedAt?: Timestamp;
-  }
+  id: string;
+  name: string;
+  ownerId: string;
+  profileImageUrl?: string;
+  coverImageUrls?: string[];
+  homeImageUrls?: string[];
+  homeImageLinks?: { [key: string]: string };
+  categories?: string[];
+  category?: string;
+  address?: string;
+  contactNo?: string;
+  averageRating?: number;
+  reviewCount?: number;
+  followerCount?: number;
+  clickCount?: number;
+  totalProductsSold?: number;
+  isBoosted?: boolean;
+  stockBadgeAcknowledged?: boolean;
+  transactionsBadgeAcknowledged?: boolean;
+  taxPlateCertificateUrl?: string;
+  editors?: string[];
+  viewers?: string[];
+  coOwners?: string[];
+  seller_info?: {
+    info?: {
+      address?: string;
+      iban?: string;
+      ibanOwnerName?: string;
+      ibanOwnerSurname?: string;
+      phone?: string;
+      region?: string;
+    };
+  };
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+}
 
 interface UserData {
-    id: string;
-    displayName: string;
-    email: string;
-    profileImage?: string;
-  }
+  id: string;
+  displayName: string;
+  email: string;
+  profileImage?: string;
+}
 
 interface ProductData {
   id: string;
@@ -122,17 +122,43 @@ interface ProductData {
   region?: string;
 }
 
-interface EditableField {
-  field: keyof ShopData;
-  value: string;
-  isEditing: boolean;
+interface ReviewData {
+  id: string;
+  rating: number;
+  review: string;
+  userId: string;
+  sellerId: string;
+  sellerName: string;
+  timestamp: Timestamp;
+  transactionId?: string;
+  imageUrls?: string[];
+  productId?: string;
+  productName?: string;
+  productImage?: string;
+  price?: number;
+  currency?: string;
+}
+
+interface CollectionData {
+  id: string;
+  name: string;
+  imageUrl: string;
+  productIds: string[];
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 type ViewMode = "grid" | "list";
 type FilterStatus = "all" | "active" | "sold" | "featured";
 type SortBy = "newest" | "oldest" | "price_high" | "price_low" | "popular";
+type TabType =
+  | "products"
+  | "about"
+  | "reviews"
+  | "collections"
+  | "members"
+  | "analytics";
 
-// Create a separate component that uses useSearchParams
 function ShopDetailsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -145,10 +171,13 @@ function ShopDetailsContent() {
   // State Management
   const [shop, setShop] = useState<ShopData | null>(null);
   const [products, setProducts] = useState<ProductData[]>([]);
+  const [reviews, setReviews] = useState<ReviewData[]>([]);
+  const [collections, setCollections] = useState<CollectionData[]>([]);
   const [loading, setLoading] = useState(true);
   const [productsLoading, setProductsLoading] = useState(false);
-  const [editableFields, setEditableFields] = useState<EditableField[]>([]);
-  const [isSaving, setIsSaving] = useState(false);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [collectionsLoading, setCollectionsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>("products");
 
   // Filter and Search States
   const [productSearch, setProductSearch] = useState("");
@@ -157,9 +186,11 @@ function ShopDetailsContent() {
   const [productSort, setProductSort] = useState<SortBy>("newest");
 
   // Pagination
-  const [lastProductDoc, setLastProductDoc] = useState<DocumentSnapshot | null>(null);
+  const [lastProductDoc, setLastProductDoc] = useState<DocumentSnapshot | null>(
+    null
+  );
   const [hasMoreProducts, setHasMoreProducts] = useState(true);
-  const ITEMS_PER_PAGE = 12;
+  const ITEMS_PER_PAGE = 20;
 
   const [members, setMembers] = useState<{
     owner?: UserData;
@@ -169,126 +200,152 @@ function ShopDetailsContent() {
   }>({
     coOwners: [],
     editors: [],
-    viewers: []
+    viewers: [],
   });
   const [membersLoading, setMembersLoading] = useState(false);
 
-  // Initialize editable fields
-  const initializeEditableFields = useCallback((shopData: ShopData) => {
-    setEditableFields([
-      { field: "name", value: shopData.name || "", isEditing: false },
-      { field: "address", value: shopData.address || "", isEditing: false },
-      { field: "contactNo", value: shopData.contactNo || "", isEditing: false },
-      { field: "category", value: shopData.category || "", isEditing: false },
-    ]);
-  }, []);
-
+  // Fetch functions
   const fetchSellerInfo = useCallback(async (shopId: string) => {
     try {
       const sellerInfoQuery = query(
         collection(db, "shops", shopId, "seller_info")
       );
       const sellerInfoSnapshot = await getDocs(sellerInfoQuery);
-      
+
       if (!sellerInfoSnapshot.empty) {
-        // Get the first document (there should only be one)
         const sellerInfoDoc = sellerInfoSnapshot.docs[0];
         const sellerInfo = sellerInfoDoc.data();
-        
-        console.log("Seller info from subcollection:", sellerInfo);
         return sellerInfo;
       }
-      
-      console.log("No seller info found in subcollection");
+
       return null;
     } catch (error) {
       console.error("Error fetching seller info:", error);
       return null;
     }
   }, []);
-  
-  // Update your fetchShopData function
+
   const fetchShopData = useCallback(async () => {
     if (!shopId) {
       toast.error("Mağaza ID'si bulunamadı");
       router.push("/dashboard");
       return;
     }
-  
+
     try {
       setLoading(true);
       const shopDoc = await getDoc(doc(db, "shops", shopId));
-      
+
       if (!shopDoc.exists()) {
         toast.error("Mağaza bulunamadı");
         router.push("/dashboard");
         return;
       }
-  
+
       const shopData = { id: shopDoc.id, ...shopDoc.data() } as ShopData;
-      
-      // Fetch seller info from subcollection
       const sellerInfo = await fetchSellerInfo(shopId);
-      
-      // Add seller info to shop data if it exists
+
       if (sellerInfo) {
         shopData.seller_info = { info: sellerInfo };
       }
-      
-      console.log("Final shop data with seller info:", shopData);
-      console.log("Seller info:", shopData.seller_info);
-      
+
       setShop(shopData);
-      initializeEditableFields(shopData);
     } catch (error) {
       console.error("Error fetching shop:", error);
       toast.error("Mağaza bilgileri yüklenirken hata oluştu");
     } finally {
       setLoading(false);
     }
-  }, [shopId, router, initializeEditableFields, fetchSellerInfo]);
+  }, [shopId, router, fetchSellerInfo]);
+
+  const fetchReviews = useCallback(async () => {
+    if (!shopId) return;
+
+    try {
+      setReviewsLoading(true);
+      const reviewsQuery = query(
+        collection(db, "shops", shopId, "reviews"),
+        orderBy("timestamp", "desc")
+      );
+      const reviewsSnapshot = await getDocs(reviewsQuery);
+
+      const reviewsData = reviewsSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as ReviewData[];
+
+      setReviews(reviewsData);
+    } catch (error) {
+      console.error("Error fetching reviews:", error);
+      toast.error("Yorumlar yüklenirken hata oluştu");
+    } finally {
+      setReviewsLoading(false);
+    }
+  }, [shopId]);
+
+  const fetchCollections = useCallback(async () => {
+    if (!shopId) return;
+
+    try {
+      setCollectionsLoading(true);
+      const collectionsQuery = query(
+        collection(db, "shops", shopId, "collections"),
+        orderBy("createdAt", "desc")
+      );
+      const collectionsSnapshot = await getDocs(collectionsQuery);
+
+      const collectionsData = collectionsSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as CollectionData[];
+
+      setCollections(collectionsData);
+    } catch (error) {
+      console.error("Error fetching collections:", error);
+      toast.error("Koleksiyonlar yüklenirken hata oluştu");
+    } finally {
+      setCollectionsLoading(false);
+    }
+  }, [shopId]);
 
   const fetchMemberDetails = useCallback(async (shop: ShopData) => {
     if (!shop) return;
-    
+
     setMembersLoading(true);
-    
+
     try {
       const memberIds: string[] = [];
       const roleMap: { [key: string]: string } = {};
-      
-      // Collect all member IDs and map their roles
+
       if (shop.ownerId) {
         memberIds.push(shop.ownerId);
-        roleMap[shop.ownerId] = 'owner';
+        roleMap[shop.ownerId] = "owner";
       }
-      
+
       if (shop.coOwners) {
-        shop.coOwners.forEach(id => {
+        shop.coOwners.forEach((id) => {
           memberIds.push(id);
-          roleMap[id] = 'coOwner';
+          roleMap[id] = "coOwner";
         });
       }
-      
+
       if (shop.editors) {
-        shop.editors.forEach(id => {
+        shop.editors.forEach((id) => {
           memberIds.push(id);
-          roleMap[id] = 'editor';
+          roleMap[id] = "editor";
         });
       }
-      
+
       if (shop.viewers) {
-        shop.viewers.forEach(id => {
+        shop.viewers.forEach((id) => {
           memberIds.push(id);
-          roleMap[id] = 'viewer';
+          roleMap[id] = "viewer";
         });
       }
-      
-      // Remove duplicates
+
       const uniqueIds = [...new Set(memberIds)];
-      
-      // Fetch user details in batches (Firestore 'in' query limit is 10)
       const users: UserData[] = [];
+
       for (let i = 0; i < uniqueIds.length; i += 10) {
         const batch = uniqueIds.slice(i, i + 10);
         if (batch.length > 0) {
@@ -297,40 +354,39 @@ function ShopDetailsContent() {
             where("__name__", "in", batch)
           );
           const snapshot = await getDocs(usersQuery);
-          const batchUsers = snapshot.docs.map(doc => ({
+          const batchUsers = snapshot.docs.map((doc) => ({
             id: doc.id,
-            ...doc.data()
+            ...doc.data(),
           })) as UserData[];
           users.push(...batchUsers);
         }
       }
-      
-      // Organize users by role
+
       const organizedMembers = {
         owner: undefined as UserData | undefined,
         coOwners: [] as UserData[],
         editors: [] as UserData[],
-        viewers: [] as UserData[]
+        viewers: [] as UserData[],
       };
-      
-      users.forEach(user => {
+
+      users.forEach((user) => {
         const role = roleMap[user.id];
         switch (role) {
-          case 'owner':
+          case "owner":
             organizedMembers.owner = user;
             break;
-          case 'coOwner':
+          case "coOwner":
             organizedMembers.coOwners.push(user);
             break;
-          case 'editor':
+          case "editor":
             organizedMembers.editors.push(user);
             break;
-          case 'viewer':
+          case "viewer":
             organizedMembers.viewers.push(user);
             break;
         }
       });
-      
+
       setMembers(organizedMembers);
     } catch (error) {
       console.error("Error fetching member details:", error);
@@ -340,59 +396,65 @@ function ShopDetailsContent() {
     }
   }, []);
 
-  // Fetch shop products with pagination and filters
-  const fetchShopProducts = useCallback(async (append = false) => {
-    if (!shopId || productsLoading) return;
+  const fetchShopProducts = useCallback(
+    async (append = false) => {
+      if (!shopId || productsLoading) return;
 
-    try {
-      setProductsLoading(true);
-      
-      let q = query(
-        collection(db, "shop_products"),
-        where("shopId", "==", shopId),
-        orderBy(
-          productSort === "newest" ? "createdAt" :
-          productSort === "oldest" ? "createdAt" :
-          productSort === "price_high" ? "price" :
-          productSort === "price_low" ? "price" : "clickCount",
-          productSort === "oldest" || productSort === "price_low" ? "asc" : "desc"
-        ),
-        limit(ITEMS_PER_PAGE)
-      );
+      try {
+        setProductsLoading(true);
 
-      // Apply pagination
-      if (append && lastProductDoc) {
-        q = query(q, startAfter(lastProductDoc));
+        let q = query(
+          collection(db, "shop_products"),
+          where("shopId", "==", shopId),
+          orderBy(
+            productSort === "newest"
+              ? "createdAt"
+              : productSort === "oldest"
+              ? "createdAt"
+              : productSort === "price_high"
+              ? "price"
+              : productSort === "price_low"
+              ? "price"
+              : "clickCount",
+            productSort === "oldest" || productSort === "price_low"
+              ? "asc"
+              : "desc"
+          ),
+          limit(ITEMS_PER_PAGE)
+        );
+
+        if (append && lastProductDoc) {
+          q = query(q, startAfter(lastProductDoc));
+        }
+
+        const snapshot = await getDocs(q);
+        const newProducts = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as ProductData[];
+
+        if (append) {
+          setProducts((prev) => [...prev, ...newProducts]);
+        } else {
+          setProducts(newProducts);
+          setLastProductDoc(null);
+        }
+
+        if (newProducts.length > 0) {
+          setLastProductDoc(snapshot.docs[snapshot.docs.length - 1]);
+        }
+
+        setHasMoreProducts(newProducts.length === ITEMS_PER_PAGE);
+      } catch (error) {
+        console.error("Error fetching products:", error);
+        toast.error("Ürünler yüklenirken hata oluştu");
+      } finally {
+        setProductsLoading(false);
       }
+    },
+    [shopId, productSort, lastProductDoc, productsLoading]
+  );
 
-      const snapshot = await getDocs(q);
-      const newProducts = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as ProductData[];
-
-      if (append) {
-        setProducts(prev => [...prev, ...newProducts]);
-      } else {
-        setProducts(newProducts);
-        setLastProductDoc(null);
-      }
-
-      // Set last document for pagination
-      if (newProducts.length > 0) {
-        setLastProductDoc(snapshot.docs[snapshot.docs.length - 1]);
-      }
-
-      setHasMoreProducts(newProducts.length === ITEMS_PER_PAGE);
-    } catch (error) {
-      console.error("Error fetching products:", error);
-      toast.error("Ürünler yüklenirken hata oluştu");
-    } finally {
-      setProductsLoading(false);
-    }
-  }, [shopId, productSort, lastProductDoc, productsLoading]);
-
-  // Setup infinite scroll for products
   const setupProductsInfiniteScroll = useCallback(() => {
     if (productsObserverRef.current) {
       productsObserverRef.current.disconnect();
@@ -412,23 +474,21 @@ function ShopDetailsContent() {
     }
   }, [hasMoreProducts, productsLoading, fetchShopProducts]);
 
-  // Filter products based on search and filter criteria
   const filteredProducts = useMemo(() => {
     let filtered = products;
 
-    // Apply search filter
     if (productSearch.trim()) {
       const searchTerm = productSearch.toLowerCase().trim();
-      filtered = filtered.filter(product =>
-        product.productName?.toLowerCase().includes(searchTerm) ||
-        product.category?.toLowerCase().includes(searchTerm) ||
-        product.subcategory?.toLowerCase().includes(searchTerm)
+      filtered = filtered.filter(
+        (product) =>
+          product.productName?.toLowerCase().includes(searchTerm) ||
+          product.category?.toLowerCase().includes(searchTerm) ||
+          product.subcategory?.toLowerCase().includes(searchTerm)
       );
     }
 
-    // Apply status filter
     if (productFilter !== "all") {
-      filtered = filtered.filter(product => {
+      filtered = filtered.filter((product) => {
         switch (productFilter) {
           case "active":
             return !product.sold;
@@ -445,64 +505,6 @@ function ShopDetailsContent() {
     return filtered;
   }, [products, productSearch, productFilter]);
 
-  // Handle field editing
-  const handleFieldEdit = (field: keyof ShopData) => {
-    setEditableFields(prev =>
-      prev.map(item =>
-        item.field === field ? { ...item, isEditing: true } : item
-      )
-    );
-  };
-
-  const handleFieldChange = (field: keyof ShopData, value: string) => {
-    setEditableFields(prev =>
-      prev.map(item =>
-        item.field === field ? { ...item, value } : item
-      )
-    );
-  };
-
-  const handleFieldSave = async (field: keyof ShopData) => {
-    if (!shopId || !shop) return;
-
-    const fieldData = editableFields.find(item => item.field === field);
-    if (!fieldData) return;
-
-    try {
-      setIsSaving(true);
-      
-      await updateDoc(doc(db, "shops", shopId), {
-        [field]: fieldData.value,
-        updatedAt: new Date()
-      });
-
-      setShop(prev => prev ? { ...prev, [field]: fieldData.value } : null);
-      setEditableFields(prev =>
-        prev.map(item =>
-          item.field === field ? { ...item, isEditing: false } : item
-        )
-      );
-
-      toast.success("Bilgi başarıyla güncellendi");
-    } catch (error) {
-      console.error("Error updating field:", error);
-      toast.error("Güncelleme sırasında hata oluştu");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleFieldCancel = (field: keyof ShopData) => {
-    const originalValue = shop?.[field]?.toString() || "";
-    setEditableFields(prev =>
-      prev.map(item =>
-        item.field === field
-          ? { ...item, value: originalValue, isEditing: false }
-          : item
-      )
-    );
-  };
-
   // Effects
   useEffect(() => {
     fetchShopData();
@@ -514,11 +516,12 @@ function ShopDetailsContent() {
       setLastProductDoc(null);
       setHasMoreProducts(true);
       fetchShopProducts();
-      fetchMemberDetails(shop); // Add this line
+      fetchMemberDetails(shop);
+      fetchReviews();
+      fetchCollections();
     }
-  }, [shop, fetchMemberDetails]);
+  }, [shop, fetchMemberDetails, fetchReviews, fetchCollections]);
 
-  // Reset products when sort changes
   useEffect(() => {
     if (shop) {
       setProducts([]);
@@ -528,7 +531,6 @@ function ShopDetailsContent() {
     }
   }, [productSort]);
 
-  // Setup infinite scroll
   useEffect(() => {
     setupProductsInfiniteScroll();
 
@@ -539,12 +541,37 @@ function ShopDetailsContent() {
     };
   }, [filteredProducts.length, setupProductsInfiniteScroll]);
 
+  const formatPrice = (price: number, currency: string) => {
+    return new Intl.NumberFormat("tr-TR", {
+      style: "currency",
+      currency: currency === "TL" ? "TRY" : currency,
+      minimumFractionDigits: 0,
+    }).format(price);
+  };
+
+  const formatNumber = (num: number) => {
+    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
+    return num.toString();
+  };
+
+  const formatDate = (timestamp: Timestamp) => {
+    const date = timestamp.toDate();
+    return new Intl.DateTimeFormat("tr-TR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="flex items-center gap-3 text-white">
-          <Loader2 className="w-6 h-6 animate-spin" />
-          <span>Mağaza bilgileri yükleniyor...</span>
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="flex items-center gap-3 text-gray-600">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span className="text-sm">Mağaza bilgileri yükleniyor...</span>
         </div>
       </div>
     );
@@ -552,804 +579,481 @@ function ShopDetailsContent() {
 
   if (!shop) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-center text-white">
-          <h2 className="text-xl font-semibold mb-2">Mağaza Bulunamadı</h2>
-          <p className="text-gray-400">Aradığınız mağaza mevcut değil.</p>
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+            Mağaza Bulunamadı
+          </h2>
+          <p className="text-sm text-gray-500">
+            Aradığınız mağaza mevcut değil.
+          </p>
         </div>
       </div>
     );
   }
 
-  const EditableField = ({ field, label, type = "text" }: {
-    field: keyof ShopData;
-    label: string;
-    type?: string;
-  }) => {
-    const fieldData = editableFields.find(item => item.field === field);
-    if (!fieldData) return null;
-
-    return (
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-300">{label}</label>
-        <div className="flex items-center gap-2">
-          {fieldData.isEditing ? (
-            <>
-              <input
-                type={type}
-                value={fieldData.value}
-                onChange={(e) => handleFieldChange(field, e.target.value)}
-                className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
-                disabled={isSaving}
-                autoFocus
-              />
-              <button
-                onClick={() => handleFieldSave(field)}
-                disabled={isSaving}
-                className="p-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
-              >
-                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              </button>
-              <button
-                onClick={() => handleFieldCancel(field)}
-                disabled={isSaving}
-                className="p-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="flex-1 text-white">
-                {fieldData.value || "Belirtilmemiş"}
-              </span>
-              <button
-                onClick={() => handleFieldEdit(field)}
-                className="p-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex-shrink-0"
-              >
-                <Edit className="w-4 h-4" />
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const ProductCard = ({ product, viewMode, isLast = false }: { 
-    product: ProductData; 
+  const ProductCard = ({
+    product,
+    viewMode,
+    isLast = false,
+  }: {
+    product: ProductData;
     viewMode: ViewMode;
     isLast?: boolean;
   }) => {
-    const formatPrice = (price: number, currency: string) => {
-      return new Intl.NumberFormat('tr-TR', {
-        style: 'currency',
-        currency: currency === 'TL' ? 'TRY' : currency,
-        minimumFractionDigits: 0
-      }).format(price);
-    };
-  
-    // Add click handler
     const handleProductClick = () => {
       router.push(`/productdetails?productId=${product.id}`);
     };
-  
+
     if (viewMode === "list") {
       return (
-        <div 
+        <div
           ref={isLast ? lastProductElementRef : null}
           onClick={handleProductClick}
-          className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4 transition-all duration-200 hover:bg-white/15 hover:border-white/30 cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group"
+          className="bg-white border border-gray-200 rounded-lg p-3 hover:shadow-md transition-all duration-200 cursor-pointer group"
         >
-          <div className="flex items-center gap-4">
-            <div className="relative w-20 h-20 rounded-lg overflow-hidden flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
               {product.imageUrls?.[0] ? (
                 <Image
                   src={product.imageUrls[0]}
-                  alt={product.productName || 'Product'}
+                  alt={product.productName || "Ürün"}
                   fill
                   className="object-cover"
                 />
               ) : (
-                <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                  <ImageIcon className="w-8 h-8 text-gray-400" />
+                <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                  <ImageIcon className="w-6 h-6 text-gray-400" />
                 </div>
               )}
             </div>
-            
+
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-white truncate group-hover:text-blue-300">{product.productName || 'Ürün Adı Yok'}</h3>
-              <p className="text-sm text-gray-400">{product.category || 'Kategori Yok'} • {product.subcategory || 'Alt Kategori Yok'}</p>
-              <div className="flex items-center gap-4 mt-1">
-                <span className="text-lg font-bold text-green-400">
-                  {formatPrice(product.price || 0, product.currency || 'TRY')}
+              <h3 className="text-sm font-medium text-gray-900 truncate group-hover:text-indigo-600">
+                {product.productName || "Ürün Adı Yok"}
+              </h3>
+              <p className="text-xs text-gray-500">
+                {product.category || "Kategori Yok"}
+              </p>
+              <div className="flex items-center gap-3 mt-1">
+                <span className="text-sm font-bold text-gray-900">
+                  {formatPrice(product.price || 0, product.currency || "TRY")}
                 </span>
-                <span className="text-xs text-gray-400">{product.condition || 'Durum Belirtilmemiş'}</span>
+                <div className="flex items-center gap-2 text-xs text-gray-400">
+                  <span className="flex items-center gap-0.5">
+                    <Eye className="w-3 h-3" />
+                    {formatNumber(product.clickCount || 0)}
+                  </span>
+                  <span className="flex items-center gap-0.5">
+                    <Heart className="w-3 h-3" />
+                    {formatNumber(product.favoritesCount || 0)}
+                  </span>
+                </div>
               </div>
             </div>
-  
-            <div className="flex items-center gap-6 text-sm text-gray-400">
-              <div className="flex items-center gap-1">
-                <Eye className="w-4 h-4" />
-                <span>{product.clickCount || 0}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Heart className="w-4 h-4" />
-                <span>{product.favoritesCount || 0}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <ShoppingBag className="w-4 h-4" />
-                <span>{product.purchaseCount || 0}</span>
-              </div>
-            </div>
-  
-            {(product.isFeatured || product.isBoosted) && (
-              <div className="flex flex-col gap-1">
-                {product.isFeatured && (
-                  <span className="px-2 py-1 bg-yellow-600/20 text-yellow-400 text-xs rounded">
-                    ÖNE ÇIKAN
-                  </span>
-                )}
-                {product.isBoosted && (
-                  <span className="px-2 py-1 bg-purple-600/20 text-purple-400 text-xs rounded">
-                    BOOST
-                  </span>
-                )}
-              </div>
-            )}
-            
-            {/* Add visual indicator for clickable item */}
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-              <ExternalLink className="w-5 h-5 text-blue-400" />
+
+            <div className="flex items-center gap-1">
+              {product.isFeatured && (
+                <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-[10px] font-semibold rounded">
+                  ÖNE ÇIKAN
+                </span>
+              )}
+              {product.isBoosted && (
+                <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-semibold rounded">
+                  BOOST
+                </span>
+              )}
+              {product.sold && (
+                <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-semibold rounded">
+                  SATILDI
+                </span>
+              )}
             </div>
           </div>
         </div>
       );
     }
-  
+
     return (
-      <div 
+      <div
         ref={isLast ? lastProductElementRef : null}
         onClick={handleProductClick}
-        className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden transition-all duration-200 hover:bg-white/15 hover:border-white/30 hover:shadow-lg group cursor-pointer hover:border-blue-500/50 hover:scale-[1.02]"
+        className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-all duration-200 cursor-pointer group"
       >
         <div className="relative aspect-square">
           {product.imageUrls?.[0] ? (
             <Image
               src={product.imageUrls[0]}
-              alt={product.productName || 'Product'}
+              alt={product.productName || "Ürün"}
               fill
               className="object-cover"
             />
           ) : (
-            <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-              <ImageIcon className="w-12 h-12 text-gray-400" />
+            <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+              <ImageIcon className="w-8 h-8 text-gray-400" />
             </div>
           )}
-  
+
           {(product.isFeatured || product.isBoosted) && (
             <div className="absolute top-2 left-2 flex flex-col gap-1">
               {product.isFeatured && (
-                <span className="px-2 py-1 bg-yellow-600/90 text-white text-xs rounded">
+                <span className="px-1.5 py-0.5 bg-yellow-500 text-white text-[10px] font-semibold rounded">
                   ÖNE ÇIKAN
                 </span>
               )}
               {product.isBoosted && (
-                <span className="px-2 py-1 bg-purple-600/90 text-white text-xs rounded">
+                <span className="px-1.5 py-0.5 bg-purple-500 text-white text-[10px] font-semibold rounded">
                   BOOST
                 </span>
               )}
             </div>
           )}
-  
-          {/* Add visual indicator for clickable item */}
-          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="p-1 bg-blue-600/90 rounded-full">
-              <ExternalLink className="w-3 h-3 text-white" />
-            </div>
-          </div>
-  
-          <div className="absolute bottom-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="flex items-center gap-1 bg-black/50 rounded px-2 py-1">
-              <Eye className="w-3 h-3 text-white" />
-              <span className="text-white text-xs">{product.clickCount || 0}</span>
-            </div>
-            <div className="flex items-center gap-1 bg-black/50 rounded px-2 py-1">
-              <Heart className="w-3 h-3 text-white" />
-              <span className="text-white text-xs">{product.favoritesCount || 0}</span>
-            </div>
-          </div>
-        </div>
-  
-        <div className="p-4">
-          <h3 className="font-semibold text-white mb-1 line-clamp-2 group-hover:text-blue-300">{product.productName || 'Ürün Adı Yok'}</h3>
-          <p className="text-sm text-gray-400 mb-2">{product.category || 'Kategori Yok'}</p>
-          <div className="flex items-center justify-between">
-            <span className="text-lg font-bold text-green-400">
-              {formatPrice(product.price || 0, product.currency || 'TRY')}
-            </span>
-            <span className="text-xs text-gray-400">{product.condition || 'Durum Belirtilmemiş'}</span>
-          </div>
-          
-          {product.averageRating > 0 && (
-            <div className="flex items-center gap-1 mt-2">
-              <Star className="w-4 h-4 text-yellow-400 fill-current" />
-              <span className="text-sm text-white">{product.averageRating.toFixed(1)}</span>
-              <span className="text-xs text-gray-400">({product.reviewCount || 0})</span>
+
+          <button className="absolute top-2 right-2 w-7 h-7 bg-white rounded-full flex items-center justify-center shadow-sm hover:bg-gray-50 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Heart className="w-3.5 h-3.5 text-gray-600" />
+          </button>
+
+          {product.sold && (
+            <div className="absolute inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center">
+              <span className="text-white font-bold text-sm">SATILDI</span>
             </div>
           )}
         </div>
-      </div>
-    );
-  };
 
-  const ImageGallery = ({ images, title }: { images: string[]; title: string }) => {
-    const [selectedImage, setSelectedImage] = useState(0);
-
-    if (!images || images.length === 0) {
-      return (
-        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">{title}</h3>
-          <div className="aspect-video bg-gray-700 rounded-lg flex items-center justify-center">
-            <div className="text-center text-gray-400">
-              <ImageIcon className="w-12 h-12 mx-auto mb-2" />
-              <p>Resim bulunamadı</p>
-            </div>
+        <div className="p-3">
+          <h3 className="text-sm font-medium text-gray-900 line-clamp-1 group-hover:text-indigo-600">
+            {product.productName || "Ürün Adı Yok"}
+          </h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {product.category || "Kategori Yok"}
+          </p>
+          <div className="flex items-center justify-between mt-2">
+            <span className="text-sm font-bold text-gray-900">
+              {formatPrice(product.price || 0, product.currency || "TRY")}
+            </span>
+            {product.averageRating > 0 && (
+              <div className="flex items-center gap-1">
+                <Star className="w-3 h-3 text-yellow-400 fill-current" />
+                <span className="text-xs text-gray-600">
+                  {product.averageRating.toFixed(1)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
-      );
-    }
-
-    return (
-      <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">{title}</h3>
-        
-        {/* Main Image */}
-        <div className="relative aspect-video rounded-lg overflow-hidden mb-4">
-          <Image
-            src={images[selectedImage]}
-            alt={`${title} ${selectedImage + 1}`}
-            fill
-            className="object-cover"
-          />
-        </div>
-
-        {/* Thumbnail Strip */}
-        {images.length > 1 && (
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            {images.map((image, index) => (
-              <button
-                key={index}
-                onClick={() => setSelectedImage(index)}
-                className={`relative w-20 h-20 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-colors ${
-                  selectedImage === index 
-                    ? 'border-blue-400' 
-                    : 'border-white/20 hover:border-white/40'
-                }`}
-              >
-                <Image
-                  src={image}
-                  alt={`${title} thumbnail ${index + 1}`}
-                  fill
-                  className="object-cover"
-                />
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     );
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="backdrop-blur-xl bg-white/10 border-b border-white/20 sticky top-0 z-50">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-4 py-4">
-            <button
-              onClick={() => router.back()}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5 text-white" />
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-white">Mağaza Detayları</h1>
-              <p className="text-sm text-gray-400">{shop.name}</p>
+          <div className="flex items-center justify-between h-14">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => router.back()}
+                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4 text-gray-600" />
+              </button>
+              <div>
+                <h1 className="text-sm font-semibold text-gray-900">
+                  Mağaza Detayları
+                </h1>
+              </div>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Shop Profile Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* Shop Info */}
-          <div className="lg:col-span-2">
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
-              <div className="flex items-start gap-6 mb-6">
-                <div className="relative w-24 h-24 rounded-full overflow-hidden flex-shrink-0">
-                  {shop.profileImageUrl ? (
-                    <Image
-                      src={shop.profileImageUrl}
-                      alt={shop.name}
-                      fill
-                      className="object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                      <Store className="w-10 h-10 text-gray-400" />
-                    </div>
-                  )}
-                </div>
-                
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h2 className="text-2xl font-bold text-white">{shop.name}</h2>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        {/* Shop Profile Card */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+          <div className="flex items-start gap-4">
+            <div className="relative">
+              <div className="w-16 h-16 rounded-xl overflow-hidden">
+                {shop.profileImageUrl ? (
+                  <Image
+                    src={shop.profileImageUrl}
+                    alt={shop.name}
+                    fill
+                    className="object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                    <Store className="w-6 h-6 text-gray-400" />
+                  </div>
+                )}
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></div>
+            </div>
+
+            <div className="flex-1">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-gray-900">
+                      {shop.name}
+                    </h2>
                     {shop.isBoosted && (
-                      <span className="px-3 py-1 bg-purple-600/20 text-purple-400 text-sm rounded-full flex items-center gap-1">
-                        <Zap className="w-4 h-4" />
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-semibold rounded">
+                        <Zap className="w-2.5 h-2.5" />
                         BOOST
                       </span>
                     )}
+                    {shop.transactionsBadgeAcknowledged && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-semibold rounded">
+                        <BadgeCheck className="w-2.5 h-2.5" />
+                        DOĞRULANMIŞ
+                      </span>
+                    )}
                   </div>
-                  
-                  <div className="space-y-1 text-sm text-gray-400">
+                  <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
                     {shop.address && (
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-4 h-4" />
-                        <span>{shop.address}</span>
-                      </div>
+                      <span className="flex items-center gap-1">
+                        <MapPin className="w-3 h-3" />
+                        {shop.address}
+                      </span>
                     )}
                     {shop.contactNo && (
-                      <div className="flex items-center gap-2">
-                        <Phone className="w-4 h-4" />
-                        <span>{shop.contactNo}</span>
-                      </div>
+                      <span className="flex items-center gap-1">
+                        <Phone className="w-3 h-3" />
+                        {shop.contactNo}
+                      </span>
                     )}
                     {shop.createdAt && (
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4" />
-                        <span>Açılış: {shop.createdAt.toDate().toLocaleDateString('tr-TR')}</span>
-                      </div>
+                      <span className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        {shop.createdAt.toDate().getFullYear()} yılından beri
+                      </span>
                     )}
                   </div>
-
-                  {/* Categories */}
-                  {(shop.categories && shop.categories.length > 0) && (
-                    <div className="flex flex-wrap gap-2 mt-3">
-                      {shop.categories.map((category, index) => (
+                  {shop.categories && shop.categories.length > 0 && (
+                    <div className="flex items-center gap-2 mt-2">
+                      {shop.categories.slice(0, 3).map((category, index) => (
                         <span
                           key={index}
-                          className="px-2 py-1 bg-blue-600/20 text-blue-400 text-xs rounded"
+                          className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded"
                         >
                           {category}
                         </span>
                       ))}
+                      {shop.categories.length > 3 && (
+                        <span className="text-xs text-gray-500">
+                          +{shop.categories.length - 3} daha
+                        </span>
+                      )}
                     </div>
                   )}
-
-                  {/* Badges */}
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    {shop.stockBadgeAcknowledged && (
-                      <span className="px-2 py-1 bg-green-600/20 text-green-400 text-xs rounded flex items-center gap-1">
-                        <Badge className="w-3 h-3" />
-                        Stok Onaylı
-                      </span>
-                    )}
-                    {shop.transactionsBadgeAcknowledged && (
-                      <span className="px-2 py-1 bg-blue-600/20 text-blue-400 text-xs rounded flex items-center gap-1">
-                        <Award className="w-3 h-3" />
-                        İşlem Onaylı
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Editable Fields */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <EditableField field="name" label="Mağaza Adı" />         
-                
-                <EditableField field="category" label="Ana Kategori" />
-              </div>
-
-              {/* Tax Certificate */}
-              {shop.taxPlateCertificateUrl && (
-                <div className="mt-6 pt-6 border-t border-white/20">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-lg font-semibold text-white">Vergi Levhası Belgesi</h3>
-                    <a
-                      href={shop.taxPlateCertificateUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg transition-colors text-sm"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      Belgeyi Görüntüle
-                    </a>
-                  </div>
-                </div>
-              )}  
-              </div>           
-{/* Seller Information */}
-<div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6 mt-6">
-  <h3 className="text-lg font-semibold text-white mb-4">Satıcı Bilgileri</h3>
-  
-  {shop.seller_info?.info ? (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {/* Address */}
-      {shop.seller_info.info.address && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-300">Adres</label>
-          <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-blue-400 flex-shrink-0" />
-            <span className="text-white text-sm">{shop.seller_info.info.address}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Region */}
-      {shop.seller_info.info.region && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-300">Bölge</label>
-          <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-green-400 flex-shrink-0" />
-            <span className="text-white text-sm">{shop.seller_info.info.region}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Phone */}
-      {shop.seller_info.info.phone && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-300">Telefon</label>
-          <div className="flex items-center gap-2">
-            <Phone className="w-4 h-4 text-purple-400 flex-shrink-0" />
-            <span className="text-white text-sm">{shop.seller_info.info.phone}</span>
-          </div>
-        </div>
-      )}
-
-      {/* IBAN Owner Name */}
-      {shop.seller_info.info.ibanOwnerName && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-300">IBAN Sahibi Adı</label>
-          <div className="flex items-center gap-2">
-            <User className="w-4 h-4 text-yellow-400 flex-shrink-0" />
-            <span className="text-white text-sm">{shop.seller_info.info.ibanOwnerName}</span>
-          </div>
-        </div>
-      )}
-
-      {/* IBAN Owner Surname */}
-      {shop.seller_info.info.ibanOwnerSurname && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-300">IBAN Sahibi Soyadı</label>
-          <div className="flex items-center gap-2">
-            <User className="w-4 h-4 text-yellow-400 flex-shrink-0" />
-            <span className="text-white text-sm">{shop.seller_info.info.ibanOwnerSurname}</span>
-          </div>
-        </div>
-      )}
-
-      {/* IBAN - Full width */}
-      {shop.seller_info.info.iban && (
-        <div className="space-y-2 md:col-span-2">
-          <label className="text-sm font-medium text-gray-300">IBAN</label>
-          <div className="flex items-center gap-2 p-3 bg-white/5 rounded-lg border border-white/10">
-            <DollarSign className="w-4 h-4 text-green-400 flex-shrink-0" />
-            <span className="text-white text-sm font-mono tracking-wider">
-              {shop.seller_info.info.iban}
-            </span>
-          </div>
-        </div>
-      )}
-    </div>
-  ) : (
-    <div className="text-center py-8">
-      <User className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-      <p className="text-gray-400">Satıcı bilgileri bulunamadı</p>
-    </div>
-  )}
-            </div>
-          </div>
-
-          {/* Stats */}
-          <div className="space-y-4">
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-              <h3 className="text-lg font-semibold text-white mb-4">İstatistikler</h3>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Package className="w-4 h-4 text-blue-400" />
-                    <span className="text-sm text-gray-300">Toplam Ürün</span>
-                  </div>
-                  <span className="text-white font-semibold">{products.length}</span>
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-green-400" />
-                    <span className="text-sm text-gray-300">Satılan Ürün</span>
-                  </div>
-                  <span className="text-white font-semibold">{shop.totalProductsSold || 0}</span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-purple-400" />
-                    <span className="text-sm text-gray-300">Takipçi</span>
-                  </div>
-                  <span className="text-white font-semibold">{shop.followerCount || 0}</span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Star className="w-4 h-4 text-yellow-400" />
-                    <span className="text-sm text-gray-300">Ortalama Puan</span>
-                  </div>
-                  <span className="text-white font-semibold">
-                    {shop.averageRating ? shop.averageRating.toFixed(1) : "0.0"}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Eye className="w-4 h-4 text-orange-400" />
-                    <span className="text-sm text-gray-300">Görüntülenme</span>
-                  </div>
-                  <span className="text-white font-semibold">{shop.clickCount || 0}</span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-pink-400" />
-                    <span className="text-sm text-gray-300">Değerlendirme</span>
-                  </div>
-                  <span className="text-white font-semibold">{shop.reviewCount || 0}</span>
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Members */}
-<div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-  <h3 className="text-lg font-semibold text-white mb-4">Üyeler</h3>
-  
-  {membersLoading ? (
-    <div className="flex items-center justify-center py-4">
-      <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
-      <span className="text-gray-400 ml-2 text-sm">Yükleniyor...</span>
-    </div>
-  ) : (
-    <div className="space-y-3">
-      {/* Owner */}
-      {members.owner && (
-        <div className="p-3 bg-yellow-600/20 border border-yellow-500/30 rounded-lg">
-          <div className="flex items-center gap-3">
-            <div className="relative w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
-              {members.owner.profileImage ? (
-                <Image
-                  src={members.owner.profileImage}
-                  alt={members.owner.displayName}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-yellow-600 flex items-center justify-center">
-                  <User className="w-4 h-4 text-white" />
+          {/* Quick Stats */}
+          <div className="grid grid-cols-6 gap-2 mt-4">
+            <div className="text-center p-2 bg-gray-50 rounded-lg">
+              <div className="text-sm font-bold text-gray-900">
+                {formatNumber(products.length)}
+              </div>
+              <div className="text-xs text-gray-500">Ürünler</div>
+            </div>
+            <div className="text-center p-2 bg-gray-50 rounded-lg">
+              <div className="text-sm font-bold text-gray-900">
+                {formatNumber(shop.followerCount || 0)}
+              </div>
+              <div className="text-xs text-gray-500">Takipçi</div>
+            </div>
+            <div className="text-center p-2 bg-gray-50 rounded-lg">
+              <div className="text-sm font-bold text-gray-900">
+                {shop.averageRating ? shop.averageRating.toFixed(1) : "0.0"}
+              </div>
+              <div className="text-xs text-gray-500">Puan</div>
+            </div>
+            <div className="text-center p-2 bg-gray-50 rounded-lg">
+              <div className="text-sm font-bold text-gray-900">
+                {shop.reviewCount
+                  ? `${Math.min(
+                      Math.round((shop.reviewCount / products.length) * 100),
+                      100
+                    )}%`
+                  : "0%"}
+              </div>
+              <div className="text-xs text-gray-500">Yanıt</div>
+            </div>
+            <div className="text-center p-2 bg-gray-50 rounded-lg">
+              <div className="text-sm font-bold text-gray-900">
+                {formatNumber(shop.totalProductsSold || 0)}
+              </div>
+              <div className="text-xs text-gray-500">Satıldı</div>
+            </div>
+            <div className="text-center p-2 bg-gray-50 rounded-lg">
+              <div className="text-sm font-bold text-gray-900">
+                {formatNumber(shop.clickCount || 0)}
+              </div>
+              <div className="text-xs text-gray-500">Görüntü</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="bg-white rounded-xl border border-gray-200 mb-4">
+          <div className="flex items-center gap-6 px-4 overflow-x-auto">
+            <button
+              onClick={() => setActiveTab("products")}
+              className={`py-3 text-sm font-medium whitespace-nowrap border-b-2 ${
+                activeTab === "products"
+                  ? "border-indigo-600 text-indigo-600"
+                  : "border-transparent text-gray-500 hover:text-gray-900"
+              }`}
+            >
+              Ürünler
+            </button>
+            <button
+              onClick={() => setActiveTab("collections")}
+              className={`py-3 text-sm font-medium whitespace-nowrap border-b-2 ${
+                activeTab === "collections"
+                  ? "border-indigo-600 text-indigo-600"
+                  : "border-transparent text-gray-500 hover:text-gray-900"
+              }`}
+            >
+              Koleksiyonlar
+            </button>
+            <button
+              onClick={() => setActiveTab("about")}
+              className={`py-3 text-sm font-medium whitespace-nowrap border-b-2 ${
+                activeTab === "about"
+                  ? "border-indigo-600 text-indigo-600"
+                  : "border-transparent text-gray-500 hover:text-gray-900"
+              }`}
+            >
+              Hakkında
+            </button>
+            <button
+              onClick={() => setActiveTab("reviews")}
+              className={`py-3 text-sm font-medium whitespace-nowrap border-b-2 ${
+                activeTab === "reviews"
+                  ? "border-indigo-600 text-indigo-600"
+                  : "border-transparent text-gray-500 hover:text-gray-900"
+              }`}
+            >
+              Yorumlar
+            </button>
+            <button
+              onClick={() => setActiveTab("members")}
+              className={`py-3 text-sm font-medium whitespace-nowrap border-b-2 ${
+                activeTab === "members"
+                  ? "border-indigo-600 text-indigo-600"
+                  : "border-transparent text-gray-500 hover:text-gray-900"
+              }`}
+            >
+              Üyeler
+            </button>
+            <button
+              onClick={() => setActiveTab("analytics")}
+              className={`py-3 text-sm font-medium whitespace-nowrap border-b-2 ${
+                activeTab === "analytics"
+                  ? "border-indigo-600 text-indigo-600"
+                  : "border-transparent text-gray-500 hover:text-gray-900"
+              }`}
+            >
+              İstatistikler
+            </button>
+          </div>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === "products" && (
+          <>
+            {/* Filter Bar */}
+            <div className="bg-white rounded-xl border border-gray-200 p-3 mb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                    <input
+                      type="text"
+                      value={productSearch}
+                      onChange={(e) => setProductSearch(e.target.value)}
+                      placeholder="Ürün ara..."
+                      className="pl-9 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent w-48"
+                    />
+                  </div>
+
+                  <select
+                    value={productFilter}
+                    onChange={(e) =>
+                      setProductFilter(e.target.value as FilterStatus)
+                    }
+                    className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="all">Tüm Ürünler</option>
+                    <option value="active">Aktif</option>
+                    <option value="sold">Satıldı</option>
+                    <option value="featured">Öne Çıkan</option>
+                  </select>
+
+                  <select
+                    value={productSort}
+                    onChange={(e) => setProductSort(e.target.value as SortBy)}
+                    className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="newest">En Yeni</option>
+                    <option value="oldest">En Eski</option>
+                    <option value="price_high">Fiyat: Yüksekten Düşüğe</option>
+                    <option value="price_low">Fiyat: Düşükten Yükseğe</option>
+                    <option value="popular">En Popüler</option>
+                  </select>
                 </div>
-              )}
-            </div>
-            <div className="flex-1">
-              <h4 className="font-semibold text-white text-sm">{members.owner.displayName}</h4>
-              <p className="text-xs text-yellow-400">Sahibi</p>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Co-Owners */}
-      {members.coOwners.map((coOwner, index) => (
-        <div key={`coowner-${index}`} className="p-3 bg-orange-600/20 border border-orange-500/30 rounded-lg">
-          <div className="flex items-center gap-3">
-            <div className="relative w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
-              {coOwner.profileImage ? (
-                <Image
-                  src={coOwner.profileImage}
-                  alt={coOwner.displayName}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-orange-600 flex items-center justify-center">
-                  <User className="w-4 h-4 text-white" />
+                <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setProductViewMode("grid")}
+                    className={`p-1.5 rounded transition-colors ${
+                      productViewMode === "grid"
+                        ? "bg-white text-gray-900"
+                        : "text-gray-400 hover:text-gray-600"
+                    }`}
+                  >
+                    <Grid3x3 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setProductViewMode("list")}
+                    className={`p-1.5 rounded transition-colors ${
+                      productViewMode === "list"
+                        ? "bg-white text-gray-900"
+                        : "text-gray-400 hover:text-gray-600"
+                    }`}
+                  >
+                    <List className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-              )}
-            </div>
-            <div className="flex-1">
-              <h4 className="font-semibold text-white text-sm">{coOwner.displayName}</h4>
-              <p className="text-xs text-orange-400">Ortak Sahibi</p>
-            </div>
-          </div>
-        </div>
-      ))}
-
-      {/* Editors */}
-      {members.editors.map((editor, index) => (
-        <div key={`editor-${index}`} className="p-3 bg-blue-600/20 border border-blue-500/30 rounded-lg">
-          <div className="flex items-center gap-3">
-            <div className="relative w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
-              {editor.profileImage ? (
-                <Image
-                  src={editor.profileImage}
-                  alt={editor.displayName}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-blue-600 flex items-center justify-center">
-                  <User className="w-4 h-4 text-white" />
-                </div>
-              )}
-            </div>
-            <div className="flex-1">
-              <h4 className="font-semibold text-white text-sm">{editor.displayName}</h4>
-              <p className="text-xs text-blue-400">Editör</p>
-            </div>
-          </div>
-        </div>
-      ))}
-
-      {/* Viewers */}
-      {members.viewers.map((viewer, index) => (
-        <div key={`viewer-${index}`} className="p-3 bg-green-600/20 border border-green-500/30 rounded-lg">
-          <div className="flex items-center gap-3">
-            <div className="relative w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
-              {viewer.profileImage ? (
-                <Image
-                  src={viewer.profileImage}
-                  alt={viewer.displayName}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-green-600 flex items-center justify-center">
-                  <User className="w-4 h-4 text-white" />
-                </div>
-              )}
-            </div>
-            <div className="flex-1">
-              <h4 className="font-semibold text-white text-sm">{viewer.displayName}</h4>
-              <p className="text-xs text-green-400">Görüntüleyici</p>
-            </div>
-          </div>
-        </div>
-      ))}
-
-      {/* No members message */}
-      {!members.owner && members.coOwners.length === 0 && members.editors.length === 0 && members.viewers.length === 0 && (
-        <div className="text-center py-4">
-          <Users className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-          <p className="text-gray-400 text-sm">Üye bilgisi bulunamadı</p>
-        </div>
-      )}
-    </div>
-  )}
-</div>
-          </div>
-        </div>
-
-        {/* Image Galleries */}
-        {(shop.coverImageUrls || shop.homeImageUrls) && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            {shop.coverImageUrls && shop.coverImageUrls.length > 0 && (
-              <ImageGallery images={shop.coverImageUrls} title="Kapak Resimleri" />
-            )}
-            {shop.homeImageUrls && shop.homeImageUrls.length > 0 && (
-              <ImageGallery images={shop.homeImageUrls} title="Ana Sayfa Resimleri" />
-            )}
-          </div>
-        )}
-
-        {/* Products Section */}
-        <div className="space-y-6">
-          {/* Product Controls */}
-          <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-white">Mağaza Ürünleri</h2>
-              <div className="flex items-center gap-2 text-sm text-gray-400">
-                <Package className="w-4 h-4" />
-                <span>{filteredProducts.length} ürün</span>
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-              <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-                {/* Search */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    value={productSearch}
-                    onChange={(e) => setProductSearch(e.target.value)}
-                    placeholder="Ürün ara..."
-                    className="pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
-                  />
-                </div>
-
-                {/* Filter */}
-                <select
-                  value={productFilter}
-                  onChange={(e) => setProductFilter(e.target.value as FilterStatus)}
-                  className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  style={{ color: 'white' }}
-                >
-                  <option value="all" style={{ backgroundColor: '#1f2937', color: 'white' }}>Tüm Ürünler</option>
-                  <option value="active" style={{ backgroundColor: '#1f2937', color: 'white' }}>Aktif</option>
-                  <option value="sold" style={{ backgroundColor: '#1f2937', color: 'white' }}>Satılan</option>
-                  <option value="featured" style={{ backgroundColor: '#1f2937', color: 'white' }}>Öne Çıkan</option>
-                </select>
-
-                {/* Sort */}
-                <select
-                  value={productSort}
-                  onChange={(e) => setProductSort(e.target.value as SortBy)}
-                  className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  style={{ color: 'white' }}
-                >
-                  <option value="newest" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Yeni</option>
-                  <option value="oldest" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Eski</option>
-                  <option value="price_high" style={{ backgroundColor: '#1f2937', color: 'white' }}>Fiyat: Yüksek → Düşük</option>
-                  <option value="price_low" style={{ backgroundColor: '#1f2937', color: 'white' }}>Fiyat: Düşük → Yüksek</option>
-                  <option value="popular" style={{ backgroundColor: '#1f2937', color: 'white' }}>En Popüler</option>
-                </select>
+            {/* Products Grid/List */}
+            {filteredProducts.length === 0 && !productsLoading ? (
+              <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+                <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                <h3 className="text-base font-semibold text-gray-900 mb-1">
+                  Ürün Bulunamadı
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {productSearch || productFilter !== "all"
+                    ? "Arama kriterlerinize uygun ürün bulunamadı."
+                    : "Bu mağazada henüz ürün bulunmuyor."}
+                </p>
               </div>
-
-              {/* View Mode Toggle */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setProductViewMode("grid")}
-                  className={`p-2 rounded-lg transition-colors ${
-                    productViewMode === "grid"
-                      ? "bg-blue-600 text-white"
-                      : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
-                  }`}
-                >
-                  <Grid className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setProductViewMode("list")}
-                  className={`p-2 rounded-lg transition-colors ${
-                    productViewMode === "list"
-                      ? "bg-blue-600 text-white"
-                      : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
-                  }`}
-                >
-                  <List className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Products Grid/List */}
-          {filteredProducts.length === 0 && !productsLoading ? (
-            <div className="text-center py-12">
-              <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-white mb-2">Ürün Bulunamadı</h3>
-              <p className="text-gray-400">
-                {productSearch || productFilter !== "all"
-                  ? "Arama kriterlerinize uygun ürün bulunamadı."
-                  : "Bu mağazanın henüz ürünü bulunmuyor."}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className={`grid gap-4 ${
-                productViewMode === "grid"
-                  ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-                  : "grid-cols-1"
-              }`}>
+            ) : (
+              <div
+                className={`grid gap-3 ${
+                  productViewMode === "grid"
+                    ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+                    : "grid-cols-1"
+                }`}
+              >
                 {filteredProducts.map((product, index) => (
                   <ProductCard
                     key={product.id}
@@ -1359,70 +1063,532 @@ function ShopDetailsContent() {
                   />
                 ))}
               </div>
+            )}
 
-              {/* Loading indicator for infinite scroll */}
-              {productsLoading && (
-                <div className="flex items-center justify-center py-8">
-                  <div className="flex items-center gap-3 text-white">
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <span>Daha fazla ürün yükleniyor...</span>
-                  </div>
+            {productsLoading && (
+              <div className="flex items-center justify-center py-8">
+                <div className="flex items-center gap-2 text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">Daha fazla ürün yükleniyor...</span>
+                </div>
+              </div>
+            )}
+
+            {!productsLoading &&
+              hasMoreProducts &&
+              filteredProducts.length > 0 && (
+                <div className="flex justify-center mt-6">
+                  <button
+                    onClick={() => fetchShopProducts(true)}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    <Package className="w-3.5 h-3.5 inline mr-2" />
+                    Daha Fazla Ürün Yükle
+                  </button>
                 </div>
               )}
-            </div>
-          )}
-        </div>
+          </>
+        )}
 
-        {/* Analytics Summary */}
-        <div className="mt-8 backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Mağaza Özeti</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-400">
-                {products.length}
+        {activeTab === "collections" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4">
+              Koleksiyonlar
+            </h3>
+
+            {collectionsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="flex items-center gap-2 text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">Koleksiyonlar yükleniyor...</span>
+                </div>
               </div>
-              <div className="text-sm text-gray-400">Toplam Ürün</div>
+            ) : collections.length === 0 ? (
+              <div className="text-center py-12">
+                <FolderOpen className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                <p className="text-sm text-gray-500">
+                  Henüz koleksiyon bulunmuyor
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {collections.map((collection) => (
+                  <div
+                    key={collection.id}
+                    className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-all duration-200 cursor-pointer"
+                  >
+                    <div className="relative aspect-square">
+                      {collection.imageUrl ? (
+                        <Image
+                          src={collection.imageUrl}
+                          alt={collection.name}
+                          fill
+                          className="object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                          <FolderOpen className="w-8 h-8 text-gray-400" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-3">
+                      <h4 className="text-sm font-medium text-gray-900">
+                        {collection.name}
+                      </h4>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {collection.productIds?.length || 0} ürün
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "about" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4">
+              Mağaza Hakkında
+            </h3>
+
+            {shop.seller_info?.info && (
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium text-gray-700">
+                  Satıcı Bilgileri
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {shop.seller_info.info.ibanOwnerName && (
+                    <div className="flex items-start gap-3">
+                      <User className="w-4 h-4 text-gray-400 mt-0.5" />
+                      <div>
+                        <p className="text-xs text-gray-500">Hesap Sahibi</p>
+                        <p className="text-sm text-gray-900">
+                          {shop.seller_info.info.ibanOwnerName}{" "}
+                          {shop.seller_info.info.ibanOwnerSurname}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {shop.seller_info.info.phone && (
+                    <div className="flex items-start gap-3">
+                      <Phone className="w-4 h-4 text-gray-400 mt-0.5" />
+                      <div>
+                        <p className="text-xs text-gray-500">Telefon</p>
+                        <p className="text-sm text-gray-900">
+                          {shop.seller_info.info.phone}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {shop.seller_info.info.address && (
+                    <div className="flex items-start gap-3">
+                      <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
+                      <div>
+                        <p className="text-xs text-gray-500">Adres</p>
+                        <p className="text-sm text-gray-900">
+                          {shop.seller_info.info.address}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {shop.seller_info.info.region && (
+                    <div className="flex items-start gap-3">
+                      <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
+                      <div>
+                        <p className="text-xs text-gray-500">Bölge</p>
+                        <p className="text-sm text-gray-900">
+                          {shop.seller_info.info.region}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {shop.seller_info.info.iban && (
+                    <div className="flex items-start gap-3 md:col-span-2">
+                      <Building2 className="w-4 h-4 text-gray-400 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-500">IBAN</p>
+                        <p className="text-sm text-gray-900 font-mono bg-gray-50 p-2 rounded mt-1">
+                          {shop.seller_info.info.iban}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {shop.taxPlateCertificateUrl && (
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700">
+                      Vergi Levhası
+                    </h4>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Resmi vergi kayıt belgesi
+                    </p>
+                  </div>
+                  <a
+                    href={shop.taxPlateCertificateUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-sm rounded-lg transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Belgeyi Görüntüle
+                  </a>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "reviews" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4">
+              Müşteri Yorumları
+            </h3>
+
+            {reviewsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="flex items-center gap-2 text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">Yorumlar yükleniyor...</span>
+                </div>
+              </div>
+            ) : reviews.length === 0 ? (
+              <div className="text-center py-12">
+                <Star className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                <p className="text-sm text-gray-500">Henüz yorum bulunmuyor</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {reviews.map((review) => (
+                  <div
+                    key={review.id}
+                    className="border-b border-gray-200 pb-4 last:border-0"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center">
+                            {[...Array(5)].map((_, i) => (
+                              <Star
+                                key={i}
+                                className={`w-3.5 h-3.5 ${
+                                  i < review.rating
+                                    ? "text-yellow-400 fill-current"
+                                    : "text-gray-300"
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-xs text-gray-500">
+                            {formatDate(review.timestamp)}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-900">{review.review}</p>
+                        {review.imageUrls && review.imageUrls.length > 0 && (
+                          <div className="flex gap-2 mt-2">
+                            {review.imageUrls.map((url, index) => (
+                              <div
+                                key={index}
+                                className="relative w-16 h-16 rounded-lg overflow-hidden"
+                              >
+                                <Image
+                                  src={url}
+                                  alt={`Yorum görseli ${index + 1}`}
+                                  fill
+                                  className="object-cover"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "members" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4">
+              Mağaza Üyeleri
+            </h3>
+
+            {membersLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="flex items-center gap-2 text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">Üyeler yükleniyor...</span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {members.owner && (
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
+                        {members.owner.profileImage ? (
+                          <Image
+                            src={members.owner.profileImage}
+                            alt={members.owner.displayName}
+                            fill
+                            className="object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-yellow-200 flex items-center justify-center">
+                            <User className="w-5 h-5 text-yellow-600" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-medium text-gray-900">
+                          {members.owner.displayName}
+                        </h4>
+                        <p className="text-xs text-yellow-600">Sahip</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {members.coOwners.map((coOwner, index) => (
+                  <div
+                    key={`coowner-${index}`}
+                    className="p-3 bg-orange-50 border border-orange-200 rounded-lg"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
+                        {coOwner.profileImage ? (
+                          <Image
+                            src={coOwner.profileImage}
+                            alt={coOwner.displayName}
+                            fill
+                            className="object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-orange-200 flex items-center justify-center">
+                            <User className="w-5 h-5 text-orange-600" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-medium text-gray-900">
+                          {coOwner.displayName}
+                        </h4>
+                        <p className="text-xs text-orange-600">Ortak Sahip</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {members.editors.map((editor, index) => (
+                  <div
+                    key={`editor-${index}`}
+                    className="p-3 bg-blue-50 border border-blue-200 rounded-lg"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
+                        {editor.profileImage ? (
+                          <Image
+                            src={editor.profileImage}
+                            alt={editor.displayName}
+                            fill
+                            className="object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-blue-200 flex items-center justify-center">
+                            <User className="w-5 h-5 text-blue-600" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-medium text-gray-900">
+                          {editor.displayName}
+                        </h4>
+                        <p className="text-xs text-blue-600">Editör</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {members.viewers.map((viewer, index) => (
+                  <div
+                    key={`viewer-${index}`}
+                    className="p-3 bg-green-50 border border-green-200 rounded-lg"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
+                        {viewer.profileImage ? (
+                          <Image
+                            src={viewer.profileImage}
+                            alt={viewer.displayName}
+                            fill
+                            className="object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-green-200 flex items-center justify-center">
+                            <User className="w-5 h-5 text-green-600" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-medium text-gray-900">
+                          {viewer.displayName}
+                        </h4>
+                        <p className="text-xs text-green-600">İzleyici</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {!members.owner &&
+                  members.coOwners.length === 0 &&
+                  members.editors.length === 0 &&
+                  members.viewers.length === 0 && (
+                    <div className="text-center py-8">
+                      <Users className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500">
+                        Üye bilgisi bulunmuyor
+                      </p>
+                    </div>
+                  )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "analytics" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4">
+              Mağaza İstatistikleri
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center p-4 bg-gray-50 rounded-lg">
+                <div className="text-2xl font-bold text-indigo-600">
+                  {products.length}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">Toplam Ürün</div>
+              </div>
+
+              <div className="text-center p-4 bg-gray-50 rounded-lg">
+                <div className="text-2xl font-bold text-green-600">
+                  {products.filter((p) => p.sold).length}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">Satılan Ürün</div>
+              </div>
+
+              <div className="text-center p-4 bg-gray-50 rounded-lg">
+                <div className="text-2xl font-bold text-yellow-600">
+                  {products.filter((p) => p.isFeatured || p.isBoosted).length}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">Öne Çıkan</div>
+              </div>
+
+              <div className="text-center p-4 bg-gray-50 rounded-lg">
+                <div className="text-2xl font-bold text-purple-600">
+                  {formatNumber(
+                    products.reduce((sum, p) => sum + (p.clickCount || 0), 0)
+                  )}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">Toplam Görüntü</div>
+              </div>
             </div>
-            
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-400">
-                {products.filter(p => p.sold).length}
+
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <h4 className="text-sm font-medium text-gray-700 mb-3">
+                Performans Metrikleri
+              </h4>
+              <div className="space-y-3">
+                <div>
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span className="text-gray-600">Dönüşüm Oranı</span>
+                    <span className="font-medium text-gray-900">
+                      {products.length > 0
+                        ? `${Math.round(
+                            (products.filter((p) => p.sold).length /
+                              products.length) *
+                              100
+                          )}%`
+                        : "0%"}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-green-600 h-2 rounded-full"
+                      style={{
+                        width:
+                          products.length > 0
+                            ? `${Math.round(
+                                (products.filter((p) => p.sold).length /
+                                  products.length) *
+                                  100
+                              )}%`
+                            : "0%",
+                      }}
+                    ></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span className="text-gray-600">Ortalama Ürün Puanı</span>
+                    <span className="font-medium text-gray-900">
+                      {products.length > 0
+                        ? (
+                            products.reduce(
+                              (sum, p) => sum + (p.averageRating || 0),
+                              0
+                            ) /
+                              products.filter((p) => p.averageRating > 0)
+                                .length || 0
+                          ).toFixed(1)
+                        : "0.0"}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-yellow-600 h-2 rounded-full"
+                      style={{
+                        width:
+                          products.length > 0
+                            ? `${
+                                (products.reduce(
+                                  (sum, p) => sum + (p.averageRating || 0),
+                                  0
+                                ) /
+                                  (products.filter((p) => p.averageRating > 0)
+                                    .length || 1) /
+                                  5) *
+                                100
+                              }%`
+                            : "0%",
+                      }}
+                    ></div>
+                  </div>
+                </div>
               </div>
-              <div className="text-sm text-gray-400">Satılan</div>
-            </div>
-            
-            <div className="text-center">
-              <div className="text-2xl font-bold text-yellow-400">
-                {products.filter(p => p.isFeatured || p.isBoosted).length}
-              </div>
-              <div className="text-sm text-gray-400">Öne Çıkan</div>
-            </div>
-            
-            <div className="text-center">
-              <div className="text-2xl font-bold text-purple-400">
-                {products.reduce((sum, p) => sum + (p.clickCount || 0), 0)}
-              </div>
-              <div className="text-sm text-gray-400">Toplam Görünüm</div>
             </div>
           </div>
-        </div>
+        )}
       </main>
     </div>
   );
 }
 
-// Main component that wraps the content with Suspense
 export default function ShopDetailsPage() {
   return (
     <ProtectedRoute>
-      <Suspense fallback={
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-          <div className="flex items-center gap-3 text-white">
-            <Loader2 className="w-6 h-6 animate-spin" />
-            <span>Sayfa yükleniyor...</span>
-          </div>
-        </div>
-      }>
+      <Suspense fallback={<div>Loading...</div>}>
         <ShopDetailsContent />
       </Suspense>
     </ProtectedRoute>
