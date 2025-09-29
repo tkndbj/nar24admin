@@ -26,6 +26,7 @@ import {
   Bell,
   Filter,
   MapPin,
+  MessageSquare,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -364,8 +365,14 @@ export default function Dashboard() {
       case "shop-applications":
         router.push("/shopapplications");
         break;
+      case "helpforms":
+        router.push("/helpforms");
+        break;
       case "main-large-banner":
         router.push("/topbanner");
+        break;
+      case "refundforms":
+        router.push("/refundforms");
         break;
       case "main-thin-banner":
         router.push("/thinbanner");
@@ -926,6 +933,32 @@ export default function Dashboard() {
                 </div>
                 <p className="text-xs text-gray-600">Yeni başvurular</p>
               </button>
+
+              <button
+  onClick={() => router.push("/refundforms")}
+  className="p-3 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-left transition-colors group"
+>
+  <div className="flex items-center gap-2 mb-1">
+    <FileText className="w-4 h-4 text-red-600 group-hover:scale-110 transition-transform" />
+    <h4 className="font-semibold text-gray-900 text-sm">
+      İade Talepleri
+    </h4>
+  </div>
+  <p className="text-xs text-gray-600">İade taleplerini yönet</p>
+</button>
+
+<button
+  onClick={() => router.push("/helpforms")}
+  className="p-3 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg text-left transition-colors group"
+>
+  <div className="flex items-center gap-2 mb-1">
+    <MessageSquare className="w-4 h-4 text-sky-600 group-hover:scale-110 transition-transform" />
+    <h4 className="font-semibold text-gray-900 text-sm">
+      Destek Talepleri
+    </h4>
+  </div>
+  <p className="text-xs text-gray-600">Destek taleplerini yönet</p>
+</button>
 
               <button
                 onClick={() => handleNavigation("pickup-points")}
