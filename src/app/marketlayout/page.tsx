@@ -50,7 +50,8 @@ interface MarketWidget {
     | "preference_product"
     | "dynamic_product_list"
     | "market_banner"
-    | "shop_horizontal_list";
+    | "shop_horizontal_list"
+    | "boosted_product_carousel";
   isVisible: boolean;
   order: number;
   icon: React.ReactNode;
@@ -118,11 +119,20 @@ const DEFAULT_WIDGETS: MarketWidget[] = [
     description: "User preference based product recommendations",
   },
   {
+    id: "boosted_product_carousel",
+    name: "Boosted Products",
+    type: "boosted_product_carousel",
+    isVisible: true,
+    order: 4,  // Adjust based on where you want it
+    icon: getIconByType("boosted_product_carousel"),
+    description: "Carousel showcasing boosted/promoted products",
+  },
+  {
     id: "dynamic_product_list",
     name: "Dynamic Product Lists",
     type: "dynamic_product_list",
     isVisible: true,
-    order: 4,
+    order: 5,
     icon: getIconByType("dynamic_product_list"),
     description: "Dynamic product lists widget",
   },
@@ -131,7 +141,7 @@ const DEFAULT_WIDGETS: MarketWidget[] = [
     name: "Market Banner",
     type: "market_banner",
     isVisible: true,
-    order: 5,
+    order: 6,
     icon: getIconByType("market_banner"),
     description: "Main market promotional banners",
   },
@@ -140,7 +150,7 @@ const DEFAULT_WIDGETS: MarketWidget[] = [
     name: "Shop Horizontal List",
     type: "shop_horizontal_list",
     isVisible: true,
-    order: 6,
+    order: 7,
     icon: getIconByType("shop_horizontal_list"),
     description: "Horizontal scrollable shop list",
   },
