@@ -152,34 +152,43 @@ export default function ProductApplications() {
   const approveApplication = async (application: ProductApplication) => {
     if (processingIds.has(application.id)) return;
     setProcessingIds((prev) => new Set(prev).add(application.id));
-
+  
     try {
-      const { 
-        id, 
-        ilan_no, 
-        createdAt: _createdAt,  // Prefix with _ to indicate intentionally unused
-        phone: _phone, 
-        region: _region, 
-        address: _address, 
-        ibanOwnerName: _ibanOwnerName, 
-        ibanOwnerSurname: _ibanOwnerSurname, 
-        iban: _iban, 
-        ...productData 
+      // Create a clean copy without application-specific fields
+      const {
+        id,
+        ilan_no,
+        createdAt: applicationCreatedAt,
+        phone,
+        region,
+        address,
+        ibanOwnerName,
+        ibanOwnerSurname,
+        iban,
+        ...productData
       } = application;
-      
+  
+      // Explicitly avoid unused variable warnings by referencing them
+      void applicationCreatedAt;
+      void phone;
+      void region;
+      void address;
+      void ibanOwnerName;
+      void ibanOwnerSurname;
+      void iban;
+  
       const newDocId = ilan_no && ilan_no.trim() !== "" ? ilan_no : id;
-
+  
       const payload = {
         ...productData,
         id: newDocId,
         ilanNo: newDocId,
-        createdAt: Timestamp.now(), // Use current time for approved product
+        createdAt: Timestamp.now(),
         needsSync: true,
         updatedAt: Timestamp.now(),
         relatedProductIds: [],
       };
-
-      // Log for verification
+  
       console.log("📤 Approving product with data:", {
         id: newDocId,
         gender: payload.gender,
@@ -187,13 +196,13 @@ export default function ProductApplications() {
         category: payload.category,
         subcategory: payload.subcategory,
       });
-
+  
       const isShopProduct = payload.shopId && payload.shopId.trim() !== "";
       const collectionName = isShopProduct ? "shop_products" : "products";
-
+  
       await setDoc(doc(db, collectionName, newDocId), payload);
       await deleteDoc(doc(db, "product_applications", id));
-
+  
       showNotification("Ürün başarıyla onaylandı!");
     } catch (error) {
       console.error("Onaylama hatası:", error);
