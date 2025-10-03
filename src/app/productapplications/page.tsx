@@ -154,7 +154,18 @@ export default function ProductApplications() {
     setProcessingIds((prev) => new Set(prev).add(application.id));
 
     try {
-      const { id, ilan_no, createdAt, phone, region, address, ibanOwnerName, ibanOwnerSurname, iban, ...productData } = application;
+      const { 
+        id, 
+        ilan_no, 
+        createdAt: _createdAt,  // Prefix with _ to indicate intentionally unused
+        phone: _phone, 
+        region: _region, 
+        address: _address, 
+        ibanOwnerName: _ibanOwnerName, 
+        ibanOwnerSurname: _ibanOwnerSurname, 
+        iban: _iban, 
+        ...productData 
+      } = application;
       
       const newDocId = ilan_no && ilan_no.trim() !== "" ? ilan_no : id;
 
