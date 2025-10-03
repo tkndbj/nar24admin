@@ -371,6 +371,9 @@ export default function Dashboard() {
       case "main-large-banner":
         router.push("/topbanner");
         break;
+      case "orders":
+        router.push("/orders");
+        break;
       case "refundforms":
         router.push("/refundforms");
         break;
@@ -896,6 +899,19 @@ export default function Dashboard() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               <button
+                onClick={() => handleNavigation("orders")}
+                className="p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg text-left transition-colors group"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <FileText className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
+                    Siparişler
+                  </h4>
+                </div>
+                <p className="text-xs text-gray-600">Siparişleri yönet</p>
+              </button>
+
+              <button
                 onClick={() => handleNavigation("productapplications")}
                 className="p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg text-left transition-colors group"
               >
@@ -935,30 +951,32 @@ export default function Dashboard() {
               </button>
 
               <button
-  onClick={() => router.push("/refundforms")}
-  className="p-3 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-left transition-colors group"
->
-  <div className="flex items-center gap-2 mb-1">
-    <FileText className="w-4 h-4 text-red-600 group-hover:scale-110 transition-transform" />
-    <h4 className="font-semibold text-gray-900 text-sm">
-      İade Talepleri
-    </h4>
-  </div>
-  <p className="text-xs text-gray-600">İade taleplerini yönet</p>
-</button>
+                onClick={() => router.push("/refundforms")}
+                className="p-3 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-left transition-colors group"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <FileText className="w-4 h-4 text-red-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
+                    İade Talepleri
+                  </h4>
+                </div>
+                <p className="text-xs text-gray-600">İade taleplerini yönet</p>
+              </button>
 
-<button
-  onClick={() => router.push("/helpforms")}
-  className="p-3 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg text-left transition-colors group"
->
-  <div className="flex items-center gap-2 mb-1">
-    <MessageSquare className="w-4 h-4 text-sky-600 group-hover:scale-110 transition-transform" />
-    <h4 className="font-semibold text-gray-900 text-sm">
-      Destek Talepleri
-    </h4>
-  </div>
-  <p className="text-xs text-gray-600">Destek taleplerini yönet</p>
-</button>
+              <button
+                onClick={() => router.push("/helpforms")}
+                className="p-3 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg text-left transition-colors group"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <MessageSquare className="w-4 h-4 text-sky-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
+                    Destek Talepleri
+                  </h4>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Destek taleplerini yönet
+                </p>
+              </button>
 
               <button
                 onClick={() => handleNavigation("pickup-points")}
