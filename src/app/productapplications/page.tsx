@@ -154,7 +154,6 @@ export default function ProductApplications() {
     setProcessingIds((prev) => new Set(prev).add(application.id));
   
     try {
-      // Create a clean copy without application-specific fields
       const {
         id,
         ilan_no,
@@ -168,7 +167,6 @@ export default function ProductApplications() {
         ...productData
       } = application;
   
-      // Explicitly avoid unused variable warnings by referencing them
       void applicationCreatedAt;
       void phone;
       void region;
@@ -188,6 +186,13 @@ export default function ProductApplications() {
         updatedAt: Timestamp.now(),
         relatedProductIds: [],
       };
+  
+      // ✅ Remove undefined values (Firestore doesn't accept them)
+      Object.keys(payload).forEach((key) => {
+        if (payload[key as keyof typeof payload] === undefined) {
+          delete payload[key as keyof typeof payload];
+        }
+      });
   
       console.log("📤 Approving product with data:", {
         id: newDocId,
