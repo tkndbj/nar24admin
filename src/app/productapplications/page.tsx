@@ -24,20 +24,19 @@ import {
   CheckCircle,
   XCircle,
 } from "lucide-react";
+import { Product, ProductUtils } from "../../models/Product";
 
-interface ProductApplication {
+// Extended interface for product applications (includes fields not in final Product)
+interface ProductApplication extends Omit<Product, 'id' | 'createdAt'> {
   id: string;
-  productName: string;
-  category: string;
-  subcategory?: string;
-  price: number;
-  currency: string;
-  description: string;
-  imageUrls: string[];
-  shopId?: string;
-  userId: string;
   ilan_no: string;
   createdAt: Timestamp;
+  phone?: string;
+  region?: string;
+  address?: string;
+  ibanOwnerName?: string;
+  ibanOwnerSurname?: string;
+  iban?: string;
   needsSync?: boolean;
   updatedAt?: Timestamp;
   relatedProductIds?: string[];
@@ -58,10 +57,77 @@ export default function ProductApplications() {
     const unsubscribe = onSnapshot(
       collection(db, "product_applications"),
       (snapshot) => {
-        const applicationsData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as ProductApplication[];
+        const applicationsData = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          
+          return {
+            id: doc.id,
+            productName: ProductUtils.safeString(data.productName),
+            description: ProductUtils.safeString(data.description),
+            price: ProductUtils.safeDouble(data.price),
+            currency: ProductUtils.safeString(data.currency, "TL"),
+            condition: ProductUtils.safeString(data.condition, "Brand New"),
+            brandModel: ProductUtils.safeStringNullable(data.brandModel),
+            imageUrls: ProductUtils.safeStringArray(data.imageUrls),
+            averageRating: ProductUtils.safeDouble(data.averageRating),
+            reviewCount: ProductUtils.safeInt(data.reviewCount),
+            gender: ProductUtils.safeStringNullable(data.gender),
+            bundleIds: ProductUtils.safeStringArray(data.bundleIds),
+            bundlePrice: data.bundlePrice != null ? ProductUtils.safeDouble(data.bundlePrice) : undefined,
+            originalPrice: data.originalPrice != null ? ProductUtils.safeDouble(data.originalPrice) : undefined,
+            discountPercentage: data.discountPercentage != null ? ProductUtils.safeInt(data.discountPercentage) : undefined,
+            colorQuantities: ProductUtils.safeColorQuantities(data.colorQuantities),
+            boostClickCountAtStart: ProductUtils.safeInt(data.boostClickCountAtStart),
+            availableColors: ProductUtils.safeStringArray(data.availableColors),
+            userId: ProductUtils.safeString(data.userId),
+            discountThreshold: data.discountThreshold != null ? ProductUtils.safeInt(data.discountThreshold) : undefined,
+            rankingScore: ProductUtils.safeDouble(data.rankingScore),
+            promotionScore: ProductUtils.safeDouble(data.promotionScore),
+            ownerId: ProductUtils.safeString(data.ownerId),
+            shopId: ProductUtils.safeStringNullable(data.shopId),
+            ilan_no: ProductUtils.safeString(data.ilan_no ?? data.ilanNo ?? doc.id),
+            ilanNo: ProductUtils.safeString(data.ilan_no ?? data.ilanNo ?? doc.id),
+            searchIndex: ProductUtils.safeStringArray(data.searchIndex),
+            createdAt: data.createdAt as Timestamp,
+            sellerName: ProductUtils.safeString(data.sellerName, "Unknown"),
+            category: ProductUtils.safeString(data.category, "Uncategorized"),
+            subcategory: ProductUtils.safeString(data.subcategory),
+            subsubcategory: ProductUtils.safeString(data.subsubcategory),
+            quantity: ProductUtils.safeInt(data.quantity),
+            bestSellerRank: data.bestSellerRank != null ? ProductUtils.safeInt(data.bestSellerRank) : undefined,
+            sold: Boolean(data.sold),
+            clickCount: ProductUtils.safeInt(data.clickCount),
+            clickCountAtStart: ProductUtils.safeInt(data.clickCountAtStart),
+            favoritesCount: ProductUtils.safeInt(data.favoritesCount),
+            cartCount: ProductUtils.safeInt(data.cartCount),
+            purchaseCount: ProductUtils.safeInt(data.purchaseCount),
+            deliveryOption: ProductUtils.safeString(data.deliveryOption, "Self Delivery"),
+            boostedImpressionCount: ProductUtils.safeInt(data.boostedImpressionCount),
+            boostImpressionCountAtStart: ProductUtils.safeInt(data.boostImpressionCountAtStart),
+            isFeatured: Boolean(data.isFeatured),
+            isTrending: Boolean(data.isTrending),
+            isBoosted: Boolean(data.isBoosted),
+            boostStartTime: ProductUtils.safeDateNullable(data.boostStartTime),
+            boostEndTime: ProductUtils.safeDateNullable(data.boostEndTime),
+            dailyClickCount: ProductUtils.safeInt(data.dailyClickCount),
+            lastClickDate: ProductUtils.safeDateNullable(data.lastClickDate),
+            paused: Boolean(data.paused),
+            colorImages: ProductUtils.safeColorImages(data.colorImages),
+            videoUrl: ProductUtils.safeStringNullable(data.videoUrl),
+            attributes: ProductUtils.safeAttributes(data.attributes),
+            
+            // Application-specific fields
+            phone: ProductUtils.safeStringNullable(data.phone),
+            region: ProductUtils.safeStringNullable(data.region),
+            address: ProductUtils.safeStringNullable(data.address),
+            ibanOwnerName: ProductUtils.safeStringNullable(data.ibanOwnerName),
+            ibanOwnerSurname: ProductUtils.safeStringNullable(data.ibanOwnerSurname),
+            iban: ProductUtils.safeStringNullable(data.iban),
+            needsSync: Boolean(data.needsSync),
+            updatedAt: data.updatedAt as Timestamp | undefined,
+            relatedProductIds: ProductUtils.safeStringArray(data.relatedProductIds),
+          } as ProductApplication;
+        }) as ProductApplication[];
 
         // Sort by creation date (newest first)
         applicationsData.sort((a, b) => {
@@ -88,20 +154,30 @@ export default function ProductApplications() {
     setProcessingIds((prev) => new Set(prev).add(application.id));
 
     try {
-      const { id, ...rest } = application;
-      const newDocId =
-        typeof rest.ilan_no === "string" && rest.ilan_no.trim() !== ""
-          ? rest.ilan_no
-          : id;
+      const { id, ilan_no, createdAt, phone, region, address, ibanOwnerName, ibanOwnerSurname, iban, ...productData } = application;
+      
+      const newDocId = ilan_no && ilan_no.trim() !== "" ? ilan_no : id;
 
       const payload = {
-        ...rest,
+        ...productData,
+        id: newDocId,
+        ilanNo: newDocId,
+        createdAt: Timestamp.now(), // Use current time for approved product
         needsSync: true,
         updatedAt: Timestamp.now(),
         relatedProductIds: [],
       };
 
-      const isShopProduct = rest.shopId && rest.shopId.trim() !== "";
+      // Log for verification
+      console.log("📤 Approving product with data:", {
+        id: newDocId,
+        gender: payload.gender,
+        attributes: payload.attributes,
+        category: payload.category,
+        subcategory: payload.subcategory,
+      });
+
+      const isShopProduct = payload.shopId && payload.shopId.trim() !== "";
       const collectionName = isShopProduct ? "shop_products" : "products";
 
       await setDoc(doc(db, collectionName, newDocId), payload);

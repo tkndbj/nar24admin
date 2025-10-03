@@ -44,6 +44,7 @@ import {
   startAfter,
   Timestamp,
   DocumentSnapshot,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -87,6 +88,7 @@ interface ShopData {
   };
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
+  ourComission?: number;
 }
 
 interface UserData {
@@ -178,6 +180,10 @@ function ShopDetailsContent() {
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [collectionsLoading, setCollectionsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>("products");
+
+  const [showCommissionModal, setShowCommissionModal] = useState(false);
+const [commissionPercentage, setCommissionPercentage] = useState<number>(0);
+const [savingCommission, setSavingCommission] = useState(false);
 
   // Filter and Search States
   const [productSearch, setProductSearch] = useState("");
@@ -455,6 +461,31 @@ function ShopDetailsContent() {
     [shopId, productSort, lastProductDoc, productsLoading]
   );
 
+  const handleSaveCommission = async () => {
+    if (!shopId) return;
+    
+    try {
+      setSavingCommission(true);
+      await updateDoc(doc(db, "shops", shopId), {
+        ourComission: commissionPercentage,
+        updatedAt: Timestamp.now()
+      });
+      
+      toast.success("Komisyon oranı kaydedildi");
+      setShowCommissionModal(false);
+      
+      // Update local state
+      if (shop) {
+        setShop({ ...shop, ourComission: commissionPercentage });
+      }
+    } catch (error) {
+      console.error("Error saving commission:", error);
+      toast.error("Komisyon oranı kaydedilirken hata oluştu");
+    } finally {
+      setSavingCommission(false);
+    }
+  };
+
   const setupProductsInfiniteScroll = useCallback(() => {
     if (productsObserverRef.current) {
       productsObserverRef.current.disconnect();
@@ -521,6 +552,12 @@ function ShopDetailsContent() {
       fetchCollections();
     }
   }, [shop, fetchMemberDetails, fetchReviews, fetchCollections]);
+
+  useEffect(() => {
+    if (shop?.ourComission) {
+      setCommissionPercentage(shop.ourComission);
+    }
+  }, [shop]);
 
   useEffect(() => {
     if (shop) {
@@ -794,9 +831,17 @@ function ShopDetailsContent() {
               <div className="flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-gray-900">
-                      {shop.name}
-                    </h2>
+                  <div className="flex items-center gap-2">
+  <h2 className="text-lg font-bold text-gray-900">
+    {shop.name}
+  </h2>
+  <button
+    onClick={() => setShowCommissionModal(true)}
+    className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-medium rounded-lg transition-colors"
+  >
+    Komisyon Detayları
+  </button>
+</div>
                     {shop.isBoosted && (
                       <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-semibold rounded">
                         <Zap className="w-2.5 h-2.5" />
@@ -1577,9 +1622,89 @@ function ShopDetailsContent() {
                   </div>
                 </div>
               </div>
-            </div>
+            </div> 
           </div>
         )}
+                   {/* Commission Modal */}
+{showCommissionModal && (
+  <div className="fixed inset-0 bg-opacity-30 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+      <div className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">
+            Komisyon Ayarları
+          </h3>
+          <button
+            onClick={() => setShowCommissionModal(false)}
+            className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            disabled={savingCommission}
+          >
+            <ArrowLeft className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Komisyon Oranı (%)
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={commissionPercentage}
+                onChange={(e) => setCommissionPercentage(parseFloat(e.target.value) || 0)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                placeholder="Örn: 15"
+                disabled={savingCommission}
+              />
+              <span className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500">
+                %
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Bu mağazadan alınacak komisyon oranını girin
+            </p>
+          </div>
+
+          {shop?.ourComission !== undefined && (
+            <div className="p-3 bg-gray-50 rounded-lg">
+              <p className="text-xs text-gray-600">
+                Mevcut Komisyon: <span className="font-semibold text-gray-900">{shop.ourComission}%</span>
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3 mt-6">
+          <button
+            onClick={() => setShowCommissionModal(false)}
+            className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors"
+            disabled={savingCommission}
+          >
+            İptal
+          </button>
+          <button
+            onClick={handleSaveCommission}
+            disabled={savingCommission}
+            className="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {savingCommission ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Kaydediliyor...
+              </>
+            ) : (
+              "Kaydet"
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
       </main>
     </div>
   );
