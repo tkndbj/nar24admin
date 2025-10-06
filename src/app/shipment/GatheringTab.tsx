@@ -1,0 +1,557 @@
+"use client";
+
+import { useState, useMemo, useEffect } from "react";
+import {
+  query as firestoreQuery,
+  getDocs,
+  doc,
+  updateDoc,
+  Timestamp,
+  where,
+  collectionGroup,
+} from "firebase/firestore";
+import { db } from "@/app/lib/firebase";
+import {
+  Package,
+  Store,
+  User,
+  MapPin,
+  CheckCircle,
+  Clock,
+  Warehouse,
+  X,
+  Phone,
+} from "lucide-react";
+import { OrderItem, SellerGroup, CargoUser } from "./types";
+
+interface GatheringTabProps {
+  cargoUsers: CargoUser[];
+  searchTerm: string;
+  selectedItems: Set<string>;
+  setSelectedItems: React.Dispatch<React.SetStateAction<Set<string>>>;
+  onTransferToDistribution: (itemKeys: string[]) => Promise<void>;
+  transferringItems: boolean;
+}
+
+export default function GatheringTab({
+  cargoUsers,
+  searchTerm,
+  selectedItems,
+  setSelectedItems,
+  onTransferToDistribution,
+  transferringItems,
+}: GatheringTabProps) {
+  const [unassignedGroups, setUnassignedGroups] = useState<SellerGroup[]>([]);
+  const [assignedGroups, setAssignedGroups] = useState<SellerGroup[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [assigningCargo, setAssigningCargo] = useState(false);
+
+  useEffect(() => {
+    loadGatheringItems();
+  }, []);
+
+  // Load all items that need gathering
+  const loadGatheringItems = async () => {
+    setLoading(true);
+    try {
+      // FIXED: Only get items that actually need action
+      // "pending" - needs to be assigned
+      // "assigned" - needs to be gathered
+      // DO NOT include "gathered" - these are waiting to be marked as arrived at warehouse
+      const pendingQuery = firestoreQuery(
+        collectionGroup(db, "items"),
+        where("gatheringStatus", "==", "pending")
+      );
+
+      const assignedQuery = firestoreQuery(
+        collectionGroup(db, "items"),
+        where("gatheringStatus", "==", "assigned")
+      );
+
+      // Execute both queries
+      const [pendingSnapshot, assignedSnapshot] = await Promise.all([
+        getDocs(pendingQuery),
+        getDocs(assignedQuery),
+      ]);
+
+      // Process pending items (unassigned)
+      const pendingItems: OrderItem[] = pendingSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        orderId: doc.ref.parent.parent?.id || "",
+      })) as OrderItem[];
+
+      // Process assigned items
+      const assignedItems: OrderItem[] = assignedSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        orderId: doc.ref.parent.parent?.id || "",
+      })) as OrderItem[];
+
+      // Optionally, also query for "gathered" items if you want to show them separately
+      // These are items that have been gathered but not yet at warehouse
+      const gatheredQuery = firestoreQuery(
+        collectionGroup(db, "items"),
+        where("gatheringStatus", "==", "gathered")
+      );
+
+      const gatheredSnapshot = await getDocs(gatheredQuery);
+      const gatheredItems: OrderItem[] = gatheredSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        orderId: doc.ref.parent.parent?.id || "",
+      })) as OrderItem[];
+
+      // Group items appropriately
+      setUnassignedGroups(groupItemsBySeller(pendingItems));
+
+      // Combine assigned and gathered items for the right column
+      // But distinguish them visually in the UI
+      const assignedAndGatheredItems = [...assignedItems, ...gatheredItems];
+      setAssignedGroups(groupItemsBySeller(assignedAndGatheredItems));
+    } catch (error) {
+      console.error("Error loading gathering items:", error);
+      alert("Ürünler yüklenirken hata oluştu");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Unassign cargo person from items
+  const handleUnassignGatherer = async (orderId: string, itemId: string) => {
+    if (!confirm("Bu üründen toplayıcıyı kaldırmak istiyor musunuz?")) {
+      return;
+    }
+
+    try {
+      const itemRef = doc(db, "orders", orderId, "items", itemId);
+      await updateDoc(itemRef, {
+        gatheringStatus: "pending",
+        gatheredBy: null,
+        gatheredByName: null,
+        gatheredAt: null,
+      });
+
+      alert("Toplayıcı atama kaldırıldı");
+      loadGatheringItems();
+    } catch (error) {
+      console.error("Error unassigning gatherer:", error);
+      alert("Atama kaldırılırken hata oluştu");
+    }
+  };
+
+  // Group items by seller
+  const groupItemsBySeller = (items: OrderItem[]): SellerGroup[] => {
+    const groups = new Map<string, SellerGroup>();
+
+    items.forEach((item) => {
+      const key = item.sellerId;
+
+      if (!groups.has(key)) {
+        groups.set(key, {
+          sellerId: item.sellerId,
+          sellerName: item.sellerName,
+          isShopProduct: item.isShopProduct,
+          items: [],
+          totalItems: 0,
+          sellerAddress: item.sellerAddress,
+          sellerContactNo: item.sellerContactNo,
+        });
+      }
+
+      const group = groups.get(key)!;
+      group.items.push(item);
+      group.totalItems += item.quantity;
+    });
+
+    return Array.from(groups.values());
+  };
+
+  // Filter by search term
+  const filteredUnassignedGroups = useMemo(() => {
+    if (!searchTerm) return unassignedGroups;
+
+    const term = searchTerm.toLowerCase();
+    return unassignedGroups.filter(
+      (group) =>
+        group.sellerName.toLowerCase().includes(term) ||
+        group.items.some((item) =>
+          item.productName.toLowerCase().includes(term)
+        )
+    );
+  }, [unassignedGroups, searchTerm]);
+
+  const filteredAssignedGroups = useMemo(() => {
+    if (!searchTerm) return assignedGroups;
+
+    const term = searchTerm.toLowerCase();
+    return assignedGroups.filter(
+      (group) =>
+        group.sellerName.toLowerCase().includes(term) ||
+        group.items.some((item) =>
+          item.productName.toLowerCase().includes(term)
+        )
+    );
+  }, [assignedGroups, searchTerm]);
+
+  // Assign selected items to gatherer
+  const handleAssignToGatherer = async (cargoUserId: string) => {
+    if (selectedItems.size === 0) {
+      alert("Lütfen en az bir ürün seçin");
+      return;
+    }
+
+    const cargoUser = cargoUsers.find((u) => u.id === cargoUserId);
+    if (!cargoUser) {
+      alert("Kargo personeli bulunamadı");
+      return;
+    }
+
+    setAssigningCargo(true);
+    try {
+      await Promise.all(
+        Array.from(selectedItems).map(async (itemKey) => {
+          const [orderId, itemId] = itemKey.split("|");
+          const itemRef = doc(db, "orders", orderId, "items", itemId);
+
+          await updateDoc(itemRef, {
+            gatheringStatus: "assigned",
+            gatheredBy: cargoUserId,
+            gatheredByName: cargoUser.displayName,
+            gatheredAt: Timestamp.now(),
+          });
+        })
+      );
+
+      alert(
+        `${selectedItems.size} ürün ${cargoUser.displayName} tarafından toplanacak`
+      );
+      setSelectedItems(new Set());
+      loadGatheringItems();
+    } catch (error) {
+      console.error("Error assigning items:", error);
+      alert("Ürün atama sırasında hata oluştu");
+    } finally {
+      setAssigningCargo(false);
+    }
+  };
+
+  // Mark items as arrived at warehouse
+  const handleMarkAsArrived = async (itemKeys: string[]) => {
+    if (
+      !confirm(
+        `${itemKeys.length} ürünü depoya geldi olarak işaretlemek istiyor musunuz?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await Promise.all(
+        itemKeys.map(async (itemKey) => {
+          const [orderId, itemId] = itemKey.split("|");
+          const itemRef = doc(db, "orders", orderId, "items", itemId);
+
+          await updateDoc(itemRef, {
+            gatheringStatus: "at_warehouse",
+            arrivedAt: Timestamp.now(),
+          });
+        })
+      );
+
+      alert(`${itemKeys.length} ürün depoya geldi olarak işaretlendi`);
+      loadGatheringItems();
+    } catch (error) {
+      console.error("Error marking items as arrived:", error);
+      alert("Ürünler işaretlenirken hata oluştu");
+    }
+  };
+
+  // Toggle item selection
+  const handleToggleItem = (orderId: string, itemId: string) => {
+    const key = `${orderId}|${itemId}`;
+    setSelectedItems((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else {
+        newSet.add(key);
+      }
+      return newSet;
+    });
+  };
+
+  // Toggle all items in a seller group
+  const handleToggleSellerGroup = (group: SellerGroup) => {
+    const groupKeys = group.items.map((item) => `${item.orderId}|${item.id}`);
+    const allSelected = groupKeys.every((key) => selectedItems.has(key));
+
+    setSelectedItems((prev) => {
+      const newSet = new Set(prev);
+      if (allSelected) {
+        groupKeys.forEach((key) => newSet.delete(key));
+      } else {
+        groupKeys.forEach((key) => newSet.add(key));
+      }
+      return newSet;
+    });
+  };
+
+  const getStatusBadge = (status: string = "pending") => {
+    const badges = {
+      pending: {
+        label: "Bekliyor",
+        color: "bg-gray-100 text-gray-800",
+        icon: Clock,
+      },
+      assigned: {
+        label: "Atandı",
+        color: "bg-yellow-100 text-yellow-800",
+        icon: Package,
+      },
+      gathered: {
+        label: "Toplandı",
+        color: "bg-blue-100 text-blue-800",
+        icon: CheckCircle,
+      },
+      at_warehouse: {
+        label: "Depoda",
+        color: "bg-green-100 text-green-800",
+        icon: Warehouse,
+      },
+    };
+
+    const badge = badges[status as keyof typeof badges] || badges.pending;
+    const Icon = badge.icon;
+
+    return (
+      <span
+        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${badge.color}`}
+      >
+        <Icon className="w-3 h-3" />
+        {badge.label}
+      </span>
+    );
+  };
+
+  const formatDateTime = (timestamp: Timestamp) => {
+    return timestamp.toDate().toLocaleString("tr-TR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const renderSellerGroup = (group: SellerGroup) => {
+    const groupKeys = group.items.map((item) => `${item.orderId}|${item.id}`);
+    const allSelected = groupKeys.every((key) => selectedItems.has(key));
+
+    return (
+      <div
+        key={group.sellerId}
+        className="bg-white border border-gray-200 rounded-lg overflow-hidden"
+      >
+        {/* Seller Header */}
+        <div className="bg-gray-50 p-3 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={() => handleToggleSellerGroup(group)}
+                className="w-4 h-4 text-orange-600 border-gray-300 rounded"
+              />
+              <div className="flex items-center gap-2">
+                {group.isShopProduct ? (
+                  <Store className="w-5 h-5 text-purple-600" />
+                ) : (
+                  <User className="w-5 h-5 text-green-600" />
+                )}
+                <div>
+                  <p className="font-semibold text-gray-900">
+                    {group.sellerName}
+                  </p>
+                  <div className="flex items-center gap-3 text-xs text-gray-600">
+                    {group.sellerAddress && (
+                      <span className="flex items-center gap-1">
+                        <MapPin className="w-3 h-3" />
+                        {group.sellerAddress.addressLine1}
+                      </span>
+                    )}
+                    {group.sellerContactNo && (
+                      <span className="flex items-center gap-1">
+                        <Phone className="w-3 h-3" />
+                        {group.sellerContactNo}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="text-sm text-gray-600">
+              {group.items.length} ürün • {group.totalItems} adet
+            </div>
+          </div>
+        </div>
+
+        {/* Items */}
+        <div className="divide-y divide-gray-200">
+          {group.items.map((item) => (
+            <div key={item.id} className="p-3 hover:bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 flex-1">
+                  <input
+                    type="checkbox"
+                    checked={selectedItems.has(`${item.orderId}|${item.id}`)}
+                    onChange={() => handleToggleItem(item.orderId, item.id)}
+                    className="w-4 h-4 text-orange-600 border-gray-300 rounded"
+                  />
+                  <Package className="w-4 h-4 text-gray-400" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900">
+                      {item.productName}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Sipariş: #{item.orderId.substring(0, 8)} • Alıcı:{" "}
+                      {item.buyerName}
+                    </p>
+                    {item.gatheringStatus === "gathered" && item.gatheredAt && (
+                      <p className="text-xs text-blue-600 mt-1">
+                        ✓ Toplandı: {formatDateTime(item.gatheredAt)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-gray-900">
+                    x{item.quantity}
+                  </span>
+                  {getStatusBadge(item.gatheringStatus)}
+                  {item.gatheredByName && (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded">
+                      <span className="text-xs text-gray-600">
+                        {item.gatheredByName}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleUnassignGatherer(item.orderId, item.id);
+                        }}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  if (loading) {
+    return <div className="text-center py-8 text-gray-500">Yükleniyor...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Action Bar */}
+      {selectedItems.size > 0 && (
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-orange-900">
+              {selectedItems.size} ürün seçildi
+            </span>
+            <div className="flex items-center gap-2">
+              <select
+                onChange={(e) => {
+                  if (e.target.value) {
+                    handleAssignToGatherer(e.target.value);
+                    e.target.value = "";
+                  }
+                }}
+                disabled={assigningCargo || transferringItems}
+                className="px-3 py-1.5 border border-orange-300 rounded-lg text-sm bg-white"
+              >
+                <option value="">Toplayıcıya Ata</option>
+                {cargoUsers.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.displayName}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={() => handleMarkAsArrived(Array.from(selectedItems))}
+                disabled={transferringItems}
+                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+              >
+                Depoya Geldi
+              </button>
+
+              <button
+                onClick={() =>
+                  onTransferToDistribution(Array.from(selectedItems))
+                }
+                disabled={transferringItems}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+              >
+                {transferringItems ? "Aktarılıyor..." : "Dağıtılacaklara Aktar"}
+              </button>
+
+              <button
+                onClick={() => setSelectedItems(new Set())}
+                disabled={transferringItems}
+                className="px-3 py-1.5 bg-white border border-orange-300 rounded-lg text-sm font-medium text-orange-900 disabled:opacity-50"
+              >
+                Temizle
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Two Column Layout */}
+      <div className="grid grid-cols-2 gap-4">
+        {/* LEFT: Unassigned Items */}
+        <div className="space-y-3">
+          <h2 className="text-lg font-semibold text-gray-900 px-1">
+            Atanmamış Siparişler ({filteredUnassignedGroups.length})
+          </h2>
+          {filteredUnassignedGroups.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 bg-white rounded-lg border border-gray-200">
+              Atanmamış ürün yok
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredUnassignedGroups.map((group) =>
+                renderSellerGroup(group)
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT: Assigned Items */}
+        <div className="space-y-3">
+          <h2 className="text-lg font-semibold text-gray-900 px-1">
+            Atanmış Siparişler ({filteredAssignedGroups.length})
+          </h2>
+          {filteredAssignedGroups.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 bg-white rounded-lg border border-gray-200">
+              Atanmış ürün yok
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredAssignedGroups.map((group) => renderSellerGroup(group))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

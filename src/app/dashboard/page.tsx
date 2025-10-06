@@ -27,6 +27,7 @@ import {
   Filter,
   MapPin,
   MessageSquare,
+  Truck,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -367,6 +368,9 @@ export default function Dashboard() {
         break;
       case "helpforms":
         router.push("/helpforms");
+        break;
+      case "shipment":
+        router.push("/shipment");
         break;
       case "main-large-banner":
         router.push("/topbanner");
@@ -909,6 +913,19 @@ export default function Dashboard() {
                   </h4>
                 </div>
                 <p className="text-xs text-gray-600">Siparişleri yönet</p>
+              </button>
+
+              <button
+                onClick={() => handleNavigation("shipment")}
+                className="p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg text-left transition-colors group"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Truck className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
+                    Teslimat Yönetimi
+                  </h4>
+                </div>
+                <p className="text-xs text-gray-600">Teslimatları yönet</p>
               </button>
 
               <button

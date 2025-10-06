@@ -41,6 +41,8 @@ interface ShopApplication {
   ownerId: string;
   status: string;
   createdAt: Timestamp;
+  latitude: number;
+  longitude: number;
 }
 
 interface RejectionModalProps {
@@ -380,6 +382,8 @@ export default function ShopApplicationsPage() {
         contactNo: application.contactNo,
         address: application.address,
         categories: application.categories,
+        latitude: application.latitude, // ADD THIS LINE
+        longitude: application.longitude,
         coverImageUrls: coverImageUrls,
         profileImageUrl: application.profileImageUrl,
         taxPlateCertificateUrl: application.taxPlateCertificateUrl,
