@@ -17,11 +17,16 @@ export interface OrderItem {
   timestamp: Timestamp;
 
   // Gathering phase tracking
-  gatheringStatus?: "pending" | "assigned" | "gathered" | "at_warehouse";
+  gatheringStatus?: "pending" | "assigned" | "gathered" | "at_warehouse" | "failed";
   gatheredBy?: string;
   gatheredByName?: string;
   gatheredAt?: Timestamp;
   arrivedAt?: Timestamp; // When item arrived at warehouse
+
+  // Failure tracking for gathering
+  failureReason?: string;
+  failureNotes?: string;
+  failedAt?: Timestamp;
 
   // Seller location for gathering routes
   sellerAddress?: {
@@ -64,12 +69,18 @@ export interface OrderHeader {
     | "ready"
     | "assigned"
     | "distributed"
-    | "delivered";
+    | "delivered"
+    | "failed";
   allItemsGathered?: boolean; // Auto-set when all items have arrivedAt
   distributedBy?: string;
   distributedByName?: string;
   distributedAt?: Timestamp;
   deliveredAt?: Timestamp;
+
+  // Failure tracking for distribution
+  failureReason?: string;
+  failureNotes?: string;
+  failedAt?: Timestamp;
 }
 
 export interface CombinedOrder {

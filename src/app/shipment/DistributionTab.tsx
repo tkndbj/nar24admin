@@ -52,64 +52,89 @@ export default function DistributionTab({
         where("distributionStatus", "==", "ready"),
         firestoreOrderBy("timestamp", "desc")
       );
-
-      // Query for assigned/distributed/delivered orders
+  
+      // Query for assigned/distributed orders
       const assignedQuery = firestoreQuery(
         collection(db, "orders"),
         where("allItemsGathered", "==", true),
-        where("distributionStatus", "in", [
-          "assigned",
-          "distributed",
-          "delivered",
-        ]),
+        where("distributionStatus", "in", ["assigned", "distributed"]),
         firestoreOrderBy("timestamp", "desc")
       );
-
-      const [unassignedSnapshot, assignedSnapshot] = await Promise.all([
+  
+      // Query for failed orders
+      const failedQuery = firestoreQuery(
+        collection(db, "orders"),
+        where("allItemsGathered", "==", true),
+        where("distributionStatus", "==", "failed"),
+        firestoreOrderBy("timestamp", "desc")
+      );
+  
+      const [unassignedSnapshot, assignedSnapshot, failedSnapshot] = await Promise.all([
         getDocs(unassignedQuery),
         getDocs(assignedQuery),
+        getDocs(failedQuery),
       ]);
-
+  
       // Process unassigned orders
       const unassignedOrdersData: CombinedOrder[] = await Promise.all(
         unassignedSnapshot.docs.map(async (orderDoc) => {
           const orderData = orderDoc.data() as OrderHeader;
           orderData.id = orderDoc.id;
-
+  
           const itemsSnapshot = await getDocs(
             collection(db, "orders", orderDoc.id, "items")
           );
-
+  
           const items: OrderItem[] = itemsSnapshot.docs.map((itemDoc) => ({
             id: itemDoc.id,
             ...itemDoc.data(),
           })) as OrderItem[];
-
+  
           return { orderHeader: orderData, items };
         })
       );
-
+  
       // Process assigned orders
       const assignedOrdersData: CombinedOrder[] = await Promise.all(
         assignedSnapshot.docs.map(async (orderDoc) => {
           const orderData = orderDoc.data() as OrderHeader;
           orderData.id = orderDoc.id;
-
+  
           const itemsSnapshot = await getDocs(
             collection(db, "orders", orderDoc.id, "items")
           );
-
+  
           const items: OrderItem[] = itemsSnapshot.docs.map((itemDoc) => ({
             id: itemDoc.id,
             ...itemDoc.data(),
           })) as OrderItem[];
-
+  
           return { orderHeader: orderData, items };
         })
       );
-
+  
+      // Process failed orders
+      const failedOrdersData: CombinedOrder[] = await Promise.all(
+        failedSnapshot.docs.map(async (orderDoc) => {
+          const orderData = orderDoc.data() as OrderHeader;
+          orderData.id = orderDoc.id;
+  
+          const itemsSnapshot = await getDocs(
+            collection(db, "orders", orderDoc.id, "items")
+          );
+  
+          const items: OrderItem[] = itemsSnapshot.docs.map((itemDoc) => ({
+            id: itemDoc.id,
+            ...itemDoc.data(),
+          })) as OrderItem[];
+  
+          return { orderHeader: orderData, items };
+        })
+      );
+  
       setUnassignedOrders(unassignedOrdersData);
-      setAssignedOrders(assignedOrdersData);
+      // Combine assigned and failed orders for the right column
+      setAssignedOrders([...assignedOrdersData, ...failedOrdersData]);
     } catch (error) {
       console.error("Error loading distribution orders:", error);
       alert("Siparişler yüklenirken hata oluştu");
@@ -294,11 +319,16 @@ export default function DistributionTab({
         color: "bg-gray-100 text-gray-800",
         icon: CheckCircle,
       },
+      failed: {
+        label: "Başarısız",
+        color: "bg-red-100 text-red-800",
+        icon: X,
+      },
     };
-
+  
     const badge = badges[status as keyof typeof badges] || badges.ready;
     const Icon = badge.icon;
-
+  
     return (
       <span
         className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${badge.color}`}
@@ -379,43 +409,66 @@ export default function DistributionTab({
         </div>
 
         {/* Footer with distributor info */}
-        {(order.orderHeader.distributedByName ||
-          order.orderHeader.deliveredAt) && (
-          <div className="bg-gray-50 p-3 border-t border-gray-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {order.orderHeader.distributedByName && (
-                  <div className="flex items-center gap-1 px-2 py-1 bg-blue-100 rounded">
-                    <span className="text-xs text-blue-800 font-medium">
-                      {order.orderHeader.distributedByName}
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleUnassignDistributor(order.orderHeader.id);
-                      }}
-                      className="text-red-500 hover:text-red-700 ml-1"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-                {order.orderHeader.deliveredAt && (
-                  <span className="text-xs text-green-600">
-                    ✓ Teslim Edildi:{" "}
-                    {formatDateTime(order.orderHeader.deliveredAt)}
-                  </span>
-                )}
-                {order.orderHeader.distributedAt &&
-                  !order.orderHeader.deliveredAt && (
-                    <span className="text-xs text-gray-500">
-                      Atandı: {formatDateTime(order.orderHeader.distributedAt)}
-                    </span>
-                  )}
-              </div>
+{(order.orderHeader.distributedByName ||
+  order.orderHeader.deliveredAt ||
+  order.orderHeader.distributionStatus === "failed") && (
+  <div className="bg-gray-50 p-3 border-t border-gray-200">
+    <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 flex-1">
+        <div className="flex items-center gap-3">
+          {order.orderHeader.distributedByName && (
+            <div className="flex items-center gap-1 px-2 py-1 bg-blue-100 rounded">
+              <span className="text-xs text-blue-800 font-medium">
+                {order.orderHeader.distributedByName}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleUnassignDistributor(order.orderHeader.id);
+                }}
+                className="text-red-500 hover:text-red-700 ml-1"
+              >
+                <X className="w-3 h-3" />
+              </button>
             </div>
+          )}
+          {order.orderHeader.deliveredAt && (
+            <span className="text-xs text-green-600">
+              ✓ Teslim Edildi:{" "}
+              {formatDateTime(order.orderHeader.deliveredAt)}
+            </span>
+          )}
+          {order.orderHeader.distributedAt &&
+            !order.orderHeader.deliveredAt &&
+            order.orderHeader.distributionStatus !== "failed" && (
+              <span className="text-xs text-gray-500">
+                Atandı: {formatDateTime(order.orderHeader.distributedAt)}
+              </span>
+            )}
+        </div>
+        
+        {/* Failure information */}
+        {order.orderHeader.distributionStatus === "failed" && (
+          <div className="space-y-1">
+            <p className="text-xs text-red-600 font-medium">
+              ✗ Başarısız: {order.orderHeader.failureReason}
+            </p>
+            {order.orderHeader.failureNotes && (
+              <p className="text-xs text-red-500">
+                Not: {order.orderHeader.failureNotes}
+              </p>
+            )}
+            {order.orderHeader.failedAt && (
+              <p className="text-xs text-gray-500">
+                {formatDateTime(order.orderHeader.failedAt)}
+              </p>
+            )}
           </div>
         )}
+      </div>
+    </div>
+  </div>
+)}
       </div>
     );
   };

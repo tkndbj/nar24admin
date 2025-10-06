@@ -54,60 +54,71 @@ export default function GatheringTab({
   const loadGatheringItems = async () => {
     setLoading(true);
     try {
-      // FIXED: Only get items that actually need action
-      // "pending" - needs to be assigned
-      // "assigned" - needs to be gathered
-      // DO NOT include "gathered" - these are waiting to be marked as arrived at warehouse
+      // Query for pending items (unassigned)
       const pendingQuery = firestoreQuery(
         collectionGroup(db, "items"),
         where("gatheringStatus", "==", "pending")
       );
-
+  
+      // Query for assigned items
       const assignedQuery = firestoreQuery(
         collectionGroup(db, "items"),
         where("gatheringStatus", "==", "assigned")
       );
-
-      // Execute both queries
-      const [pendingSnapshot, assignedSnapshot] = await Promise.all([
+  
+      // Query for gathered items (waiting to be marked as arrived)
+      const gatheredQuery = firestoreQuery(
+        collectionGroup(db, "items"),
+        where("gatheringStatus", "==", "gathered")
+      );
+  
+      // Query for failed items
+      const failedQuery = firestoreQuery(
+        collectionGroup(db, "items"),
+        where("gatheringStatus", "==", "failed")
+      );
+  
+      // Execute all queries
+      const [pendingSnapshot, assignedSnapshot, gatheredSnapshot, failedSnapshot] = await Promise.all([
         getDocs(pendingQuery),
         getDocs(assignedQuery),
+        getDocs(gatheredQuery),
+        getDocs(failedQuery),
       ]);
-
+  
       // Process pending items (unassigned)
       const pendingItems: OrderItem[] = pendingSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
         orderId: doc.ref.parent.parent?.id || "",
       })) as OrderItem[];
-
+  
       // Process assigned items
       const assignedItems: OrderItem[] = assignedSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
         orderId: doc.ref.parent.parent?.id || "",
       })) as OrderItem[];
-
-      // Optionally, also query for "gathered" items if you want to show them separately
-      // These are items that have been gathered but not yet at warehouse
-      const gatheredQuery = firestoreQuery(
-        collectionGroup(db, "items"),
-        where("gatheringStatus", "==", "gathered")
-      );
-
-      const gatheredSnapshot = await getDocs(gatheredQuery);
+  
+      // Process gathered items
       const gatheredItems: OrderItem[] = gatheredSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
         orderId: doc.ref.parent.parent?.id || "",
       })) as OrderItem[];
-
+  
+      // Process failed items
+      const failedItems: OrderItem[] = failedSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        orderId: doc.ref.parent.parent?.id || "",
+      })) as OrderItem[];
+  
       // Group items appropriately
       setUnassignedGroups(groupItemsBySeller(pendingItems));
-
-      // Combine assigned and gathered items for the right column
-      // But distinguish them visually in the UI
-      const assignedAndGatheredItems = [...assignedItems, ...gatheredItems];
+  
+      // Combine assigned, gathered, and failed items for the right column
+      const assignedAndGatheredItems = [...assignedItems, ...gatheredItems, ...failedItems];
       setAssignedGroups(groupItemsBySeller(assignedAndGatheredItems));
     } catch (error) {
       console.error("Error loading gathering items:", error);
@@ -319,11 +330,16 @@ export default function GatheringTab({
         color: "bg-green-100 text-green-800",
         icon: Warehouse,
       },
+      failed: {
+        label: "Başarısız",
+        color: "bg-red-100 text-red-800",
+        icon: X,
+      },
     };
-
+  
     const badge = badges[status as keyof typeof badges] || badges.pending;
     const Icon = badge.icon;
-
+  
     return (
       <span
         className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${badge.color}`}
@@ -398,57 +414,74 @@ export default function GatheringTab({
 
         {/* Items */}
         <div className="divide-y divide-gray-200">
-          {group.items.map((item) => (
-            <div key={item.id} className="p-3 hover:bg-gray-50">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3 flex-1">
-                  <input
-                    type="checkbox"
-                    checked={selectedItems.has(`${item.orderId}|${item.id}`)}
-                    onChange={() => handleToggleItem(item.orderId, item.id)}
-                    className="w-4 h-4 text-orange-600 border-gray-300 rounded"
-                  />
-                  <Package className="w-4 h-4 text-gray-400" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900">
-                      {item.productName}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Sipariş: #{item.orderId.substring(0, 8)} • Alıcı:{" "}
-                      {item.buyerName}
-                    </p>
-                    {item.gatheringStatus === "gathered" && item.gatheredAt && (
-                      <p className="text-xs text-blue-600 mt-1">
-                        ✓ Toplandı: {formatDateTime(item.gatheredAt)}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-gray-900">
-                    x{item.quantity}
-                  </span>
-                  {getStatusBadge(item.gatheringStatus)}
-                  {item.gatheredByName && (
-                    <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded">
-                      <span className="text-xs text-gray-600">
-                        {item.gatheredByName}
-                      </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleUnassignGatherer(item.orderId, item.id);
-                        }}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
+        {group.items.map((item) => (
+  <div key={item.id} className="p-3 hover:bg-gray-50">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-3 flex-1">
+        <input
+          type="checkbox"
+          checked={selectedItems.has(`${item.orderId}|${item.id}`)}
+          onChange={() => handleToggleItem(item.orderId, item.id)}
+          className="w-4 h-4 text-orange-600 border-gray-300 rounded"
+        />
+        <Package className="w-4 h-4 text-gray-400" />
+        <div className="flex-1">
+          <p className="text-sm font-medium text-gray-900">
+            {item.productName}
+          </p>
+          <p className="text-xs text-gray-500">
+            Sipariş: #{item.orderId.substring(0, 8)} • Alıcı:{" "}
+            {item.buyerName}
+          </p>
+          {item.gatheringStatus === "gathered" && item.gatheredAt && (
+            <p className="text-xs text-blue-600 mt-1">
+              ✓ Toplandı: {formatDateTime(item.gatheredAt)}
+            </p>
+          )}
+          {item.gatheringStatus === "failed" && (
+            <div className="mt-1 space-y-1">
+              <p className="text-xs text-red-600 font-medium">
+                ✗ Başarısız: {item.failureReason}
+              </p>
+              {item.failureNotes && (
+                <p className="text-xs text-red-500">
+                  Not: {item.failureNotes}
+                </p>
+              )}
+              {item.failedAt && (
+                <p className="text-xs text-gray-500">
+                  {formatDateTime(item.failedAt)}
+                </p>
+              )}
             </div>
-          ))}
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="text-sm font-medium text-gray-900">
+          x{item.quantity}
+        </span>
+        {getStatusBadge(item.gatheringStatus)}
+        {item.gatheredByName && (
+          <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded">
+            <span className="text-xs text-gray-600">
+              {item.gatheredByName}
+            </span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleUnassignGatherer(item.orderId, item.id);
+              }}
+              className="text-red-500 hover:text-red-700"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+))}
         </div>
       </div>
     );
