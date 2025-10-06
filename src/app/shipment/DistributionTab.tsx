@@ -10,9 +10,19 @@ import {
   Timestamp,
   where,
   orderBy as firestoreOrderBy,
+  QuerySnapshot,
+  DocumentData,
 } from "firebase/firestore";
 import { db } from "@/app/lib/firebase";
-import { Package, MapPin, CheckCircle, Truck, X, Phone } from "lucide-react";
+import {
+  Package,
+  MapPin,
+  CheckCircle,
+  Truck,
+  X,
+  Phone,
+  Clock,
+} from "lucide-react";
 import { CombinedOrder, OrderHeader, OrderItem, CargoUser } from "./types";
 
 interface DistributionTabProps {
@@ -37,104 +47,274 @@ export default function DistributionTab({
   const [loading, setLoading] = useState(false);
   const [assigningCargo, setAssigningCargo] = useState(false);
 
+  const [noteModal, setNoteModal] = useState<{
+    show: boolean;
+    orderId: string;
+    currentNote: string;
+  }>({
+    show: false,
+    orderId: "",
+    currentNote: "",
+  });
+
+  const [savingNote, setSavingNote] = useState(false);
+
+  const [incompleteOrderModal, setIncompleteOrderModal] = useState<{
+    show: boolean;
+    order: CombinedOrder | null;
+    cargoUserId: string;
+  }>({
+    show: false,
+    order: null,
+    cargoUserId: "",
+  });
+
+  const handleOpenNoteModal = (order: CombinedOrder) => {
+    setNoteModal({
+      show: true,
+      orderId: order.orderHeader.id,
+      currentNote: order.orderHeader.warehouseNote || "",
+    });
+  };
+
+  const handleSaveNote = async () => {
+    setSavingNote(true);
+    try {
+      const orderRef = doc(db, "orders", noteModal.orderId);
+      await updateDoc(orderRef, {
+        warehouseNote: noteModal.currentNote.trim() || null,
+        warehouseNoteUpdatedAt: Timestamp.now(),
+      });
+
+      alert("Not kaydedildi");
+      setNoteModal({
+        show: false,
+        orderId: "",
+        currentNote: "",
+      });
+      loadDistributionOrders();
+    } catch (error) {
+      console.error("Error saving note:", error);
+      alert("Not kaydedilirken hata oluştu");
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  // Add this after the state declarations
+  const getDeliveryLabel = (deliveryOption: string = "normal") => {
+    if (deliveryOption === "express") {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white bg-gradient-to-r from-orange-500 to-pink-500">
+          Express Kargo
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white bg-green-600">
+        Normal Kargo
+      </span>
+    );
+  };
+
+  const getTimeAgo = (timestamp: Timestamp | undefined) => {
+    if (!timestamp) return "";
+
+    const now = Date.now();
+    const orderTime = timestamp.toMillis();
+    const diffInHours = Math.floor((now - orderTime) / (1000 * 60 * 60));
+
+    if (diffInHours === 0) return "Az önce";
+    if (diffInHours === 1) return "1 saat önce";
+    return `${diffInHours} saat önce`;
+  };
+
+  const isOrderIncomplete = (order: CombinedOrder): boolean => {
+    if (order.orderHeader.allItemsGathered) return false;
+
+    // Check if any items are NOT at warehouse
+    return order.items.some((item) => item.gatheringStatus !== "at_warehouse");
+  };
+
+  const getIncompleteItemsCount = (order: CombinedOrder): number => {
+    return order.items.filter((item) => item.gatheringStatus !== "at_warehouse")
+      .length;
+  };
+
+  // Add this function after isOrderIncomplete
+  const isPartialDeliveryNeedingCompletion = (
+    order: CombinedOrder
+  ): boolean => {
+    // Order was delivered but now has all items and no distributor
+    // This means it was a partial delivery that needs completion
+    return (
+      order.orderHeader.distributionStatus === "delivered" &&
+      order.orderHeader.allItemsGathered === true &&
+      !order.orderHeader.distributedBy &&
+      order.orderHeader.deliveredAt !== null
+    );
+  };
+
+  const hasPartialDeliveryHistory = (order: CombinedOrder): boolean => {
+    // If order is delivered and has a deliveredAt timestamp but some items arrived after
+    if (!order.orderHeader.deliveredAt) return false;
+
+    return order.items.some(
+      (item) =>
+        item.arrivedAt &&
+        item.arrivedAt.toMillis() > order.orderHeader.deliveredAt!.toMillis()
+    );
+  };
+
   useEffect(() => {
     loadDistributionOrders();
   }, []);
 
-  // Load orders that are ready for distribution (all items gathered)
   const loadDistributionOrders = async () => {
     setLoading(true);
     try {
-      // Query for unassigned orders (ready for distribution)
+      // Query 1: Complete orders ready for distribution
       const unassignedQuery = firestoreQuery(
         collection(db, "orders"),
         where("allItemsGathered", "==", true),
         where("distributionStatus", "==", "ready"),
         firestoreOrderBy("timestamp", "desc")
       );
-  
-      // Query for assigned/distributed orders
+
+      // Query 2: ALL assigned/distributed orders (complete or incomplete)
       const assignedQuery = firestoreQuery(
         collection(db, "orders"),
-        where("allItemsGathered", "==", true),
         where("distributionStatus", "in", ["assigned", "distributed"]),
         firestoreOrderBy("timestamp", "desc")
       );
-  
-      // Query for failed orders
+
+      // Query 3: ALL failed orders (complete or incomplete)
       const failedQuery = firestoreQuery(
         collection(db, "orders"),
-        where("allItemsGathered", "==", true),
         where("distributionStatus", "==", "failed"),
         firestoreOrderBy("timestamp", "desc")
       );
-  
-      const [unassignedSnapshot, assignedSnapshot, failedSnapshot] = await Promise.all([
+
+      // Query 4: Incomplete orders (will filter for unassigned only)
+      const incompleteQuery = firestoreQuery(
+        collection(db, "orders"),
+        where("allItemsGathered", "==", false),
+        firestoreOrderBy("timestamp", "desc")
+      );
+
+      // Query 5: INCOMPLETE DELIVERED ORDERS
+      const incompleteDeliveredQuery = firestoreQuery(
+        collection(db, "orders"),
+        where("allItemsGathered", "==", false),
+        where("distributionStatus", "==", "delivered"),
+        firestoreOrderBy("timestamp", "desc")
+      );
+
+      // Query 6: COMPLETE DELIVERED ORDERS WITHOUT DISTRIBUTOR (partial deliveries that now have all items)
+      const completeDeliveredNoDistributorQuery = firestoreQuery(
+        collection(db, "orders"),
+        where("allItemsGathered", "==", true),
+        where("distributionStatus", "==", "delivered"),
+        firestoreOrderBy("timestamp", "desc")
+      );
+
+      const [
+        unassignedSnapshot,
+        assignedSnapshot,
+        failedSnapshot,
+        incompleteSnapshot,
+        incompleteDeliveredSnapshot,
+        completeDeliveredNoDistributorSnapshot,
+      ] = await Promise.all([
         getDocs(unassignedQuery),
         getDocs(assignedQuery),
         getDocs(failedQuery),
+        getDocs(incompleteQuery),
+        getDocs(incompleteDeliveredQuery),
+        getDocs(completeDeliveredNoDistributorQuery),
       ]);
-  
-      // Process unassigned orders
-      const unassignedOrdersData: CombinedOrder[] = await Promise.all(
-        unassignedSnapshot.docs.map(async (orderDoc) => {
-          const orderData = orderDoc.data() as OrderHeader;
-          orderData.id = orderDoc.id;
-  
-          const itemsSnapshot = await getDocs(
-            collection(db, "orders", orderDoc.id, "items")
-          );
-  
-          const items: OrderItem[] = itemsSnapshot.docs.map((itemDoc) => ({
-            id: itemDoc.id,
-            ...itemDoc.data(),
-          })) as OrderItem[];
-  
-          return { orderHeader: orderData, items };
-        })
+
+      // Helper function to process orders
+      const processOrders = async (
+        snapshot: QuerySnapshot<DocumentData>,
+        isIncomplete: boolean = false
+      ): Promise<CombinedOrder[]> => {
+        const orders = await Promise.all(
+          snapshot.docs.map(async (orderDoc) => {
+            const orderData = orderDoc.data() as OrderHeader;
+            orderData.id = orderDoc.id;
+
+            const itemsSnapshot = await getDocs(
+              collection(db, "orders", orderDoc.id, "items")
+            );
+
+            const items: OrderItem[] = itemsSnapshot.docs.map((itemDoc) => ({
+              id: itemDoc.id,
+              ...itemDoc.data(),
+            })) as OrderItem[];
+
+            // For incomplete orders, only include if at least one item is at warehouse
+            if (isIncomplete) {
+              const hasWarehouseItems = items.some(
+                (item) => item.gatheringStatus === "at_warehouse"
+              );
+              if (!hasWarehouseItems) {
+                return null;
+              }
+            }
+
+            return { orderHeader: orderData, items };
+          })
+        );
+
+        // Filter out null values (incomplete orders with no warehouse items)
+        return orders.filter((order): order is CombinedOrder => order !== null);
+      };
+
+      // Process all snapshots
+      const [
+        unassignedOrdersData,
+        assignedOrdersData,
+        failedOrdersData,
+        incompleteOrdersData,
+        incompleteDeliveredOrdersData,
+        completeDeliveredNoDistributorData,
+      ] = await Promise.all([
+        processOrders(unassignedSnapshot),
+        processOrders(assignedSnapshot),
+        processOrders(failedSnapshot),
+        processOrders(incompleteSnapshot, true),
+        processOrders(incompleteDeliveredSnapshot, true),
+        processOrders(completeDeliveredNoDistributorSnapshot),
+      ]);
+
+      // Filter incomplete orders to only include unassigned ones
+      const unassignedIncompleteOrders = incompleteOrdersData.filter(
+        (order) =>
+          !order.orderHeader.distributionStatus ||
+          order.orderHeader.distributionStatus === "ready"
       );
-  
-      // Process assigned orders
-      const assignedOrdersData: CombinedOrder[] = await Promise.all(
-        assignedSnapshot.docs.map(async (orderDoc) => {
-          const orderData = orderDoc.data() as OrderHeader;
-          orderData.id = orderDoc.id;
-  
-          const itemsSnapshot = await getDocs(
-            collection(db, "orders", orderDoc.id, "items")
-          );
-  
-          const items: OrderItem[] = itemsSnapshot.docs.map((itemDoc) => ({
-            id: itemDoc.id,
-            ...itemDoc.data(),
-          })) as OrderItem[];
-  
-          return { orderHeader: orderData, items };
-        })
-      );
-  
-      // Process failed orders
-      const failedOrdersData: CombinedOrder[] = await Promise.all(
-        failedSnapshot.docs.map(async (orderDoc) => {
-          const orderData = orderDoc.data() as OrderHeader;
-          orderData.id = orderDoc.id;
-  
-          const itemsSnapshot = await getDocs(
-            collection(db, "orders", orderDoc.id, "items")
-          );
-  
-          const items: OrderItem[] = itemsSnapshot.docs.map((itemDoc) => ({
-            id: itemDoc.id,
-            ...itemDoc.data(),
-          })) as OrderItem[];
-  
-          return { orderHeader: orderData, items };
-        })
-      );
-  
-      setUnassignedOrders(unassignedOrdersData);
-      // Combine assigned and failed orders for the right column
-      setAssignedOrders([...assignedOrdersData, ...failedOrdersData]);
+
+      // Filter complete delivered orders to only include those without distributor (need reassignment)
+      const deliveredNeedingReassignment =
+        completeDeliveredNoDistributorData.filter(
+          (order) => !order.orderHeader.distributedBy
+        );
+
+      // Combine for unassigned column: ready orders, incomplete unassigned, and delivered needing reassignment
+      setUnassignedOrders([
+        ...unassignedOrdersData,
+        ...unassignedIncompleteOrders,
+        ...deliveredNeedingReassignment, // Add these to unassigned
+      ]);
+
+      // Combine assigned, failed, and incomplete delivered for the right column
+      setAssignedOrders([
+        ...assignedOrdersData,
+        ...failedOrdersData,
+        ...incompleteDeliveredOrdersData,
+        // Don't include complete delivered here - they either go to unassigned or are truly done
+      ]);
     } catch (error) {
       console.error("Error loading distribution orders:", error);
       alert("Siparişler yüklenirken hata oluştu");
@@ -156,7 +336,6 @@ export default function DistributionTab({
         distributedBy: null,
         distributedByName: null,
         distributedAt: null,
-        deliveredAt: null,
       });
 
       alert("Dağıtıcı atama kaldırıldı");
@@ -209,22 +388,65 @@ export default function DistributionTab({
       return;
     }
 
+    // Check if any selected orders are incomplete
+    const selectedOrdersList = Array.from(selectedOrders);
+    const ordersData = unassignedOrders.filter((order) =>
+      selectedOrdersList.includes(order.orderHeader.id)
+    );
+
+    const incompleteOrders = ordersData.filter((order) =>
+      isOrderIncomplete(order)
+    );
+
+    // If there are incomplete orders, show modal for the first one
+    if (incompleteOrders.length > 0) {
+      setIncompleteOrderModal({
+        show: true,
+        order: incompleteOrders[0],
+        cargoUserId: cargoUserId,
+      });
+      return;
+    }
+
+    // All orders are complete, proceed normally
+    await assignOrdersToDistributor(
+      selectedOrdersList,
+      cargoUserId,
+      cargoUser.displayName
+    );
+  };
+
+  const assignOrdersToDistributor = async (
+    orderIds: string[],
+    cargoUserId: string,
+    cargoUserName: string,
+    skipIncomplete: boolean = false
+  ) => {
     setAssigningCargo(true);
     try {
-      await Promise.all(
-        Array.from(selectedOrders).map(async (orderId) => {
-          const orderRef = doc(db, "orders", orderId);
-          await updateDoc(orderRef, {
-            distributionStatus: "assigned",
-            distributedBy: cargoUserId,
-            distributedByName: cargoUser.displayName,
-            distributedAt: Timestamp.now(),
-          });
-        })
-      );
+      const assignPromises = orderIds.map(async (orderId) => {
+        const orderData = unassignedOrders.find(
+          (o) => o.orderHeader.id === orderId
+        );
+
+        // Skip incomplete orders if requested
+        if (skipIncomplete && orderData && isOrderIncomplete(orderData)) {
+          return;
+        }
+
+        const orderRef = doc(db, "orders", orderId);
+        await updateDoc(orderRef, {
+          distributionStatus: "assigned",
+          distributedBy: cargoUserId,
+          distributedByName: cargoUserName,
+          distributedAt: Timestamp.now(),
+        });
+      });
+
+      await Promise.all(assignPromises);
 
       alert(
-        `${selectedOrders.size} sipariş ${cargoUser.displayName} tarafından dağıtılacak`
+        `${orderIds.length} sipariş ${cargoUserName} tarafından dağıtılacak`
       );
       setSelectedOrders(new Set());
       loadDistributionOrders();
@@ -236,7 +458,26 @@ export default function DistributionTab({
     }
   };
 
-  // Mark orders as delivered
+  const handleConfirmIncompleteAssignment = async () => {
+    if (!incompleteOrderModal.order) return;
+
+    const cargoUser = cargoUsers.find(
+      (u) => u.id === incompleteOrderModal.cargoUserId
+    );
+    if (!cargoUser) return;
+
+    // Close modal
+    setIncompleteOrderModal({ show: false, order: null, cargoUserId: "" });
+
+    // Assign all selected orders
+    await assignOrdersToDistributor(
+      Array.from(selectedOrders),
+      incompleteOrderModal.cargoUserId,
+      cargoUser.displayName,
+      false // Don't skip incomplete orders
+    );
+  };
+
   const handleMarkAsDelivered = async (orderIds: string[]) => {
     if (
       !confirm(
@@ -249,15 +490,84 @@ export default function DistributionTab({
     try {
       await Promise.all(
         orderIds.map(async (orderId) => {
+          const orderData = unassignedOrders
+            .concat(assignedOrders)
+            .find((o) => o.orderHeader.id === orderId);
+
           const orderRef = doc(db, "orders", orderId);
-          await updateDoc(orderRef, {
-            distributionStatus: "delivered",
-            deliveredAt: Timestamp.now(),
-          });
+
+          // Check if this order was PREVIOUSLY partially delivered
+          const wasPreviouslyPartiallyDelivered =
+            orderData?.orderHeader.deliveredAt &&
+            !orderData?.orderHeader.distributedBy;
+
+          // Check if this is CURRENTLY an incomplete order
+          const isCurrentlyIncomplete =
+            orderData && isOrderIncomplete(orderData);
+
+          // Mark which items are being delivered RIGHT NOW
+          if (orderData) {
+            const itemsAtWarehouse = orderData.items.filter(
+              (item) => item.gatheringStatus === "at_warehouse"
+            );
+
+            // Mark each item at warehouse as delivered
+            // CRITICAL: ALWAYS set deliveredInPartial to TRUE when actually delivering
+            await Promise.all(
+              itemsAtWarehouse.map(async (item) => {
+                const itemRef = doc(db, "orders", orderId, "items", item.id);
+                await updateDoc(itemRef, {
+                  deliveredInPartial: true, // ALWAYS TRUE when marking as delivered
+                  partialDeliveryAt: Timestamp.now(),
+                });
+              })
+            );
+          }
+
+          // For orders that are currently incomplete OR were previously partially delivered
+          if (isCurrentlyIncomplete || wasPreviouslyPartiallyDelivered) {
+            // Mark as delivered BUT unassign distributor for reassignment
+            await updateDoc(orderRef, {
+              distributionStatus: "delivered",
+              deliveredAt: Timestamp.now(),
+              // Clear distributor assignment
+              distributedBy: null,
+              distributedByName: null,
+              distributedAt: null,
+            });
+          } else {
+            // For complete deliveries: just mark as delivered (keep distributor info)
+            await updateDoc(orderRef, {
+              distributionStatus: "delivered",
+              deliveredAt: Timestamp.now(),
+            });
+          }
         })
       );
 
-      alert(`${orderIds.length} sipariş teslim edildi olarak işaretlendi`);
+      // Update the confirmation message logic
+      const partialDeliveries = orderIds.filter((orderId) => {
+        const orderData = unassignedOrders
+          .concat(assignedOrders)
+          .find((o) => o.orderHeader.id === orderId);
+
+        const wasPreviouslyPartial =
+          orderData?.orderHeader.deliveredAt &&
+          !orderData?.orderHeader.distributedBy;
+
+        return (
+          (orderData && isOrderIncomplete(orderData)) || wasPreviouslyPartial
+        );
+      });
+
+      if (partialDeliveries.length > 0) {
+        alert(
+          `${orderIds.length} sipariş teslim edildi olarak işaretlendi. ${partialDeliveries.length} kısmi teslimat otomatik olarak yeniden atanmak üzere serbest bırakıldı.`
+        );
+      } else {
+        alert(`${orderIds.length} sipariş teslim edildi olarak işaretlendi`);
+      }
+
       loadDistributionOrders();
     } catch (error) {
       console.error("Error marking orders as delivered:", error);
@@ -325,10 +635,10 @@ export default function DistributionTab({
         icon: X,
       },
     };
-  
+
     const badge = badges[status as keyof typeof badges] || badges.ready;
     const Icon = badge.icon;
-  
+
     return (
       <span
         className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${badge.color}`}
@@ -358,9 +668,23 @@ export default function DistributionTab({
                 className="w-4 h-4 text-blue-600 border-gray-300 rounded"
               />
               <div>
-                <p className="font-semibold text-gray-900">
-                  {order.orderHeader.buyerName || "Alıcı"}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-gray-900">
+                    {order.orderHeader.buyerName || "Alıcı"}
+                  </p>
+                  {/* ADD INCOMPLETE BADGE */}
+                  {isOrderIncomplete(order) && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white bg-amber-500">
+                      Sipariş tamamlanmadı, {getIncompleteItemsCount(order)}{" "}
+                      eksik ürün
+                    </span>
+                  )}
+                  {isPartialDeliveryNeedingCompletion(order) && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white bg-orange-500">
+                      Kısmi teslimat - Tamamlanması gerekiyor
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-3 text-xs text-gray-600">
                   <span className="flex items-center gap-1">
                     <MapPin className="w-3 h-3" />
@@ -379,7 +703,31 @@ export default function DistributionTab({
               <span className="text-xs text-gray-500">
                 #{order.orderHeader.id.substring(0, 8)}
               </span>
-              {getStatusBadge(order.orderHeader.distributionStatus)}
+              {getDeliveryLabel(order.orderHeader.deliveryOption)}
+              <span className="text-xs text-gray-500 whitespace-nowrap">
+                {getTimeAgo(order.orderHeader.timestamp)}
+              </span>
+              {isOrderIncomplete(order) ? (
+                order.orderHeader.deliveredAt ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                    <CheckCircle className="w-3 h-3" />
+                    Kısmi Teslimat
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                    <Clock className="w-3 h-3" />
+                    Bekliyor
+                  </span>
+                )
+              ) : isPartialDeliveryNeedingCompletion(order) ||
+                hasPartialDeliveryHistory(order) ? (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                  <Clock className="w-3 h-3" />
+                  Kısmi Teslim - Tamamlanacak
+                </span>
+              ) : (
+                getStatusBadge(order.orderHeader.distributionStatus)
+              )}
             </div>
           </div>
         </div>
@@ -392,9 +740,79 @@ export default function DistributionTab({
                 <div className="flex items-center gap-3 flex-1">
                   <Package className="w-4 h-4 text-gray-400" />
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900">
-                      {item.productName}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-gray-900">
+                        {item.productName}
+                      </p>
+
+                      {/* Item status labels */}
+                      {(() => {
+                        // For orders with delivery history
+                        if (order.orderHeader.deliveredAt) {
+                          const isPartialScenario =
+                            isOrderIncomplete(order) ||
+                            isPartialDeliveryNeedingCompletion(order) ||
+                            hasPartialDeliveryHistory(order);
+
+                          if (isPartialScenario) {
+                            if (item.gatheringStatus === "at_warehouse") {
+                              // Check if this item was marked as delivered in a partial delivery
+                              if (
+                                item.deliveredInPartial &&
+                                item.partialDeliveryAt
+                              ) {
+                                return (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white bg-green-600">
+                                    Teslim Edildi
+                                  </span>
+                                );
+                              } else {
+                                return (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-blue-700 bg-blue-50">
+                                    Teslimata Hazır
+                                  </span>
+                                );
+                              }
+                            }
+
+                            // Item NOT at warehouse
+                            if (
+                              (item.gatheringStatus as string) !==
+                              "at_warehouse"
+                            ) {
+                              return (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-amber-700 bg-amber-50">
+                                  {item.gatheringStatus === "pending" &&
+                                    "Toplanacak"}
+                                  {item.gatheringStatus === "assigned" &&
+                                    "Toplanıyor"}
+                                  {item.gatheringStatus === "gathered" &&
+                                    "Yolda"}
+                                  {item.gatheringStatus === "failed" &&
+                                    "Başarısız"}
+                                </span>
+                              );
+                            }
+                          }
+                        }
+
+                        // For orders without delivery history
+                        if (item.gatheringStatus !== "at_warehouse") {
+                          return (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-amber-700 bg-amber-50">
+                              {item.gatheringStatus === "pending" &&
+                                "Toplanacak"}
+                              {item.gatheringStatus === "assigned" &&
+                                "Toplanıyor"}
+                              {item.gatheringStatus === "gathered" && "Yolda"}
+                              {item.gatheringStatus === "failed" && "Başarısız"}
+                            </span>
+                          );
+                        }
+
+                        return null;
+                      })()}
+                    </div>
                     <p className="text-xs text-gray-500">
                       Satıcı: {item.sellerName}
                     </p>
@@ -409,66 +827,83 @@ export default function DistributionTab({
         </div>
 
         {/* Footer with distributor info */}
-{(order.orderHeader.distributedByName ||
-  order.orderHeader.deliveredAt ||
-  order.orderHeader.distributionStatus === "failed") && (
-  <div className="bg-gray-50 p-3 border-t border-gray-200">
-    <div className="flex items-center justify-between">
-      <div className="flex flex-col gap-2 flex-1">
-        <div className="flex items-center gap-3">
-          {order.orderHeader.distributedByName && (
-            <div className="flex items-center gap-1 px-2 py-1 bg-blue-100 rounded">
-              <span className="text-xs text-blue-800 font-medium">
-                {order.orderHeader.distributedByName}
-              </span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleUnassignDistributor(order.orderHeader.id);
-                }}
-                className="text-red-500 hover:text-red-700 ml-1"
-              >
-                <X className="w-3 h-3" />
-              </button>
+        {(order.orderHeader.distributedByName ||
+          order.orderHeader.deliveredAt ||
+          order.orderHeader.distributionStatus === "failed") && (
+          <div className="bg-gray-50 p-3 border-t border-gray-200">
+            <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-2 flex-1">
+                <div className="flex items-center gap-3">
+                  {order.orderHeader.distributedByName && (
+                    <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 px-2 py-1 bg-blue-100 rounded">
+                        <span className="text-xs text-blue-800 font-medium">
+                          {order.orderHeader.distributedByName}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUnassignDistributor(order.orderHeader.id);
+                          }}
+                          className="text-red-500 hover:text-red-700 ml-1"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenNoteModal(order);
+                        }}
+                        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                          order.orderHeader.warehouseNote
+                            ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        }`}
+                        title={order.orderHeader.warehouseNote || "Not ekle"}
+                      >
+                        Not {order.orderHeader.warehouseNote ? "✓" : "bırak"}
+                      </button>
+                    </div>
+                  )}
+                  {order.orderHeader.deliveredAt && (
+                    <span className="text-xs text-green-600">
+                      ✓ Teslim Edildi:{" "}
+                      {formatDateTime(order.orderHeader.deliveredAt)}
+                    </span>
+                  )}
+                  {order.orderHeader.distributedAt &&
+                    !order.orderHeader.deliveredAt &&
+                    order.orderHeader.distributionStatus !== "failed" && (
+                      <span className="text-xs text-gray-500">
+                        Atandı:{" "}
+                        {formatDateTime(order.orderHeader.distributedAt)}
+                      </span>
+                    )}
+                </div>
+
+                {/* Failure information */}
+                {order.orderHeader.distributionStatus === "failed" && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-red-600 font-medium">
+                      ✗ Başarısız: {order.orderHeader.failureReason}
+                    </p>
+                    {order.orderHeader.failureNotes && (
+                      <p className="text-xs text-red-500">
+                        Not: {order.orderHeader.failureNotes}
+                      </p>
+                    )}
+                    {order.orderHeader.failedAt && (
+                      <p className="text-xs text-gray-500">
+                        {formatDateTime(order.orderHeader.failedAt)}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
-          {order.orderHeader.deliveredAt && (
-            <span className="text-xs text-green-600">
-              ✓ Teslim Edildi:{" "}
-              {formatDateTime(order.orderHeader.deliveredAt)}
-            </span>
-          )}
-          {order.orderHeader.distributedAt &&
-            !order.orderHeader.deliveredAt &&
-            order.orderHeader.distributionStatus !== "failed" && (
-              <span className="text-xs text-gray-500">
-                Atandı: {formatDateTime(order.orderHeader.distributedAt)}
-              </span>
-            )}
-        </div>
-        
-        {/* Failure information */}
-        {order.orderHeader.distributionStatus === "failed" && (
-          <div className="space-y-1">
-            <p className="text-xs text-red-600 font-medium">
-              ✗ Başarısız: {order.orderHeader.failureReason}
-            </p>
-            {order.orderHeader.failureNotes && (
-              <p className="text-xs text-red-500">
-                Not: {order.orderHeader.failureNotes}
-              </p>
-            )}
-            {order.orderHeader.failedAt && (
-              <p className="text-xs text-gray-500">
-                {formatDateTime(order.orderHeader.failedAt)}
-              </p>
-            )}
           </div>
         )}
-      </div>
-    </div>
-  </div>
-)}
       </div>
     );
   };
@@ -516,9 +951,31 @@ export default function DistributionTab({
               </button>
 
               <button
-                onClick={() =>
-                  onTransferToGathering(Array.from(selectedOrders))
-                }
+                onClick={() => {
+                  // Check if any selected orders are partially delivered
+                  const selectedOrdersList = Array.from(selectedOrders);
+                  const partiallyDeliveredOrders = selectedOrdersList.filter(
+                    (orderId) => {
+                      const order = unassignedOrders
+                        .concat(assignedOrders)
+                        .find((o) => o.orderHeader.id === orderId);
+                      return (
+                        order &&
+                        isOrderIncomplete(order) &&
+                        order.orderHeader.deliveredAt
+                      );
+                    }
+                  );
+
+                  if (partiallyDeliveredOrders.length > 0) {
+                    alert(
+                      `${partiallyDeliveredOrders.length} sipariş kısmen teslim edilmiş ve geri gönderilemez. Lütfen bu siparişleri seçimden çıkarın.`
+                    );
+                    return;
+                  }
+
+                  onTransferToGathering(selectedOrdersList);
+                }}
                 disabled={transferringItems}
                 className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium disabled:opacity-50"
               >
@@ -573,6 +1030,224 @@ export default function DistributionTab({
           )}
         </div>
       </div>
+      {/* Incomplete Order Warning Modal */}
+      {incompleteOrderModal.show && incompleteOrderModal.order && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-amber-50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-amber-500 rounded-full flex items-center justify-center">
+                  <Clock className="w-5 h-5 text-white" />
+                </div>
+                <h2 className="text-lg font-bold text-gray-900">
+                  Eksik Sipariş Uyarısı
+                </h2>
+              </div>
+              <button
+                onClick={() =>
+                  setIncompleteOrderModal({
+                    show: false,
+                    order: null,
+                    cargoUserId: "",
+                  })
+                }
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto max-h-[calc(80vh-140px)]">
+              <div className="mb-4">
+                <p className="text-sm text-gray-700 mb-2">
+                  <span className="font-semibold">
+                    {incompleteOrderModal.order.orderHeader.buyerName}
+                  </span>{" "}
+                  adlı müşterinin siparişi henüz tamamlanmadı.
+                </p>
+                <p className="text-sm font-medium text-amber-700 bg-amber-50 p-3 rounded-lg">
+                  Bu siparişi yine de atamak istiyor musunuz? Sadece depoda
+                  bulunan ürünler dağıtılacaktır.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                  Eksik Ürünler:
+                </h3>
+                {incompleteOrderModal.order.items
+                  .filter((item) => item.gatheringStatus !== "at_warehouse")
+                  .map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded"
+                    >
+                      <Package className="w-4 h-4 text-red-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {item.productName}
+                        </p>
+                        <p className="text-xs text-gray-600">
+                          Satıcı: {item.sellerName} • Miktar: x{item.quantity}
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-red-700 bg-red-100 whitespace-nowrap">
+                        {item.gatheringStatus === "pending" && "Toplanacak"}
+                        {item.gatheringStatus === "assigned" && "Toplanıyor"}
+                        {item.gatheringStatus === "gathered" && "Yolda"}
+                        {item.gatheringStatus === "failed" && "Başarısız"}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                  Depoda Hazır Ürünler:
+                </h3>
+                {incompleteOrderModal.order.items
+                  .filter((item) => item.gatheringStatus === "at_warehouse")
+                  .map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded mb-2"
+                    >
+                      <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {item.productName}
+                        </p>
+                        <p className="text-xs text-gray-600">
+                          Satıcı: {item.sellerName} • Miktar: x{item.quantity}
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-green-700 bg-green-100">
+                        Depoda
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={() =>
+                  setIncompleteOrderModal({
+                    show: false,
+                    order: null,
+                    cargoUserId: "",
+                  })
+                }
+                className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium transition-colors"
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleConfirmIncompleteAssignment}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                Yine de Ata
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Note Modal */}
+      {/* Note Modal */}
+      {noteModal.show && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h2 className="text-lg font-bold text-gray-900">Depo Notu</h2>
+              <button
+                onClick={() =>
+                  setNoteModal({
+                    show: false,
+                    orderId: "",
+                    currentNote: "",
+                  })
+                }
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              <textarea
+                value={noteModal.currentNote}
+                onChange={(e) =>
+                  setNoteModal({ ...noteModal, currentNote: e.target.value })
+                }
+                placeholder="Kargo personeline not bırakın..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                rows={4}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-2 p-4 border-t border-gray-200 bg-gray-50">
+              {/* Delete button on the left */}
+              {noteModal.currentNote && (
+                <button
+                  onClick={async () => {
+                    if (!confirm("Notu silmek istediğinizden emin misiniz?")) {
+                      return;
+                    }
+                    setSavingNote(true);
+                    try {
+                      const orderRef = doc(db, "orders", noteModal.orderId);
+                      await updateDoc(orderRef, {
+                        warehouseNote: null,
+                        warehouseNoteUpdatedAt: null,
+                      });
+                      alert("Not silindi");
+                      setNoteModal({
+                        show: false,
+                        orderId: "",
+                        currentNote: "",
+                      });
+                      loadDistributionOrders();
+                    } catch (error) {
+                      console.error("Error deleting note:", error);
+                      alert("Not silinirken hata oluştu");
+                    } finally {
+                      setSavingNote(false);
+                    }
+                  }}
+                  disabled={savingNote}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  Notu Sil
+                </button>
+              )}
+
+              {/* Action buttons on the right */}
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  onClick={() =>
+                    setNoteModal({
+                      show: false,
+                      orderId: "",
+                      currentNote: "",
+                    })
+                  }
+                  disabled={savingNote}
+                  className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  İptal
+                </button>
+                <button
+                  onClick={handleSaveNote}
+                  disabled={savingNote}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  {savingNote ? "Kaydediliyor..." : "Kaydet"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

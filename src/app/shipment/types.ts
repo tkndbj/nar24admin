@@ -15,14 +15,24 @@ export interface OrderItem {
   quantity: number;
   deliveryOption: string;
   timestamp: Timestamp;
+  warehouseNote?: string;
+  warehouseNoteUpdatedAt?: Timestamp;
+  warehouseNoteUpdatedBy?: string;
 
   // Gathering phase tracking
-  gatheringStatus?: "pending" | "assigned" | "gathered" | "at_warehouse" | "failed";
+  gatheringStatus?:
+    | "pending"
+    | "assigned"
+    | "gathered"
+    | "at_warehouse"
+    | "failed";
   gatheredBy?: string;
   gatheredByName?: string;
   gatheredAt?: Timestamp;
   arrivedAt?: Timestamp; // When item arrived at warehouse
 
+  deliveredInPartial?: boolean;
+  partialDeliveryAt?: Timestamp;
   // Failure tracking for gathering
   failureReason?: string;
   failureNotes?: string;
@@ -62,6 +72,9 @@ export interface OrderHeader {
   };
   deliveryOption: string;
   timestamp: Timestamp;
+  warehouseNote?: string;
+  warehouseNoteUpdatedAt?: Timestamp;
+  warehouseNoteUpdatedBy?: string;
 
   // Distribution phase tracking (only after all items gathered)
   distributionStatus?:

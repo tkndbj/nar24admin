@@ -46,6 +46,64 @@ export default function GatheringTab({
   const [loading, setLoading] = useState(false);
   const [assigningCargo, setAssigningCargo] = useState(false);
 
+  const [noteModal, setNoteModal] = useState<{
+    show: boolean;
+    itemKey: string;
+    orderId: string;
+    itemId: string;
+    currentNote: string;
+  }>({
+    show: false,
+    itemKey: "",
+    orderId: "",
+    itemId: "",
+    currentNote: "",
+  });
+
+  const [savingNote, setSavingNote] = useState(false);
+
+  const handleOpenNoteModal = (item: OrderItem) => {
+    setNoteModal({
+      show: true,
+      itemKey: `${item.orderId}|${item.id}`,
+      orderId: item.orderId,
+      itemId: item.id,
+      currentNote: item.warehouseNote || "",
+    });
+  };
+
+  const handleSaveNote = async () => {
+    setSavingNote(true);
+    try {
+      const itemRef = doc(
+        db,
+        "orders",
+        noteModal.orderId,
+        "items",
+        noteModal.itemId
+      );
+      await updateDoc(itemRef, {
+        warehouseNote: noteModal.currentNote.trim() || null,
+        warehouseNoteUpdatedAt: Timestamp.now(),
+      });
+
+      alert("Not kaydedildi");
+      setNoteModal({
+        show: false,
+        itemKey: "",
+        orderId: "",
+        itemId: "",
+        currentNote: "",
+      });
+      loadGatheringItems();
+    } catch (error) {
+      console.error("Error saving note:", error);
+      alert("Not kaydedilirken hata oluştu");
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
   useEffect(() => {
     loadGatheringItems();
   }, []);
@@ -59,66 +117,75 @@ export default function GatheringTab({
         collectionGroup(db, "items"),
         where("gatheringStatus", "==", "pending")
       );
-  
+
       // Query for assigned items
       const assignedQuery = firestoreQuery(
         collectionGroup(db, "items"),
         where("gatheringStatus", "==", "assigned")
       );
-  
+
       // Query for gathered items (waiting to be marked as arrived)
       const gatheredQuery = firestoreQuery(
         collectionGroup(db, "items"),
         where("gatheringStatus", "==", "gathered")
       );
-  
+
       // Query for failed items
       const failedQuery = firestoreQuery(
         collectionGroup(db, "items"),
         where("gatheringStatus", "==", "failed")
       );
-  
+
       // Execute all queries
-      const [pendingSnapshot, assignedSnapshot, gatheredSnapshot, failedSnapshot] = await Promise.all([
+      const [
+        pendingSnapshot,
+        assignedSnapshot,
+        gatheredSnapshot,
+        failedSnapshot,
+      ] = await Promise.all([
         getDocs(pendingQuery),
         getDocs(assignedQuery),
         getDocs(gatheredQuery),
         getDocs(failedQuery),
       ]);
-  
+
       // Process pending items (unassigned)
       const pendingItems: OrderItem[] = pendingSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
         orderId: doc.ref.parent.parent?.id || "",
       })) as OrderItem[];
-  
+
       // Process assigned items
       const assignedItems: OrderItem[] = assignedSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
         orderId: doc.ref.parent.parent?.id || "",
       })) as OrderItem[];
-  
+
       // Process gathered items
       const gatheredItems: OrderItem[] = gatheredSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
         orderId: doc.ref.parent.parent?.id || "",
       })) as OrderItem[];
-  
+
       // Process failed items
       const failedItems: OrderItem[] = failedSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
         orderId: doc.ref.parent.parent?.id || "",
       })) as OrderItem[];
-  
+
       // Group items appropriately
       setUnassignedGroups(groupItemsBySeller(pendingItems));
-  
+
       // Combine assigned, gathered, and failed items for the right column
-      const assignedAndGatheredItems = [...assignedItems, ...gatheredItems, ...failedItems];
+      const assignedAndGatheredItems = [
+        ...assignedItems,
+        ...gatheredItems,
+        ...failedItems,
+      ];
       setAssignedGroups(groupItemsBySeller(assignedAndGatheredItems));
     } catch (error) {
       console.error("Error loading gathering items:", error);
@@ -126,6 +193,33 @@ export default function GatheringTab({
     } finally {
       setLoading(false);
     }
+  };
+
+  const getDeliveryLabel = (deliveryOption: string = "normal") => {
+    if (deliveryOption === "express") {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white bg-gradient-to-r from-orange-500 to-pink-500">
+          Express Kargo
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white bg-green-600">
+        Normal Kargo
+      </span>
+    );
+  };
+
+  const getTimeAgo = (timestamp: Timestamp | undefined) => {
+    if (!timestamp) return "";
+
+    const now = Date.now();
+    const orderTime = timestamp.toMillis();
+    const diffInHours = Math.floor((now - orderTime) / (1000 * 60 * 60));
+
+    if (diffInHours === 0) return "Az önce";
+    if (diffInHours === 1) return "1 saat önce";
+    return `${diffInHours} saat önce`;
   };
 
   // Unassign cargo person from items
@@ -336,10 +430,10 @@ export default function GatheringTab({
         icon: X,
       },
     };
-  
+
     const badge = badges[status as keyof typeof badges] || badges.pending;
     const Icon = badge.icon;
-  
+
     return (
       <span
         className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${badge.color}`}
@@ -414,74 +508,96 @@ export default function GatheringTab({
 
         {/* Items */}
         <div className="divide-y divide-gray-200">
-        {group.items.map((item) => (
-  <div key={item.id} className="p-3 hover:bg-gray-50">
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-3 flex-1">
-        <input
-          type="checkbox"
-          checked={selectedItems.has(`${item.orderId}|${item.id}`)}
-          onChange={() => handleToggleItem(item.orderId, item.id)}
-          className="w-4 h-4 text-orange-600 border-gray-300 rounded"
-        />
-        <Package className="w-4 h-4 text-gray-400" />
-        <div className="flex-1">
-          <p className="text-sm font-medium text-gray-900">
-            {item.productName}
-          </p>
-          <p className="text-xs text-gray-500">
-            Sipariş: #{item.orderId.substring(0, 8)} • Alıcı:{" "}
-            {item.buyerName}
-          </p>
-          {item.gatheringStatus === "gathered" && item.gatheredAt && (
-            <p className="text-xs text-blue-600 mt-1">
-              ✓ Toplandı: {formatDateTime(item.gatheredAt)}
-            </p>
-          )}
-          {item.gatheringStatus === "failed" && (
-            <div className="mt-1 space-y-1">
-              <p className="text-xs text-red-600 font-medium">
-                ✗ Başarısız: {item.failureReason}
-              </p>
-              {item.failureNotes && (
-                <p className="text-xs text-red-500">
-                  Not: {item.failureNotes}
-                </p>
-              )}
-              {item.failedAt && (
-                <p className="text-xs text-gray-500">
-                  {formatDateTime(item.failedAt)}
-                </p>
-              )}
+          {group.items.map((item) => (
+            <div key={item.id} className="p-3 hover:bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 flex-1">
+                  <input
+                    type="checkbox"
+                    checked={selectedItems.has(`${item.orderId}|${item.id}`)}
+                    onChange={() => handleToggleItem(item.orderId, item.id)}
+                    className="w-4 h-4 text-orange-600 border-gray-300 rounded"
+                  />
+                  <Package className="w-4 h-4 text-gray-400" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {item.productName}
+                      </p>
+                      {getDeliveryLabel(item.deliveryOption)}
+                      <span className="text-xs text-gray-500 whitespace-nowrap">
+                        {getTimeAgo(item.timestamp)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Sipariş: #{item.orderId.substring(0, 8)} • Alıcı:{" "}
+                      {item.buyerName}
+                    </p>
+                    {item.gatheringStatus === "gathered" && item.gatheredAt && (
+                      <p className="text-xs text-blue-600 mt-1">
+                        ✓ Toplandı: {formatDateTime(item.gatheredAt)}
+                      </p>
+                    )}
+                    {item.gatheringStatus === "failed" && (
+                      <div className="mt-1 space-y-1">
+                        <p className="text-xs text-red-600 font-medium">
+                          ✗ Başarısız: {item.failureReason}
+                        </p>
+                        {item.failureNotes && (
+                          <p className="text-xs text-red-500">
+                            Not: {item.failureNotes}
+                          </p>
+                        )}
+                        {item.failedAt && (
+                          <p className="text-xs text-gray-500">
+                            {formatDateTime(item.failedAt)}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-gray-900">
+                    x{item.quantity}
+                  </span>
+                  {getStatusBadge(item.gatheringStatus)}
+                  {item.gatheredByName && (
+                    <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded">
+                        <span className="text-xs text-gray-600">
+                          {item.gatheredByName}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUnassignGatherer(item.orderId, item.id);
+                          }}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenNoteModal(item);
+                        }}
+                        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                          item.warehouseNote
+                            ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        }`}
+                        title={item.warehouseNote || "Not ekle"}
+                      >
+                        Not {item.warehouseNote ? "✓" : "bırak"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-          )}
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="text-sm font-medium text-gray-900">
-          x{item.quantity}
-        </span>
-        {getStatusBadge(item.gatheringStatus)}
-        {item.gatheredByName && (
-          <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded">
-            <span className="text-xs text-gray-600">
-              {item.gatheredByName}
-            </span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleUnassignGatherer(item.orderId, item.id);
-              }}
-              className="text-red-500 hover:text-red-700"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  </div>
-))}
+          ))}
         </div>
       </div>
     );
@@ -585,6 +701,108 @@ export default function GatheringTab({
           )}
         </div>
       </div>
+      {/* Note Modal */}
+      {/* Note Modal */}
+      {noteModal.show && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h2 className="text-lg font-bold text-gray-900">Depo Notu</h2>
+              <button
+                onClick={() =>
+                  setNoteModal({
+                    show: false,
+                    itemKey: "",
+                    itemId: "",
+                    orderId: "",
+                    currentNote: "",
+                  })
+                }
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              <textarea
+                value={noteModal.currentNote}
+                onChange={(e) =>
+                  setNoteModal({ ...noteModal, currentNote: e.target.value })
+                }
+                placeholder="Kargo personeline not bırakın..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                rows={4}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-2 p-4 border-t border-gray-200 bg-gray-50">
+              {/* Delete button on the left */}
+              {noteModal.currentNote && (
+                <button
+                  onClick={async () => {
+                    if (!confirm("Notu silmek istediğinizden emin misiniz?")) {
+                      return;
+                    }
+                    setSavingNote(true);
+                    try {
+                      const orderRef = doc(db, "orders", noteModal.orderId);
+                      await updateDoc(orderRef, {
+                        warehouseNote: null,
+                        warehouseNoteUpdatedAt: null,
+                      });
+                      alert("Not silindi");
+                      setNoteModal({
+                        show: false,
+                        itemKey: "",
+                        itemId: "",
+                        orderId: "",
+                        currentNote: "",
+                      });
+                      loadGatheringItems();
+                    } catch (error) {
+                      console.error("Error deleting note:", error);
+                      alert("Not silinirken hata oluştu");
+                    } finally {
+                      setSavingNote(false);
+                    }
+                  }}
+                  disabled={savingNote}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  Notu Sil
+                </button>
+              )}
+
+              {/* Action buttons on the right */}
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  onClick={() =>
+                    setNoteModal({
+                      show: false,
+                      itemKey: "",
+                      itemId: "",
+                      orderId: "",
+                      currentNote: "",
+                    })
+                  }
+                  disabled={savingNote}
+                  className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  İptal
+                </button>
+                <button
+                  onClick={handleSaveNote}
+                  disabled={savingNote}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  {savingNote ? "Kaydediliyor..." : "Kaydet"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

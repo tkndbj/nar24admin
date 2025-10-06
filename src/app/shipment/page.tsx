@@ -171,6 +171,9 @@ export default function ShipmentPage() {
                 await updateDoc(itemRef, {
                   gatheringStatus: "assigned",
                   arrivedAt: null, // Clear warehouse arrival
+                  // CRITICAL: Clear partial delivery tracking fields
+                  deliveredInPartial: null,
+                  partialDeliveryAt: null,
                   // Keep gatheredBy, gatheredByName, gatheredAt intact
                 });
               } else {
@@ -181,6 +184,9 @@ export default function ShipmentPage() {
                   gatheredByName: null,
                   gatheredAt: null,
                   arrivedAt: null,
+                  // CRITICAL: Clear partial delivery tracking fields
+                  deliveredInPartial: null,
+                  partialDeliveryAt: null,
                 });
               }
             })

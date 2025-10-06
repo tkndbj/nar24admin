@@ -62,10 +62,10 @@ export default function DeliveredTab({ searchTerm }: DeliveredTabProps) {
           startDate = new Date(2020, 0, 1); // All time
       }
 
-      // Query for delivered orders
+      // Query for ALL orders that have been delivered at least once
+      // This includes partial deliveries that may now be "assigned" for completion
       const deliveredQuery = firestoreQuery(
         collection(db, "orders"),
-        where("distributionStatus", "==", "delivered"),
         where("deliveredAt", ">=", Timestamp.fromDate(startDate)),
         firestoreOrderBy("deliveredAt", "desc")
       );
@@ -182,24 +182,61 @@ export default function DeliveredTab({ searchTerm }: DeliveredTabProps) {
     return `${diffMinutes} dakika`;
   };
 
+  const isPartialDelivery = (order: CombinedOrder): boolean => {
+    // Check if there are items at warehouse that haven't been delivered yet
+    const hasUndeliveredWarehouseItems = order.items.some(
+      (item) =>
+        item.gatheringStatus === "at_warehouse" && !item.deliveredInPartial
+    );
+
+    // Check if there are items not yet at warehouse (still being gathered)
+    const hasItemsNotAtWarehouse = order.items.some(
+      (item) => item.gatheringStatus !== "at_warehouse"
+    );
+
+    return hasUndeliveredWarehouseItems || hasItemsNotAtWarehouse;
+  };
+
   const renderOrderCard = (order: CombinedOrder) => {
+    const isPartial = isPartialDelivery(order);
+
+    // Determine colors based on delivery status
+    const headerBgColor = isPartial ? "bg-amber-50" : "bg-green-50";
+    const headerBorderColor = isPartial
+      ? "border-amber-200"
+      : "border-green-200";
+    const iconColor = isPartial ? "text-amber-600" : "text-green-600";
+    const textColor = isPartial ? "text-amber-600" : "text-green-600";
+    const deliveryLabel = isPartial ? "Kısmi Teslimat:" : "Teslim Edildi:";
+
     return (
       <div
         key={order.orderHeader.id}
         className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow"
       >
         {/* Order Header with Delivery Info */}
-        <div className="bg-green-50 p-3 border-b border-green-200">
+        <div className={`${headerBgColor} p-3 border-b ${headerBorderColor}`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-green-600" />
+                {isPartial ? (
+                  <Clock className={`w-5 h-5 ${iconColor}`} />
+                ) : (
+                  <CheckCircle className={`w-5 h-5 ${iconColor}`} />
+                )}
                 <div>
-                  <p className="font-semibold text-gray-900">
-                    {order.orderHeader.buyerName || "Alıcı"}
-                  </p>
-                  <p className="text-xs text-green-600">
-                    Teslim Edildi:{" "}
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-gray-900">
+                      {order.orderHeader.buyerName || "Alıcı"}
+                    </p>
+                    {isPartial && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-amber-700 bg-amber-100">
+                        Kısmi Teslimat - Tamamlanması Gerekiyor
+                      </span>
+                    )}
+                  </div>
+                  <p className={`text-xs ${textColor}`}>
+                    {deliveryLabel}{" "}
                     {formatDateTime(order.orderHeader.deliveredAt)}
                   </p>
                 </div>
@@ -255,9 +292,28 @@ export default function DeliveredTab({ searchTerm }: DeliveredTabProps) {
               >
                 <div className="flex items-center gap-2">
                   <Package className="w-3 h-3 text-gray-400" />
-                  <span className="text-sm text-gray-700">
-                    {item.productName}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-700">
+                      {item.productName}
+                    </span>
+                    {/* Show delivery status for all items */}
+                    {item.deliveredInPartial ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white bg-green-600">
+                        Teslim Edildi
+                      </span>
+                    ) : item.gatheringStatus === "at_warehouse" ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-blue-700 bg-blue-50">
+                        Teslimata Hazır
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-amber-700 bg-amber-50">
+                        {item.gatheringStatus === "pending" && "Toplanacak"}
+                        {item.gatheringStatus === "assigned" && "Toplanıyor"}
+                        {item.gatheringStatus === "gathered" && "Yolda"}
+                        {item.gatheringStatus === "failed" && "Başarısız"}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <span className="text-sm font-medium text-gray-900">
                   x{item.quantity}
