@@ -525,57 +525,53 @@ export default function DistributionTab({
     ) {
       return;
     }
-
+  
     try {
       await Promise.all(
         orderIds.map(async (orderId) => {
           const orderData = unassignedOrders
             .concat(assignedOrders)
             .find((o) => o.orderHeader.id === orderId);
-
+  
           const orderRef = doc(db, "orders", orderId);
-
+  
           // Check if this order was PREVIOUSLY partially delivered
           const wasPreviouslyPartiallyDelivered =
             orderData?.orderHeader.deliveredAt &&
             !orderData?.orderHeader.distributedBy;
-
+  
           // Check if this is CURRENTLY an incomplete order
           const isCurrentlyIncomplete =
             orderData && isOrderIncomplete(orderData);
-
+  
           // Mark which items are being delivered RIGHT NOW
           if (orderData) {
             const itemsAtWarehouse = orderData.items.filter(
               (item) => item.gatheringStatus === "at_warehouse"
             );
-
+  
             // Mark each item at warehouse as delivered
-            // CRITICAL: ALWAYS set deliveredInPartial to TRUE when actually delivering
             await Promise.all(
               itemsAtWarehouse.map(async (item) => {
                 const itemRef = doc(db, "orders", orderId, "items", item.id);
                 await updateDoc(itemRef, {
-                  deliveredInPartial: true, // ALWAYS TRUE when marking as delivered
+                  deliveredInPartial: true,
                   partialDeliveryAt: Timestamp.now(),
                 });
               })
             );
           }
-
+  
           // For orders that are currently incomplete OR were previously partially delivered
           if (isCurrentlyIncomplete || wasPreviouslyPartiallyDelivered) {
-            // Mark as delivered BUT unassign distributor for reassignment
             await updateDoc(orderRef, {
               distributionStatus: "delivered",
               deliveredAt: Timestamp.now(),
-              // Clear distributor assignment
               distributedBy: null,
               distributedByName: null,
               distributedAt: null,
             });
           } else {
-            // For complete deliveries: just mark as delivered (keep distributor info)
             await updateDoc(orderRef, {
               distributionStatus: "delivered",
               deliveredAt: Timestamp.now(),
@@ -583,9 +579,43 @@ export default function DistributionTab({
           }
         })
       );
-
+  
+      // Calculate partial deliveries AFTER the updates
+      const partialDeliveries = orderIds.filter((orderId) => {
+        const orderData = unassignedOrders
+          .concat(assignedOrders)
+          .find((o) => o.orderHeader.id === orderId);
+  
+        const wasPreviouslyPartial =
+          orderData?.orderHeader.deliveredAt &&
+          !orderData?.orderHeader.distributedBy;
+  
+        return (
+          (orderData && isOrderIncomplete(orderData)) || wasPreviouslyPartial
+        );
+      });
+  
+      // NOW USE IT - Show different messages based on partial deliveries
+      if (partialDeliveries.length > 0) {
+        const completeDeliveries = orderIds.length - partialDeliveries.length;
         
-
+        if (completeDeliveries > 0) {
+          alert(
+            `Tamamlandı!\n\n` +
+            `✓ ${completeDeliveries} tam teslimat\n` +
+            `⚠ ${partialDeliveries.length} kısmi teslimat\n\n` +
+            `Kısmi teslimatlar kalan ürünler depoya ulaştığında yeniden atanabilir.`
+          );
+        } else {
+          alert(
+            `${partialDeliveries.length} sipariş kısmi teslimat olarak işaretlendi.\n\n` +
+            `Bu siparişler kalan ürünler depoya ulaştığında yeniden atanabilir.`
+          );
+        }
+      } else {
+        alert(`${orderIds.length} sipariş başarıyla teslim edildi!`);
+      }
+  
       loadDistributionOrders();
     } catch (error) {
       console.error("Error marking orders as delivered:", error);
