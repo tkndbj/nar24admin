@@ -301,7 +301,7 @@ const [loadingTracking, setLoadingTracking] = useState(false);
         }
         
         // Write phase - update all documents atomically
-        for (const [itemKey, { ref: itemRef, data: itemData }] of itemRefs) {
+        for (const [, { ref: itemRef, data: itemData }] of itemRefs) {
           const updateData = {
             gatheringStatus: "at_warehouse",
             arrivedAt: Timestamp.now(),
