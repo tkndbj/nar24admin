@@ -584,20 +584,7 @@ export default function DistributionTab({
         })
       );
 
-      // Update the confirmation message logic
-      const partialDeliveries = orderIds.filter((orderId) => {
-        const orderData = unassignedOrders
-          .concat(assignedOrders)
-          .find((o) => o.orderHeader.id === orderId);
-
-        const wasPreviouslyPartial =
-          orderData?.orderHeader.deliveredAt &&
-          !orderData?.orderHeader.distributedBy;
-
-        return (
-          (orderData && isOrderIncomplete(orderData)) || wasPreviouslyPartial
-        );
-      });     
+        
 
       loadDistributionOrders();
     } catch (error) {

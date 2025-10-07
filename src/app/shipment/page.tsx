@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { db } from "@/app/lib/firebase";
 import { TruckIcon, UserPlus, X, Search, User, Package, MapPin, Calendar, Phone } from "lucide-react";
 import { CargoUser, CombinedOrder, OrderHeader, OrderItem } from "./types";
@@ -9,7 +9,6 @@ import DistributionTab from "./DistributionTab";
 import DeliveredTab from "./DeliveredTab";
 import { useAlgoliaSearch } from "@/hooks/useAlgoliaSearch";
 import { getDoc } from "firebase/firestore";
-import { debounce } from 'lodash';
 import { AlgoliaOrderHit } from "@/app/lib/algolia/searchService";
 import { runTransaction } from 'firebase/firestore';
 import {
@@ -22,6 +21,7 @@ import {
   Timestamp,
   query as firestoreQuery,
   collectionGroup,
+  DocumentData,
 } from "firebase/firestore";
 
 export default function ShipmentPage() {
@@ -266,9 +266,16 @@ const [loadingTracking, setLoadingTracking] = useState(false);
     
     try {
       await runTransaction(db, async (transaction) => {
-        // First, get all documents we need to update
-        const itemRefs = new Map<string, any>();
-        const orderRefs = new Map<string, any>();
+        // Define proper types instead of 'any'
+        const itemRefs = new Map<string, { 
+          ref: ReturnType<typeof doc>; 
+          data: DocumentData 
+        }>();
+        
+        const orderRefs = new Map<string, { 
+          ref: ReturnType<typeof doc>; 
+          data: DocumentData 
+        }>();
         
         // Read phase - get all documents
         for (const itemKey of itemKeys) {
@@ -329,7 +336,7 @@ const [loadingTracking, setLoadingTracking] = useState(false);
           );
           
           if (allAtWarehouse && orderRefs.has(orderId)) {
-            const { ref: orderRef } = orderRefs.get(orderId);
+            const { ref: orderRef } = orderRefs.get(orderId) as { ref: ReturnType<typeof doc> };
             transaction.update(orderRef, {
               allItemsGathered: true,
               distributionStatus: "ready",
@@ -337,7 +344,6 @@ const [loadingTracking, setLoadingTracking] = useState(false);
           }
         }
       });
-      
       
       setGatheringSelectedItems(new Set());
       
