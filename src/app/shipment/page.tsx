@@ -695,7 +695,7 @@ const [loadingTracking, setLoadingTracking] = useState(false);
                               {/* Product Image */}
                               {order.productImage && (
                                 <img
-                                  src={order.productImage}
+                                  src={order.productImage as string}
                                   alt={order.productName}
                                   className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
                                 />
@@ -720,7 +720,7 @@ const [loadingTracking, setLoadingTracking] = useState(false);
                                   {order.condition && (
                                     <>
                                       <span>•</span>
-                                      <span>{order.condition}</span>
+                                      <span>{order.condition as string}</span>
                                     </>
                                   )}
                                 </div>
@@ -737,14 +737,14 @@ const [loadingTracking, setLoadingTracking] = useState(false);
                                     {order.sellerContactNo && (
                                       <p className="text-gray-600 flex items-center gap-1 mt-0.5">
                                         <Phone className="w-3 h-3" />
-                                        {order.sellerContactNo}
+                                        {order.sellerContactNo as string}
                                       </p>
                                     )}
                                   </div>
                                 </div>
 
                                 {/* Address */}
-                                {order.orderAddress && (
+                                {order.orderAddress && typeof order.orderAddress === 'object' && 'addressLine1' in order.orderAddress && (
                                   <div className="mt-2 text-xs">
                                     <p className="text-gray-500 mb-0.5 flex items-center gap-1">
                                       <MapPin className="w-3 h-3" />
@@ -773,7 +773,7 @@ const [loadingTracking, setLoadingTracking] = useState(false);
                             {/* Price & Quantity */}
                             <div className="text-right">
                               <p className="text-sm font-bold text-gray-900">
-                                {order.price} {order.currency}
+                                {order.price} {order.currency as string}
                               </p>
                               <p className="text-xs text-gray-500">
                                 Miktar: {order.quantity}

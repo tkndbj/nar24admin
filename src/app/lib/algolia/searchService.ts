@@ -23,7 +23,11 @@ export interface AlgoliaOrderHit {
     _seconds: number;
     _nanoseconds: number;
   };
-  [key: string]: any;
+  [key: string]: string | number | boolean | { _seconds: number; _nanoseconds: number; } | string[] | number[] | {
+    addressLine1?: string;
+    addressLine2?: string;
+    city?: string;
+  };
 }
 
 export interface SearchFilters {
@@ -90,7 +94,14 @@ export async function searchOrders(
       const filterString = buildFilterString(filters);
       const indexName = process.env.NEXT_PUBLIC_ALGOLIA_INDEX_NAME || 'orders';
   
-      const searchParams: any = {
+      const searchParams: {
+        indexName: string;
+        query: string;
+        hitsPerPage: number;
+        page: number;
+        filters?: string;
+        attributesToRetrieve?: string[];
+      } = {
         indexName,
         query: query.trim(),
         hitsPerPage,
