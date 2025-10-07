@@ -86,7 +86,7 @@ export default function DistributionTab({
         warehouseNoteUpdatedAt: Timestamp.now(),
       });
 
-      alert("Not kaydedildi");
+      
       setNoteModal({
         show: false,
         orderId: "",
@@ -173,51 +173,65 @@ export default function DistributionTab({
   const loadDistributionOrders = async () => {
     setLoading(true);
     try {
-      // Query 1: Complete orders ready for distribution
-      const unassignedQuery = firestoreQuery(
-        collection(db, "orders"),
-        where("allItemsGathered", "==", true),
-        where("distributionStatus", "==", "ready"),
-        firestoreOrderBy("timestamp", "desc")
+      // Define all queries upfront for better readability
+      const queries = [
+        // Query 1: Complete orders ready for distribution
+        firestoreQuery(
+          collection(db, "orders"),
+          where("allItemsGathered", "==", true),
+          where("distributionStatus", "==", "ready"),
+          firestoreOrderBy("timestamp", "desc")
+        ),
+        // Query 2: ALL assigned/distributed orders (complete or incomplete)
+        firestoreQuery(
+          collection(db, "orders"),
+          where("distributionStatus", "in", ["assigned", "distributed"]),
+          firestoreOrderBy("timestamp", "desc")
+        ),
+        // Query 3: ALL failed orders (complete or incomplete)
+        firestoreQuery(
+          collection(db, "orders"),
+          where("distributionStatus", "==", "failed"),
+          firestoreOrderBy("timestamp", "desc")
+        ),
+        // Query 4: Incomplete orders (will filter for unassigned only)
+        firestoreQuery(
+          collection(db, "orders"),
+          where("allItemsGathered", "==", false),
+          firestoreOrderBy("timestamp", "desc")
+        ),
+        // Query 5: INCOMPLETE DELIVERED ORDERS
+        firestoreQuery(
+          collection(db, "orders"),
+          where("allItemsGathered", "==", false),
+          where("distributionStatus", "==", "delivered"),
+          firestoreOrderBy("timestamp", "desc")
+        ),
+        // Query 6: COMPLETE DELIVERED ORDERS WITHOUT DISTRIBUTOR (partial deliveries that now have all items)
+        firestoreQuery(
+          collection(db, "orders"),
+          where("allItemsGathered", "==", true),
+          where("distributionStatus", "==", "delivered"),
+          firestoreOrderBy("timestamp", "desc")
+        ),
+      ];
+  
+      // Execute all queries in parallel with error resilience
+      const snapshotResults = await Promise.allSettled(
+        queries.map(query => getDocs(query))
       );
-
-      // Query 2: ALL assigned/distributed orders (complete or incomplete)
-      const assignedQuery = firestoreQuery(
-        collection(db, "orders"),
-        where("distributionStatus", "in", ["assigned", "distributed"]),
-        firestoreOrderBy("timestamp", "desc")
-      );
-
-      // Query 3: ALL failed orders (complete or incomplete)
-      const failedQuery = firestoreQuery(
-        collection(db, "orders"),
-        where("distributionStatus", "==", "failed"),
-        firestoreOrderBy("timestamp", "desc")
-      );
-
-      // Query 4: Incomplete orders (will filter for unassigned only)
-      const incompleteQuery = firestoreQuery(
-        collection(db, "orders"),
-        where("allItemsGathered", "==", false),
-        firestoreOrderBy("timestamp", "desc")
-      );
-
-      // Query 5: INCOMPLETE DELIVERED ORDERS
-      const incompleteDeliveredQuery = firestoreQuery(
-        collection(db, "orders"),
-        where("allItemsGathered", "==", false),
-        where("distributionStatus", "==", "delivered"),
-        firestoreOrderBy("timestamp", "desc")
-      );
-
-      // Query 6: COMPLETE DELIVERED ORDERS WITHOUT DISTRIBUTOR (partial deliveries that now have all items)
-      const completeDeliveredNoDistributorQuery = firestoreQuery(
-        collection(db, "orders"),
-        where("allItemsGathered", "==", true),
-        where("distributionStatus", "==", "delivered"),
-        firestoreOrderBy("timestamp", "desc")
-      );
-
+  
+      // Extract snapshots with fallback to empty results
+      const snapshots = snapshotResults.map((result, index) => {
+        if (result.status === "fulfilled") {
+          return result.value;
+        } else {
+          console.error(`Query ${index + 1} failed:`, result.reason);
+          // Return empty snapshot structure
+          return { docs: [], empty: true } as unknown as QuerySnapshot<DocumentData>;
+        }
+      });
+  
       const [
         unassignedSnapshot,
         assignedSnapshot,
@@ -225,61 +239,76 @@ export default function DistributionTab({
         incompleteSnapshot,
         incompleteDeliveredSnapshot,
         completeDeliveredNoDistributorSnapshot,
-      ] = await Promise.all([
-        getDocs(unassignedQuery),
-        getDocs(assignedQuery),
-        getDocs(failedQuery),
-        getDocs(incompleteQuery),
-        getDocs(incompleteDeliveredQuery),
-        getDocs(completeDeliveredNoDistributorQuery),
-      ]);
-
-      // Helper function to process orders
+      ] = snapshots;
+  
+      // Optimized helper function with batching and robust error handling
       const processOrders = async (
         snapshot: QuerySnapshot<DocumentData>,
         isIncomplete: boolean = false
       ): Promise<CombinedOrder[]> => {
-        const orders = await Promise.all(
-          snapshot.docs.map(async (orderDoc) => {
-            const orderData = orderDoc.data() as OrderHeader;
-            orderData.id = orderDoc.id;
-
-            const itemsSnapshot = await getDocs(
-              collection(db, "orders", orderDoc.id, "items")
-            );
-
-            const items: OrderItem[] = itemsSnapshot.docs.map((itemDoc) => ({
-              id: itemDoc.id,
-              ...itemDoc.data(),
-            })) as OrderItem[];
-
-            // For incomplete orders, only include if at least one item is at warehouse
-            if (isIncomplete) {
-              const hasWarehouseItems = items.some(
-                (item) => item.gatheringStatus === "at_warehouse"
-              );
-              if (!hasWarehouseItems) {
+        // Early return for empty snapshots
+        if (!snapshot || snapshot.empty || snapshot.docs.length === 0) {
+          return [];
+        }
+  
+        const BATCH_SIZE = 15; // Process 15 orders at a time
+        const allOrders: CombinedOrder[] = [];
+        const totalDocs = snapshot.docs.length;
+  
+        // Process orders in batches to avoid overwhelming Firestore
+        for (let i = 0; i < totalDocs; i += BATCH_SIZE) {
+          const batch = snapshot.docs.slice(i, Math.min(i + BATCH_SIZE, totalDocs));
+          
+          // Use Promise.allSettled to handle individual failures gracefully
+          const batchResults = await Promise.allSettled(
+            batch.map(async (orderDoc) => {
+              try {
+                const orderData = { ...orderDoc.data(), id: orderDoc.id } as OrderHeader;
+  
+                // Fetch items for this order
+                const itemsSnapshot = await getDocs(
+                  collection(db, "orders", orderDoc.id, "items")
+                );
+  
+                const items: OrderItem[] = itemsSnapshot.docs.map((itemDoc) => ({
+                  id: itemDoc.id,
+                  ...itemDoc.data(),
+                })) as OrderItem[];
+  
+                // For incomplete orders, only include if at least one item is at warehouse
+                if (isIncomplete) {
+                  const hasWarehouseItems = items.some(
+                    (item) => item.gatheringStatus === "at_warehouse"
+                  );
+                  if (!hasWarehouseItems) {
+                    return null;
+                  }
+                }
+  
+                return { orderHeader: orderData, items };
+              } catch (error) {
+                console.error(`Error processing order ${orderDoc.id}:`, error);
+                // Return null for failed orders instead of breaking the entire operation
                 return null;
               }
+            })
+          );
+  
+          // Extract successful results from this batch
+          for (const result of batchResults) {
+            if (result.status === "fulfilled" && result.value !== null) {
+              allOrders.push(result.value);
+            } else if (result.status === "rejected") {
+              console.error("Batch processing error:", result.reason);
             }
-
-            return { orderHeader: orderData, items };
-          })
-        );
-
-        // Filter out null values (incomplete orders with no warehouse items)
-        return orders.filter((order): order is CombinedOrder => order !== null);
+          }
+        }
+  
+        return allOrders;
       };
-
-      // Process all snapshots
-      const [
-        unassignedOrdersData,
-        assignedOrdersData,
-        failedOrdersData,
-        incompleteOrdersData,
-        incompleteDeliveredOrdersData,
-        completeDeliveredNoDistributorData,
-      ] = await Promise.all([
+  
+      // Process all snapshots in parallel with batching
+      const processingResults = await Promise.allSettled([
         processOrders(unassignedSnapshot),
         processOrders(assignedSnapshot),
         processOrders(failedSnapshot),
@@ -287,36 +316,48 @@ export default function DistributionTab({
         processOrders(incompleteDeliveredSnapshot, true),
         processOrders(completeDeliveredNoDistributorSnapshot),
       ]);
-
+  
+      // Extract results with fallback to empty arrays
+      const [
+        unassignedOrdersData,
+        assignedOrdersData,
+        failedOrdersData,
+        incompleteOrdersData,
+        incompleteDeliveredOrdersData,
+        completeDeliveredNoDistributorData,
+      ] = processingResults.map((result) => 
+        result.status === "fulfilled" ? result.value : []
+      );
+  
       // Filter incomplete orders to only include unassigned ones
       const unassignedIncompleteOrders = incompleteOrdersData.filter(
         (order) =>
           !order.orderHeader.distributionStatus ||
           order.orderHeader.distributionStatus === "ready"
       );
-
+  
       // Filter complete delivered orders to only include those without distributor (need reassignment)
       const deliveredNeedingReassignment =
         completeDeliveredNoDistributorData.filter(
           (order) => !order.orderHeader.distributedBy
         );
-
+  
       // Combine for unassigned column: ready orders, incomplete unassigned, and delivered needing reassignment
       setUnassignedOrders([
         ...unassignedOrdersData,
         ...unassignedIncompleteOrders,
-        ...deliveredNeedingReassignment, // Add these to unassigned
+        ...deliveredNeedingReassignment,
       ]);
-
+  
       // Combine assigned, failed, and incomplete delivered for the right column
       setAssignedOrders([
         ...assignedOrdersData,
         ...failedOrdersData,
         ...incompleteDeliveredOrdersData,
-        // Don't include complete delivered here - they either go to unassigned or are truly done
       ]);
+  
     } catch (error) {
-      console.error("Error loading distribution orders:", error);
+      console.error("Critical error loading distribution orders:", error);
       alert("Siparişler yüklenirken hata oluştu");
     } finally {
       setLoading(false);
@@ -445,9 +486,7 @@ export default function DistributionTab({
 
       await Promise.all(assignPromises);
 
-      alert(
-        `${orderIds.length} sipariş ${cargoUserName} tarafından dağıtılacak`
-      );
+      
       setSelectedOrders(new Set());
       loadDistributionOrders();
     } catch (error) {
@@ -558,15 +597,7 @@ export default function DistributionTab({
         return (
           (orderData && isOrderIncomplete(orderData)) || wasPreviouslyPartial
         );
-      });
-
-      if (partialDeliveries.length > 0) {
-        alert(
-          `${orderIds.length} sipariş teslim edildi olarak işaretlendi. ${partialDeliveries.length} kısmi teslimat otomatik olarak yeniden atanmak üzere serbest bırakıldı.`
-        );
-      } else {
-        alert(`${orderIds.length} sipariş teslim edildi olarak işaretlendi`);
-      }
+      });     
 
       loadDistributionOrders();
     } catch (error) {

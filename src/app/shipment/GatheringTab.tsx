@@ -9,6 +9,8 @@ import {
   Timestamp,
   where,
   collectionGroup,
+  limit,
+  orderBy,
 } from "firebase/firestore";
 import { db } from "@/app/lib/firebase";
 import {
@@ -115,25 +117,33 @@ export default function GatheringTab({
       // Query for pending items (unassigned)
       const pendingQuery = firestoreQuery(
         collectionGroup(db, "items"),
-        where("gatheringStatus", "==", "pending")
-      );
+        where("gatheringStatus", "==", "pending"),
+        orderBy("timestamp", "desc"),
+        limit(30) // Load in chunks
+      )
 
       // Query for assigned items
       const assignedQuery = firestoreQuery(
         collectionGroup(db, "items"),
-        where("gatheringStatus", "==", "assigned")
+        where("gatheringStatus", "==", "assigned"),
+        orderBy("timestamp", "desc"),
+        limit(30) // Load in chunks
       );
 
       // Query for gathered items (waiting to be marked as arrived)
       const gatheredQuery = firestoreQuery(
         collectionGroup(db, "items"),
-        where("gatheringStatus", "==", "gathered")
+        where("gatheringStatus", "==", "gathered"),
+        orderBy("timestamp", "desc"),
+        limit(30) // Load in chunks
       );
 
       // Query for failed items
       const failedQuery = firestoreQuery(
         collectionGroup(db, "items"),
-        where("gatheringStatus", "==", "failed")
+        where("gatheringStatus", "==", "failed"),
+        orderBy("timestamp", "desc"),
+        limit(30) // Load in chunks
       );
 
       // Execute all queries
@@ -305,20 +315,59 @@ export default function GatheringTab({
       alert("Lütfen en az bir ürün seçin");
       return;
     }
-
+  
     const cargoUser = cargoUsers.find((u) => u.id === cargoUserId);
     if (!cargoUser) {
       alert("Kargo personeli bulunamadı");
       return;
     }
-
+  
     setAssigningCargo(true);
+    
+    // Store previous state for rollback
+    const previousUnassigned = [...unassignedGroups];
+    const previousAssigned = [...assignedGroups];
+    
+    // Optimistic update - immediately move items to assigned
+    const itemKeysArray = Array.from(selectedItems);
+    const optimisticUnassigned = unassignedGroups.map(group => ({
+      ...group,
+      items: group.items.filter(item => 
+        !itemKeysArray.includes(`${item.orderId}|${item.id}`)
+      )
+    })).filter(group => group.items.length > 0);
+    
+    const optimisticItems = itemKeysArray.map(key => {
+      const [orderId, itemId] = key.split("|");
+      for (const group of unassignedGroups) {
+        const item = group.items.find(i => i.orderId === orderId && i.id === itemId);
+        if (item) {
+          return {
+            ...item,
+            gatheringStatus: "assigned" as const,
+            gatheredBy: cargoUserId,
+            gatheredByName: cargoUser.displayName,
+            gatheredAt: Timestamp.now()
+          };
+        }
+      }
+      return null;
+    }).filter(Boolean) as OrderItem[];
+    
+    // Apply optimistic updates
+    setUnassignedGroups(optimisticUnassigned);
+    setAssignedGroups(prev => {
+      const newGroups = groupItemsBySeller(optimisticItems);
+      return [...prev, ...newGroups];
+    });
+    setSelectedItems(new Set());
+  
     try {
       await Promise.all(
-        Array.from(selectedItems).map(async (itemKey) => {
+        itemKeysArray.map(async (itemKey) => {
           const [orderId, itemId] = itemKey.split("|");
           const itemRef = doc(db, "orders", orderId, "items", itemId);
-
+  
           await updateDoc(itemRef, {
             gatheringStatus: "assigned",
             gatheredBy: cargoUserId,
@@ -327,15 +376,16 @@ export default function GatheringTab({
           });
         })
       );
-
-      alert(
-        `${selectedItems.size} ürün ${cargoUser.displayName} tarafından toplanacak`
-      );
-      setSelectedItems(new Set());
-      loadGatheringItems();
+  
+     
     } catch (error) {
       console.error("Error assigning items:", error);
       alert("Ürün atama sırasında hata oluştu");
+      
+      // Rollback on error
+      setUnassignedGroups(previousUnassigned);
+      setAssignedGroups(previousAssigned);
+      setSelectedItems(new Set(itemKeysArray));
     } finally {
       setAssigningCargo(false);
     }
@@ -343,13 +393,7 @@ export default function GatheringTab({
 
   // Mark items as arrived at warehouse
   const handleMarkAsArrived = async (itemKeys: string[]) => {
-    if (
-      !confirm(
-        `${itemKeys.length} ürünü depoya geldi olarak işaretlemek istiyor musunuz?`
-      )
-    ) {
-      return;
-    }
+    
 
     try {
       await Promise.all(
@@ -364,7 +408,7 @@ export default function GatheringTab({
         })
       );
 
-      alert(`${itemKeys.length} ürün depoya geldi olarak işaretlendi`);
+      
       loadGatheringItems();
     } catch (error) {
       console.error("Error marking items as arrived:", error);
@@ -751,7 +795,7 @@ export default function GatheringTab({
                         warehouseNote: null,
                         warehouseNoteUpdatedAt: null,
                       });
-                      alert("Not silindi");
+                      
                       setNoteModal({
                         show: false,
                         itemKey: "",
