@@ -183,6 +183,7 @@ export default function NormalBannersPage() {
       await addDoc(collection(db, "market_banners"), {
         imageUrl: downloadURL,
         createdAt: serverTimestamp(),
+        isActive: true,
       });
     } catch (error) {
       console.error("Error uploading banner:", error);
@@ -264,7 +265,11 @@ export default function NormalBannersPage() {
     setDragOver(false);
   };
 
-  const formatDate = (timestamp: Timestamp) => {
+  const formatDate = (timestamp: Timestamp | null | undefined) => {
+    if (!timestamp) {
+      return "Yükleniyor...";
+    }
+    
     return timestamp.toDate().toLocaleDateString("tr-TR", {
       year: "numeric",
       month: "long",

@@ -363,6 +363,9 @@ export default function Dashboard() {
       case "editproductapplications":
         router.push("/editproductapplications");
         break;
+        case "ads-applications":
+          router.push("/ads-applications");
+          break;
       case "shop-applications":
         router.push("/shopapplications");
         break;
@@ -1006,6 +1009,19 @@ export default function Dashboard() {
                   </h4>
                 </div>
                 <p className="text-xs text-gray-600">Teslimat noktaları</p>
+              </button>
+
+              <button
+                onClick={() => handleNavigation("ads-applications")}
+                className="p-3 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg text-left transition-colors group"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Image className="w-4 h-4 text-purple-600 group-hover:scale-110 transition-transform" />
+                  <h4 className="font-semibold text-gray-900 text-sm">
+                    Reklam Başvuruları
+                  </h4>
+                </div>
+                <p className="text-xs text-gray-600">Reklam başvuruları</p>
               </button>
 
               <button

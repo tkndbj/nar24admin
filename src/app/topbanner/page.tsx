@@ -267,7 +267,11 @@ export default function TopBannerPage() {
     setDragOver(false);
   };
 
-  const formatDate = (timestamp: Timestamp) => {
+  const formatDate = (timestamp: Timestamp | null | undefined) => {
+    if (!timestamp) {
+      return "Yükleniyor...";
+    }
+    
     return timestamp.toDate().toLocaleDateString("tr-TR", {
       day: "2-digit",
       month: "2-digit",

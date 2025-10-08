@@ -182,6 +182,7 @@ export default function ThinBannerPage() {
       await addDoc(collection(db, "market_thin_banners"), {
         imageUrl: downloadUrl,
         createdAt: serverTimestamp(),
+        isActive: true,
       });
     } catch (error) {
       console.error("Error uploading banner:", error);
@@ -263,7 +264,11 @@ export default function ThinBannerPage() {
     setDragOver(false);
   };
 
-  const formatDate = (timestamp: Timestamp) => {
+  const formatDate = (timestamp: Timestamp | null | undefined) => {
+    if (!timestamp) {
+      return "Yükleniyor...";
+    }
+    
     return timestamp.toDate().toLocaleDateString("tr-TR", {
       year: "numeric",
       month: "long",
@@ -272,7 +277,6 @@ export default function ThinBannerPage() {
       minute: "2-digit",
     });
   };
-
   const getTypeIcon = (type: string) => {
     switch (type) {
       case "shop":
