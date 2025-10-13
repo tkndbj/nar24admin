@@ -9,6 +9,10 @@ import {
   setDoc,
   deleteDoc,
   Timestamp,
+  arrayRemove,
+  getDoc,
+  writeBatch,
+  arrayUnion,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
@@ -27,7 +31,7 @@ import {
 import { Product, ProductUtils } from "../../models/Product";
 
 // Extended interface for product applications (includes fields not in final Product)
-interface ProductApplication extends Omit<Product, 'id' | 'createdAt'> {
+interface ProductApplication extends Omit<Product, "id" | "createdAt"> {
   id: string;
   ilan_no: string;
   createdAt: Timestamp;
@@ -59,7 +63,7 @@ export default function ProductApplications() {
       (snapshot) => {
         const applicationsData = snapshot.docs.map((doc) => {
           const data = doc.data();
-          
+
           return {
             id: doc.id,
             productName: ProductUtils.safeString(data.productName),
@@ -73,20 +77,40 @@ export default function ProductApplications() {
             reviewCount: ProductUtils.safeInt(data.reviewCount),
             gender: ProductUtils.safeStringNullable(data.gender),
             bundleIds: ProductUtils.safeStringArray(data.bundleIds),
-            bundlePrice: data.bundlePrice != null ? ProductUtils.safeDouble(data.bundlePrice) : undefined,
-            originalPrice: data.originalPrice != null ? ProductUtils.safeDouble(data.originalPrice) : undefined,
-            discountPercentage: data.discountPercentage != null ? ProductUtils.safeInt(data.discountPercentage) : undefined,
-            colorQuantities: ProductUtils.safeColorQuantities(data.colorQuantities),
-            boostClickCountAtStart: ProductUtils.safeInt(data.boostClickCountAtStart),
+            bundlePrice:
+              data.bundlePrice != null
+                ? ProductUtils.safeDouble(data.bundlePrice)
+                : undefined,
+            originalPrice:
+              data.originalPrice != null
+                ? ProductUtils.safeDouble(data.originalPrice)
+                : undefined,
+            discountPercentage:
+              data.discountPercentage != null
+                ? ProductUtils.safeInt(data.discountPercentage)
+                : undefined,
+            colorQuantities: ProductUtils.safeColorQuantities(
+              data.colorQuantities
+            ),
+            boostClickCountAtStart: ProductUtils.safeInt(
+              data.boostClickCountAtStart
+            ),
             availableColors: ProductUtils.safeStringArray(data.availableColors),
             userId: ProductUtils.safeString(data.userId),
-            discountThreshold: data.discountThreshold != null ? ProductUtils.safeInt(data.discountThreshold) : undefined,
+            discountThreshold:
+              data.discountThreshold != null
+                ? ProductUtils.safeInt(data.discountThreshold)
+                : undefined,
             rankingScore: ProductUtils.safeDouble(data.rankingScore),
             promotionScore: ProductUtils.safeDouble(data.promotionScore),
             ownerId: ProductUtils.safeString(data.ownerId),
             shopId: ProductUtils.safeStringNullable(data.shopId),
-            ilan_no: ProductUtils.safeString(data.ilan_no ?? data.ilanNo ?? doc.id),
-            ilanNo: ProductUtils.safeString(data.ilan_no ?? data.ilanNo ?? doc.id),
+            ilan_no: ProductUtils.safeString(
+              data.ilan_no ?? data.ilanNo ?? doc.id
+            ),
+            ilanNo: ProductUtils.safeString(
+              data.ilan_no ?? data.ilanNo ?? doc.id
+            ),
             searchIndex: ProductUtils.safeStringArray(data.searchIndex),
             createdAt: data.createdAt as Timestamp,
             sellerName: ProductUtils.safeString(data.sellerName, "Unknown"),
@@ -94,16 +118,26 @@ export default function ProductApplications() {
             subcategory: ProductUtils.safeString(data.subcategory),
             subsubcategory: ProductUtils.safeString(data.subsubcategory),
             quantity: ProductUtils.safeInt(data.quantity),
-            bestSellerRank: data.bestSellerRank != null ? ProductUtils.safeInt(data.bestSellerRank) : undefined,
+            bestSellerRank:
+              data.bestSellerRank != null
+                ? ProductUtils.safeInt(data.bestSellerRank)
+                : undefined,
             sold: Boolean(data.sold),
             clickCount: ProductUtils.safeInt(data.clickCount),
             clickCountAtStart: ProductUtils.safeInt(data.clickCountAtStart),
             favoritesCount: ProductUtils.safeInt(data.favoritesCount),
             cartCount: ProductUtils.safeInt(data.cartCount),
             purchaseCount: ProductUtils.safeInt(data.purchaseCount),
-            deliveryOption: ProductUtils.safeString(data.deliveryOption, "Self Delivery"),
-            boostedImpressionCount: ProductUtils.safeInt(data.boostedImpressionCount),
-            boostImpressionCountAtStart: ProductUtils.safeInt(data.boostImpressionCountAtStart),
+            deliveryOption: ProductUtils.safeString(
+              data.deliveryOption,
+              "Self Delivery"
+            ),
+            boostedImpressionCount: ProductUtils.safeInt(
+              data.boostedImpressionCount
+            ),
+            boostImpressionCountAtStart: ProductUtils.safeInt(
+              data.boostImpressionCountAtStart
+            ),
             isFeatured: Boolean(data.isFeatured),
             isTrending: Boolean(data.isTrending),
             isBoosted: Boolean(data.isBoosted),
@@ -115,17 +149,21 @@ export default function ProductApplications() {
             colorImages: ProductUtils.safeColorImages(data.colorImages),
             videoUrl: ProductUtils.safeStringNullable(data.videoUrl),
             attributes: ProductUtils.safeAttributes(data.attributes),
-            
+
             // Application-specific fields
             phone: ProductUtils.safeStringNullable(data.phone),
             region: ProductUtils.safeStringNullable(data.region),
             address: ProductUtils.safeStringNullable(data.address),
             ibanOwnerName: ProductUtils.safeStringNullable(data.ibanOwnerName),
-            ibanOwnerSurname: ProductUtils.safeStringNullable(data.ibanOwnerSurname),
+            ibanOwnerSurname: ProductUtils.safeStringNullable(
+              data.ibanOwnerSurname
+            ),
             iban: ProductUtils.safeStringNullable(data.iban),
             needsSync: Boolean(data.needsSync),
             updatedAt: data.updatedAt as Timestamp | undefined,
-            relatedProductIds: ProductUtils.safeStringArray(data.relatedProductIds),
+            relatedProductIds: ProductUtils.safeStringArray(
+              data.relatedProductIds
+            ),
           } as ProductApplication;
         }) as ProductApplication[];
 
@@ -149,10 +187,82 @@ export default function ProductApplications() {
     return () => unsubscribe();
   }, []);
 
+  async function updateCategoryShopsIndex(
+    shopId: string | null | undefined,
+    category: string,
+    subcategory: string,
+    subsubcategory: string,
+    operation: "add" | "remove"
+  ) {
+    // Early return if no shopId (individual products don't need this)
+    if (!shopId || shopId.trim() === "") return;
+
+    try {
+      const shopDoc = await getDoc(doc(db, "shops", shopId));
+      if (!shopDoc.exists()) {
+        console.warn(`Shop ${shopId} not found, skipping category index`);
+        return;
+      }
+
+      const shopData = shopDoc.data();
+      const shopInfo = {
+        shopId: shopId,
+        shopName: shopData.name || "Unknown Shop",
+      };
+
+      // Normalize category strings
+      const normalize = (s: string) => {
+        if (!s || s.trim() === "") return "";
+        return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+      };
+
+      const categories = [
+        { key: normalize(subsubcategory), level: "subsubcategory" },
+        { key: normalize(subcategory), level: "subcategory" },
+        { key: normalize(category), level: "category" },
+      ].filter((cat) => cat.key !== "");
+
+      // Use batch for atomic operations
+      const batch = writeBatch(db);
+
+      for (const { key, level } of categories) {
+        const docRef = doc(db, "category_shops", key);
+
+        if (operation === "add") {
+          batch.set(
+            docRef,
+            {
+              shops: arrayUnion(shopInfo),
+              level: level,
+              categoryPath: key,
+              lastUpdated: Timestamp.now(),
+            },
+            { merge: true }
+          );
+        } else {
+          batch.set(
+            docRef,
+            {
+              shops: arrayRemove(shopInfo),
+              lastUpdated: Timestamp.now(),
+            },
+            { merge: true }
+          );
+        }
+      }
+
+      await batch.commit();
+      console.log(`✅ Category index updated for shop ${shopId}`);
+    } catch (error) {
+      console.error("Error updating category shops index:", error);
+      // Don't throw - we don't want to fail the entire approval if indexing fails
+    }
+  }
+
   const approveApplication = async (application: ProductApplication) => {
     if (processingIds.has(application.id)) return;
     setProcessingIds((prev) => new Set(prev).add(application.id));
-  
+
     try {
       const {
         id,
@@ -166,7 +276,7 @@ export default function ProductApplications() {
         iban,
         ...productData
       } = application;
-  
+
       void applicationCreatedAt;
       void phone;
       void region;
@@ -174,9 +284,9 @@ export default function ProductApplications() {
       void ibanOwnerName;
       void ibanOwnerSurname;
       void iban;
-  
+
       const newDocId = ilan_no && ilan_no.trim() !== "" ? ilan_no : id;
-  
+
       const payload = {
         ...productData,
         id: newDocId,
@@ -186,28 +296,42 @@ export default function ProductApplications() {
         updatedAt: Timestamp.now(),
         relatedProductIds: [],
       };
-  
-      // ✅ Remove undefined values (Firestore doesn't accept them)
+
+      // Remove undefined values
       Object.keys(payload).forEach((key) => {
         if (payload[key as keyof typeof payload] === undefined) {
           delete payload[key as keyof typeof payload];
         }
       });
-  
+
       console.log("📤 Approving product with data:", {
         id: newDocId,
-        gender: payload.gender,
-        attributes: payload.attributes,
+        shopId: payload.shopId,
         category: payload.category,
         subcategory: payload.subcategory,
+        subsubcategory: payload.subsubcategory,
       });
-  
+
       const isShopProduct = payload.shopId && payload.shopId.trim() !== "";
       const collectionName = isShopProduct ? "shop_products" : "products";
-  
+
+      // ✅ STEP 1: Add product to main collection
       await setDoc(doc(db, collectionName, newDocId), payload);
+
+      // ✅ STEP 2: Update category_shops index (only for shop products)
+      if (isShopProduct) {
+        await updateCategoryShopsIndex(
+          payload.shopId!,
+          payload.category,
+          payload.subcategory,
+          payload.subsubcategory,
+          "add"
+        );
+      }
+
+      // ✅ STEP 3: Delete the application
       await deleteDoc(doc(db, "product_applications", id));
-  
+
       showNotification("Ürün başarıyla onaylandı!");
     } catch (error) {
       console.error("Onaylama hatası:", error);
