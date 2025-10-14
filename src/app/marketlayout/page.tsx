@@ -454,24 +454,31 @@ export default function MarketLayoutPage() {
   );
 
   // Validate widget data
-  const validateWidget = useCallback((widget: any): widget is MarketWidget => {
+  const validateWidget = useCallback((widget: unknown): widget is MarketWidget => {
     return (
-      widget &&
+      widget !== null &&
       typeof widget === "object" &&
-      typeof widget.id === "string" &&
-      widget.id.trim() !== "" &&
-      typeof widget.type === "string" &&
-      widget.type.trim() !== "" &&
-      typeof widget.isVisible === "boolean" &&
-      typeof widget.order === "number" &&
-      !isNaN(widget.order)
+      widget !== null &&
+      typeof (widget as Record<string, unknown>).id === "string" &&
+      (widget as Record<string, unknown>).id !== "" &&
+      typeof (widget as Record<string, unknown>).type === "string" &&
+      (widget as Record<string, unknown>).type !== "" &&
+      typeof (widget as Record<string, unknown>).isVisible === "boolean" &&
+      typeof (widget as Record<string, unknown>).order === "number" &&
+      !isNaN((widget as Record<string, unknown>).order as number)
     );
   }, []);
 
   // Parse widgets from Firestore data
   const parseWidgetsFromData = useCallback(
-    (data: any): MarketWidget[] => {
-      if (!data?.widgets || !Array.isArray(data.widgets)) {
+    (data: unknown): MarketWidget[] => {
+      if (!data || typeof data !== "object" || data === null) {
+        console.warn("Invalid data format");
+        return DEFAULT_WIDGETS;
+      }
+      
+      const dataObj = data as Record<string, unknown>;
+      if (!dataObj.widgets || !Array.isArray(dataObj.widgets)) {
         console.warn("No widgets array found in data");
         return DEFAULT_WIDGETS;
       }
@@ -479,7 +486,7 @@ export default function MarketLayoutPage() {
       const seenIds = new Set<string>();
       const validWidgets: MarketWidget[] = [];
 
-      for (const widget of data.widgets) {
+      for (const widget of dataObj.widgets) {
         if (!validateWidget(widget)) {
           console.warn("Invalid widget data:", widget);
           continue;
