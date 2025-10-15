@@ -162,6 +162,7 @@ export default function AdsApplicationsPage() {
           type: "ad_approved",
           timestamp: serverTimestamp(), // ✅ CHANGED FROM createdAt
           isRead: false,
+          adTypeLabel: AD_TYPE_CONFIG[submission.adType].label,
           message: `${submission.shopName} mağazanız için ${AD_TYPE_CONFIG[submission.adType].label} başvurunuz onaylandı. Ödeme yapmak için tıklayın.`,
           message_en: `Your ${AD_TYPE_CONFIG[submission.adType].label} application for ${submission.shopName} has been approved. Click to proceed with payment.`,
           message_tr: `${submission.shopName} mağazanız için ${AD_TYPE_CONFIG[submission.adType].label} başvurunuz onaylandı. Ödeme yapmak için tıklayın.`,
@@ -169,6 +170,7 @@ export default function AdsApplicationsPage() {
           duration: submission.duration,
           price: submission.price,
           imageUrl: submission.imageUrl,
+          shopId: submission.shopId,
           paymentLink,
           submissionId: submission.id,
           shopName: submission.shopName,
@@ -228,8 +230,9 @@ export default function AdsApplicationsPage() {
           message_en: `Your ${AD_TYPE_CONFIG[submission.adType].label} application for ${submission.shopName} has been rejected. Reason: ${rejectionReason.trim()}`,
           message_tr: `${submission.shopName} mağazanız için ${AD_TYPE_CONFIG[submission.adType].label} başvurunuz reddedildi. Neden: ${rejectionReason.trim()}`,
           adType: submission.adType,
+          shopId: submission.shopId,
           rejectionReason: rejectionReason.trim(),
-          submissionId: submission.id,
+          submissionId: submission.id,          
           shopName: submission.shopName,
         }
       );
