@@ -14,7 +14,7 @@ import {
   XCircle,
   Eye,
   Calendar,
-  Filter,  
+  Filter,
   Search,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
@@ -26,6 +26,8 @@ import {
   doc,
   updateDoc,
   Timestamp,
+  getDoc,
+  addDoc,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
@@ -117,13 +119,59 @@ export default function RefundFormsPage() {
     setUpdatingStatus(true);
     try {
       const formRef = doc(db, "refund-forms", formId);
+
+      // Get the form data first to access userId
+      const formDoc = await getDoc(formRef);
+      if (!formDoc.exists()) {
+        throw new Error("Form not found");
+      }
+
+      const formData = formDoc.data() as RefundForm;
+
+      // Update the form status
       await updateDoc(formRef, {
         status: newStatus,
         adminNote: adminNote.trim() || null,
         updatedAt: Timestamp.now(),
       });
 
-      alert(`İade talebi ${newStatus === "approved" ? "onaylandı" : "reddedildi"}`);
+      // CREATE NOTIFICATION HERE
+      // Add notification to user's notifications subcollection
+      await addDoc(collection(db, "users", formData.userId, "notifications"), {
+        type:
+          newStatus === "approved"
+            ? "refund_request_approved"
+            : "refund_request_rejected", // ✅ More explicit
+        status: newStatus,
+        message:
+          newStatus === "approved"
+            ? "Your refund request has been approved"
+            : "Your refund request has been rejected",
+        messageEn:
+          newStatus === "approved"
+            ? "Your refund request has been approved"
+            : "Your refund request has been rejected",
+        messageTr:
+          newStatus === "approved"
+            ? "İade talebiniz onaylandı"
+            : "İade talebiniz reddedildi",
+        messageRu:
+          newStatus === "approved"
+            ? "Ваш запрос на возврат одобрен"
+            : "Ваш запрос на возврат отклонен",
+        receiptNo: formData.receiptNo,
+        refundFormId: formId,
+        ...(newStatus === "rejected" &&
+          adminNote.trim() && {
+            rejectionReason: adminNote.trim(),
+          }),
+        timestamp: Timestamp.now(),
+        isRead: false,
+      });
+
+      alert(
+        `İade talebi ${newStatus === "approved" ? "onaylandı" : "reddedildi"}`
+      );
       setShowDetailModal(false);
       setSelectedForm(null);
       setAdminNote("");
@@ -309,7 +357,11 @@ export default function RefundFormsPage() {
                   value={statusFilter}
                   onChange={(e) =>
                     setStatusFilter(
-                      e.target.value as "all" | "pending" | "approved" | "rejected"
+                      e.target.value as
+                        | "all"
+                        | "pending"
+                        | "approved"
+                        | "rejected"
                     )
                   }
                   className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
@@ -501,7 +553,7 @@ export default function RefundFormsPage() {
                 {selectedForm.status === "pending" && (
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Yönetici Notu (İsteğe Bağlı)
+                      Yönetici Notu
                     </label>
                     <textarea
                       value={adminNote}
