@@ -1,28 +1,29 @@
 "use client";
 
+import React from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import {
   ArrowLeft,
   Store,
   Loader2,
-  Image as ImageIcon,
   Package,
   MapPin,
   Star,
-  Eye,
-  Heart,
   Search,
   Grid3x3,
   List,
-  Users,
   Phone,
   Calendar,
-  ExternalLink,
   User,
   Zap,
   BadgeCheck,
-  Building2,
   FolderOpen,
+  Database,
+  Copy,
+  Edit,
+  Check,
+  X,
+  Building2,
 } from "lucide-react";
 import {
   useState,
@@ -39,11 +40,9 @@ import {
   getDocs,
   query,
   where,
-  orderBy,
+  orderBy as firestoreOrderBy,
   limit,
-  startAfter,
   Timestamp,
-  DocumentSnapshot,
   updateDoc,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -58,8 +57,6 @@ interface ShopData {
   ownerId: string;
   profileImageUrl?: string;
   coverImageUrls?: string[];
-  homeImageUrls?: string[];
-  homeImageLinks?: { [key: string]: string };
   categories?: string[];
   category?: string;
   address?: string;
@@ -70,25 +67,35 @@ interface ShopData {
   clickCount?: number;
   totalProductsSold?: number;
   isBoosted?: boolean;
-  stockBadgeAcknowledged?: boolean;
   transactionsBadgeAcknowledged?: boolean;
-  taxPlateCertificateUrl?: string;
-  editors?: string[];
-  viewers?: string[];
-  coOwners?: string[];
-  seller_info?: {
-    info?: {
-      address?: string;
-      iban?: string;
-      ibanOwnerName?: string;
-      ibanOwnerSurname?: string;
-      phone?: string;
-      region?: string;
-    };
-  };
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
   ourComission?: number;
+}
+
+interface ProductData {
+  id: string;
+  productName: string;
+  price: number;
+  currency: string;
+  imageUrls: string[];
+  sold: boolean;
+  shopId: string;
+}
+
+interface ReviewData {
+  id: string;
+  rating: number;
+  review: string;
+  userId: string;
+  timestamp: Timestamp;
+}
+
+interface CollectionData {
+  id: string;
+  name: string;
+  imageUrl: string;
+  productIds: string[];
 }
 
 interface UserData {
@@ -98,106 +105,24 @@ interface UserData {
   profileImage?: string;
 }
 
-interface ProductData {
-  id: string;
-  productName: string;
-  price: number;
-  currency: string;
-  category: string;
-  subcategory: string;
-  imageUrls: string[];
-  condition: string;
-  clickCount: number;
-  favoritesCount: number;
-  purchaseCount: number;
-  averageRating: number;
-  reviewCount: number;
-  sold: boolean;
-  isFeatured: boolean;
-  isBoosted: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-  shopId: string;
-  userId: string;
-  description?: string;
-  address?: string;
-  region?: string;
-}
-
-interface ReviewData {
-  id: string;
-  rating: number;
-  review: string;
-  userId: string;
-  sellerId: string;
-  sellerName: string;
-  timestamp: Timestamp;
-  transactionId?: string;
-  imageUrls?: string[];
-  productId?: string;
-  productName?: string;
-  productImage?: string;
-  price?: number;
-  currency?: string;
-}
-
-interface CollectionData {
-  id: string;
-  name: string;
-  imageUrl: string;
-  productIds: string[];
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-}
-
 type ViewMode = "grid" | "list";
-type FilterStatus = "all" | "active" | "sold" | "featured";
-type SortBy = "newest" | "oldest" | "price_high" | "price_low" | "popular";
-type TabType =
-  | "products"
-  | "about"
-  | "reviews"
-  | "collections"
-  | "members"
-  | "analytics";
+type FilterStatus = "all" | "active" | "sold";
+type SortBy = "newest" | "oldest" | "price_high" | "price_low";
+type TabType = "products" | "collections" | "about" | "reviews" | "members";
 
 function ShopDetailsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const shopId = searchParams.get("shopId");
 
-  // Refs for infinite scroll
-  const productsObserverRef = useRef<IntersectionObserver | null>(null);
-  const lastProductElementRef = useRef<HTMLDivElement | null>(null);
+  // Refs
+  const allFieldsContainerRef = useRef<HTMLDivElement | null>(null);
 
   // State Management
   const [shop, setShop] = useState<ShopData | null>(null);
   const [products, setProducts] = useState<ProductData[]>([]);
   const [reviews, setReviews] = useState<ReviewData[]>([]);
   const [collections, setCollections] = useState<CollectionData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [productsLoading, setProductsLoading] = useState(false);
-  const [reviewsLoading, setReviewsLoading] = useState(false);
-  const [collectionsLoading, setCollectionsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>("products");
-
-  const [showCommissionModal, setShowCommissionModal] = useState(false);
-const [commissionPercentage, setCommissionPercentage] = useState<number>(0);
-const [savingCommission, setSavingCommission] = useState(false);
-
-  // Filter and Search States
-  const [productSearch, setProductSearch] = useState("");
-  const [productViewMode, setProductViewMode] = useState<ViewMode>("grid");
-  const [productFilter, setProductFilter] = useState<FilterStatus>("all");
-  const [productSort, setProductSort] = useState<SortBy>("newest");
-
-  // Pagination
-  const [lastProductDoc, setLastProductDoc] = useState<DocumentSnapshot | null>(
-    null
-  );
-  const [hasMoreProducts, setHasMoreProducts] = useState(true);
-  const ITEMS_PER_PAGE = 20;
-
   const [members, setMembers] = useState<{
     owner?: UserData;
     coOwners: UserData[];
@@ -208,29 +133,17 @@ const [savingCommission, setSavingCommission] = useState(false);
     editors: [],
     viewers: [],
   });
-  const [membersLoading, setMembersLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [savingField, setSavingField] = useState<string | null>(null);
 
-  // Fetch functions
-  const fetchSellerInfo = useCallback(async (shopId: string) => {
-    try {
-      const sellerInfoQuery = query(
-        collection(db, "shops", shopId, "seller_info")
-      );
-      const sellerInfoSnapshot = await getDocs(sellerInfoQuery);
+  // Filter and Search States
+  const [productSearch, setProductSearch] = useState("");
+  const [productViewMode, setProductViewMode] = useState<ViewMode>("grid");
+  const [productFilter, setProductFilter] = useState<FilterStatus>("all");
+  const [productSort, setProductSort] = useState<SortBy>("newest");
+  const [activeTab, setActiveTab] = useState<TabType>("products");
 
-      if (!sellerInfoSnapshot.empty) {
-        const sellerInfoDoc = sellerInfoSnapshot.docs[0];
-        const sellerInfo = sellerInfoDoc.data();
-        return sellerInfo;
-      }
-
-      return null;
-    } catch (error) {
-      console.error("Error fetching seller info:", error);
-      return null;
-    }
-  }, []);
-
+  // Fetch shop data
   const fetchShopData = useCallback(async () => {
     if (!shopId) {
       toast.error("Mağaza ID'si bulunamadı");
@@ -240,8 +153,9 @@ const [savingCommission, setSavingCommission] = useState(false);
 
     try {
       setLoading(true);
-      const shopDoc = await getDoc(doc(db, "shops", shopId));
 
+      // Fetch shop
+      const shopDoc = await getDoc(doc(db, "shops", shopId));
       if (!shopDoc.exists()) {
         toast.error("Mağaza bulunamadı");
         router.push("/dashboard");
@@ -249,366 +163,136 @@ const [savingCommission, setSavingCommission] = useState(false);
       }
 
       const shopData = { id: shopDoc.id, ...shopDoc.data() } as ShopData;
-      const sellerInfo = await fetchSellerInfo(shopId);
-
-      if (sellerInfo) {
-        shopData.seller_info = { info: sellerInfo };
-      }
-
       setShop(shopData);
+
+      // Fetch products (limit to 50 for performance)
+      const productsQuery = query(
+        collection(db, "shop_products"),
+        where("shopId", "==", shopId),
+        firestoreOrderBy("createdAt", "desc"),
+        limit(50)
+      );
+      const productsSnapshot = await getDocs(productsQuery);
+      const productsData = productsSnapshot.docs.map(
+        (doc) => ({ id: doc.id, ...doc.data() } as ProductData)
+      );
+      setProducts(productsData);
+
+      // Fetch reviews (limit to 30)
+      const reviewsQuery = query(
+        collection(db, "shops", shopId, "reviews"),
+        firestoreOrderBy("timestamp", "desc"),
+        limit(30)
+      );
+      const reviewsSnapshot = await getDocs(reviewsQuery);
+      const reviewsData = reviewsSnapshot.docs.map(
+        (doc) => ({ id: doc.id, ...doc.data() } as ReviewData)
+      );
+      setReviews(reviewsData);
+
+      // Fetch collections (limit to 20)
+      const collectionsQuery = query(
+        collection(db, "shops", shopId, "collections"),
+        firestoreOrderBy("createdAt", "desc"),
+        limit(20)
+      );
+      const collectionsSnapshot = await getDocs(collectionsQuery);
+      const collectionsData = collectionsSnapshot.docs.map(
+        (doc) => ({ id: doc.id, ...doc.data() } as CollectionData)
+      );
+      setCollections(collectionsData);
+
+      // Fetch owner
+      if (shopData.ownerId) {
+        const ownerDoc = await getDoc(doc(db, "users", shopData.ownerId));
+        if (ownerDoc.exists()) {
+          setMembers((prev) => ({
+            ...prev,
+            owner: { id: ownerDoc.id, ...ownerDoc.data() } as UserData,
+          }));
+        }
+      }
     } catch (error) {
-      console.error("Error fetching shop:", error);
+      console.error("Error fetching shop data:", error);
       toast.error("Mağaza bilgileri yüklenirken hata oluştu");
     } finally {
       setLoading(false);
     }
-  }, [shopId, router, fetchSellerInfo]);
+  }, [shopId, router]);
 
-  const fetchReviews = useCallback(async () => {
-    if (!shopId) return;
-
-    try {
-      setReviewsLoading(true);
-      const reviewsQuery = query(
-        collection(db, "shops", shopId, "reviews"),
-        orderBy("timestamp", "desc")
-      );
-      const reviewsSnapshot = await getDocs(reviewsQuery);
-
-      const reviewsData = reviewsSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as ReviewData[];
-
-      setReviews(reviewsData);
-    } catch (error) {
-      console.error("Error fetching reviews:", error);
-      toast.error("Yorumlar yüklenirken hata oluştu");
-    } finally {
-      setReviewsLoading(false);
-    }
-  }, [shopId]);
-
-  const fetchCollections = useCallback(async () => {
-    if (!shopId) return;
-
-    try {
-      setCollectionsLoading(true);
-      const collectionsQuery = query(
-        collection(db, "shops", shopId, "collections"),
-        orderBy("createdAt", "desc")
-      );
-      const collectionsSnapshot = await getDocs(collectionsQuery);
-
-      const collectionsData = collectionsSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as CollectionData[];
-
-      setCollections(collectionsData);
-    } catch (error) {
-      console.error("Error fetching collections:", error);
-      toast.error("Koleksiyonlar yüklenirken hata oluştu");
-    } finally {
-      setCollectionsLoading(false);
-    }
-  }, [shopId]);
-
-  const fetchMemberDetails = useCallback(async (shop: ShopData) => {
-    if (!shop) return;
-
-    setMembersLoading(true);
-
-    try {
-      const memberIds: string[] = [];
-      const roleMap: { [key: string]: string } = {};
-
-      if (shop.ownerId) {
-        memberIds.push(shop.ownerId);
-        roleMap[shop.ownerId] = "owner";
-      }
-
-      if (shop.coOwners) {
-        shop.coOwners.forEach((id) => {
-          memberIds.push(id);
-          roleMap[id] = "coOwner";
-        });
-      }
-
-      if (shop.editors) {
-        shop.editors.forEach((id) => {
-          memberIds.push(id);
-          roleMap[id] = "editor";
-        });
-      }
-
-      if (shop.viewers) {
-        shop.viewers.forEach((id) => {
-          memberIds.push(id);
-          roleMap[id] = "viewer";
-        });
-      }
-
-      const uniqueIds = [...new Set(memberIds)];
-      const users: UserData[] = [];
-
-      for (let i = 0; i < uniqueIds.length; i += 10) {
-        const batch = uniqueIds.slice(i, i + 10);
-        if (batch.length > 0) {
-          const usersQuery = query(
-            collection(db, "users"),
-            where("__name__", "in", batch)
-          );
-          const snapshot = await getDocs(usersQuery);
-          const batchUsers = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          })) as UserData[];
-          users.push(...batchUsers);
-        }
-      }
-
-      const organizedMembers = {
-        owner: undefined as UserData | undefined,
-        coOwners: [] as UserData[],
-        editors: [] as UserData[],
-        viewers: [] as UserData[],
-      };
-
-      users.forEach((user) => {
-        const role = roleMap[user.id];
-        switch (role) {
-          case "owner":
-            organizedMembers.owner = user;
-            break;
-          case "coOwner":
-            organizedMembers.coOwners.push(user);
-            break;
-          case "editor":
-            organizedMembers.editors.push(user);
-            break;
-          case "viewer":
-            organizedMembers.viewers.push(user);
-            break;
-        }
-      });
-
-      setMembers(organizedMembers);
-    } catch (error) {
-      console.error("Error fetching member details:", error);
-      toast.error("Üye bilgileri yüklenirken hata oluştu");
-    } finally {
-      setMembersLoading(false);
-    }
-  }, []);
-
-  const fetchShopProducts = useCallback(
-    async (append = false) => {
-      if (!shopId || productsLoading) return;
-
-      try {
-        setProductsLoading(true);
-
-        let q = query(
-          collection(db, "shop_products"),
-          where("shopId", "==", shopId),
-          orderBy(
-            productSort === "newest"
-              ? "createdAt"
-              : productSort === "oldest"
-              ? "createdAt"
-              : productSort === "price_high"
-              ? "price"
-              : productSort === "price_low"
-              ? "price"
-              : "clickCount",
-            productSort === "oldest" || productSort === "price_low"
-              ? "asc"
-              : "desc"
-          ),
-          limit(ITEMS_PER_PAGE)
-        );
-
-        if (append && lastProductDoc) {
-          q = query(q, startAfter(lastProductDoc));
-        }
-
-        const snapshot = await getDocs(q);
-        const newProducts = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as ProductData[];
-
-        if (append) {
-          setProducts((prev) => [...prev, ...newProducts]);
-        } else {
-          setProducts(newProducts);
-          setLastProductDoc(null);
-        }
-
-        if (newProducts.length > 0) {
-          setLastProductDoc(snapshot.docs[snapshot.docs.length - 1]);
-        }
-
-        setHasMoreProducts(newProducts.length === ITEMS_PER_PAGE);
-      } catch (error) {
-        console.error("Error fetching products:", error);
-        toast.error("Ürünler yüklenirken hata oluştu");
-      } finally {
-        setProductsLoading(false);
-      }
-    },
-    [shopId, productSort, lastProductDoc, productsLoading]
-  );
-
-  const handleSaveCommission = async () => {
-    if (!shopId) return;
-    
-    try {
-      setSavingCommission(true);
-      await updateDoc(doc(db, "shops", shopId), {
-        ourComission: commissionPercentage,
-        updatedAt: Timestamp.now()
-      });
-      
-      toast.success("Komisyon oranı kaydedildi");
-      setShowCommissionModal(false);
-      
-      // Update local state
-      if (shop) {
-        setShop({ ...shop, ourComission: commissionPercentage });
-      }
-    } catch (error) {
-      console.error("Error saving commission:", error);
-      toast.error("Komisyon oranı kaydedilirken hata oluştu");
-    } finally {
-      setSavingCommission(false);
-    }
-  };
-
-  const setupProductsInfiniteScroll = useCallback(() => {
-    if (productsObserverRef.current) {
-      productsObserverRef.current.disconnect();
-    }
-
-    productsObserverRef.current = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMoreProducts && !productsLoading) {
-          fetchShopProducts(true);
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (lastProductElementRef.current) {
-      productsObserverRef.current.observe(lastProductElementRef.current);
-    }
-  }, [hasMoreProducts, productsLoading, fetchShopProducts]);
-
-  const filteredProducts = useMemo(() => {
-    let filtered = products;
-
-    if (productSearch.trim()) {
-      const searchTerm = productSearch.toLowerCase().trim();
-      filtered = filtered.filter(
-        (product) =>
-          product.productName?.toLowerCase().includes(searchTerm) ||
-          product.category?.toLowerCase().includes(searchTerm) ||
-          product.subcategory?.toLowerCase().includes(searchTerm)
-      );
-    }
-
-    if (productFilter !== "all") {
-      filtered = filtered.filter((product) => {
-        switch (productFilter) {
-          case "active":
-            return !product.sold;
-          case "sold":
-            return product.sold;
-          case "featured":
-            return product.isFeatured || product.isBoosted;
-          default:
-            return true;
-        }
-      });
-    }
-
-    return filtered;
-  }, [products, productSearch, productFilter]);
-
-  // Effects
   useEffect(() => {
     fetchShopData();
   }, [fetchShopData]);
 
-  useEffect(() => {
-    if (shop) {
-      setProducts([]);
-      setLastProductDoc(null);
-      setHasMoreProducts(true);
-      fetchShopProducts();
-      fetchMemberDetails(shop);
-      fetchReviews();
-      fetchCollections();
+  // Save individual field
+  const saveIndividualField = async (
+    field: string,
+    value: string | number | boolean | string[]
+  ) => {
+    if (!shop) return;
+
+    try {
+      setSavingField(field);
+
+      await updateDoc(doc(db, "shops", shop.id), {
+        [field]: value,
+        updatedAt: Timestamp.now(),
+      });
+
+      setShop((prev) => (prev ? { ...prev, [field]: value } : null));
+      toast.success(`${field} güncellendi!`);
+    } catch (error) {
+      console.error("Error updating field:", error);
+      toast.error(`${field} güncellenirken hata oluştu`);
+    } finally {
+      setSavingField(null);
     }
-  }, [shop, fetchMemberDetails, fetchReviews, fetchCollections]);
+  };
 
-  useEffect(() => {
-    if (shop?.ourComission) {
-      setCommissionPercentage(shop.ourComission);
+  // Filtered and sorted products
+  const filteredProducts = useMemo(() => {
+    let filtered = [...products];
+
+    // Search filter
+    if (productSearch.trim()) {
+      const searchLower = productSearch.toLowerCase();
+      filtered = filtered.filter((product) =>
+        product.productName.toLowerCase().includes(searchLower)
+      );
     }
-  }, [shop]);
 
-  useEffect(() => {
-    if (shop) {
-      setProducts([]);
-      setLastProductDoc(null);
-      setHasMoreProducts(true);
-      fetchShopProducts();
+    // Status filter
+    if (productFilter === "active") {
+      filtered = filtered.filter((product) => !product.sold);
+    } else if (productFilter === "sold") {
+      filtered = filtered.filter((product) => product.sold);
     }
-  }, [productSort]);
 
-  useEffect(() => {
-    setupProductsInfiniteScroll();
-
-    return () => {
-      if (productsObserverRef.current) {
-        productsObserverRef.current.disconnect();
+    // Sorting
+    filtered.sort((a, b) => {
+      switch (productSort) {
+        case "newest":
+          return 0; // Already sorted by createdAt desc
+        case "oldest":
+          return 0; // Would need to reverse
+        case "price_high":
+          return b.price - a.price;
+        case "price_low":
+          return a.price - b.price;
+        default:
+          return 0;
       }
-    };
-  }, [filteredProducts.length, setupProductsInfiniteScroll]);
+    });
 
-  const formatPrice = (price: number, currency: string) => {
-    return new Intl.NumberFormat("tr-TR", {
-      style: "currency",
-      currency: currency === "TL" ? "TRY" : currency,
-      minimumFractionDigits: 0,
-    }).format(price);
-  };
-
-  const formatNumber = (num: number) => {
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-    return num.toString();
-  };
-
-  const formatDate = (timestamp: Timestamp) => {
-    const date = timestamp.toDate();
-    return new Intl.DateTimeFormat("tr-TR", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
-  };
+    return filtered;
+  }, [products, productSearch, productFilter, productSort]);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="flex items-center gap-3 text-gray-600">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          <span className="text-sm">Mağaza bilgileri yükleniyor...</span>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+        <div className="flex items-center gap-3 text-gray-900">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+          <span>Mağaza bilgileri yükleniyor...</span>
         </div>
       </div>
     );
@@ -616,201 +300,418 @@ const [savingCommission, setSavingCommission] = useState(false);
 
   if (!shop) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+          <h2 className="text-xl font-semibold mb-2 text-gray-900">
             Mağaza Bulunamadı
           </h2>
-          <p className="text-sm text-gray-500">
-            Aradığınız mağaza mevcut değil.
-          </p>
+          <p className="text-gray-600">Aradığınız mağaza mevcut değil.</p>
         </div>
       </div>
     );
   }
 
-  const ProductCard = ({
-    product,
-    viewMode,
-    isLast = false,
+  // All Fields Display Component
+  const AllFieldsDisplay = ({
+    shop,
+    onFieldSave,
+    savingField,
+    setSavingField,
   }: {
-    product: ProductData;
-    viewMode: ViewMode;
-    isLast?: boolean;
+    shop: ShopData;
+    onFieldSave: (
+      field: string,
+      value: string | number | boolean
+    ) => Promise<void>;
+    savingField: string | null;
+    setSavingField: (field: string | null) => void;
   }) => {
-    const handleProductClick = () => {
-      router.push(`/productdetails?productId=${product.id}`);
+    const [searchTerm, setSearchTerm] = useState("");
+    const [editingField, setEditingField] = useState<string | null>(null);
+    const [editValue, setEditValue] = useState<string>("");
+
+    const formatFieldValue = (
+      value: unknown
+    ): { display: string; type: string } => {
+      if (value === null) return { display: "null", type: "null" };
+      if (value === undefined)
+        return { display: "undefined", type: "undefined" };
+
+      const type = typeof value;
+
+      switch (type) {
+        case "string":
+          return { display: value as string, type: "string" };
+        case "number":
+          return { display: value.toString(), type: "number" };
+        case "boolean":
+          return { display: value.toString(), type: "boolean" };
+        case "object":
+          if (value instanceof Date) {
+            return { display: value.toLocaleString("tr-TR"), type: "date" };
+          }
+          if (
+            value &&
+            typeof value === "object" &&
+            "toDate" in value &&
+            typeof (value as { toDate: () => Date }).toDate === "function"
+          ) {
+            return {
+              display: (value as { toDate: () => Date })
+                .toDate()
+                .toLocaleString("tr-TR"),
+              type: "timestamp",
+            };
+          }
+          if (Array.isArray(value)) {
+            return { display: JSON.stringify(value), type: "array" };
+          }
+          if (value && typeof value === "object") {
+            return { display: JSON.stringify(value), type: "object" };
+          }
+          return { display: JSON.stringify(value), type: "object" };
+        default:
+          return { display: String(value), type: type };
+      }
     };
 
-    if (viewMode === "list") {
-      return (
-        <div
-          ref={isLast ? lastProductElementRef : null}
-          onClick={handleProductClick}
-          className="bg-white border border-gray-200 rounded-lg p-3 hover:shadow-md transition-all duration-200 cursor-pointer group"
-        >
-          <div className="flex items-center gap-3">
-            <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
-              {product.imageUrls?.[0] ? (
-                <Image
-                  src={product.imageUrls[0]}
-                  alt={product.productName || "Ürün"}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-                  <ImageIcon className="w-6 h-6 text-gray-400" />
-                </div>
-              )}
-            </div>
+    const getTypeColor = (type: string): string => {
+      switch (type) {
+        case "string":
+          return "text-green-600";
+        case "number":
+          return "text-blue-600";
+        case "boolean":
+          return "text-purple-600";
+        case "timestamp":
+          return "text-orange-600";
+        case "date":
+          return "text-orange-600";
+        case "array":
+          return "text-pink-600";
+        case "object":
+          return "text-indigo-600";
+        default:
+          return "text-gray-900";
+      }
+    };
 
-            <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-medium text-gray-900 truncate group-hover:text-indigo-600">
-                {product.productName || "Ürün Adı Yok"}
-              </h3>
-              <p className="text-xs text-gray-500">
-                {product.category || "Kategori Yok"}
-              </p>
-              <div className="flex items-center gap-3 mt-1">
-                <span className="text-sm font-bold text-gray-900">
-                  {formatPrice(product.price || 0, product.currency || "TRY")}
-                </span>
-                <div className="flex items-center gap-2 text-xs text-gray-400">
-                  <span className="flex items-center gap-0.5">
-                    <Eye className="w-3 h-3" />
-                    {formatNumber(product.clickCount || 0)}
-                  </span>
-                  <span className="flex items-center gap-0.5">
-                    <Heart className="w-3 h-3" />
-                    {formatNumber(product.favoritesCount || 0)}
-                  </span>
-                </div>
-              </div>
-            </div>
+    const getAllFields = () => {
+      const fields: Array<{
+        key: string;
+        value: unknown;
+        type: string;
+        editable: boolean;
+      }> = [];
 
-            <div className="flex items-center gap-1">
-              {product.isFeatured && (
-                <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-[10px] font-semibold rounded">
-                  ÖNE ÇIKAN
-                </span>
-              )}
-              {product.isBoosted && (
-                <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-semibold rounded">
-                  BOOST
-                </span>
-              )}
-              {product.sold && (
-                <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-semibold rounded">
-                  SATILDI
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
+      const nonEditableFields = ["id", "createdAt", "updatedAt", "ownerId"];
+      const shopData = { ...shop } as Record<string, unknown>;
+
+      Object.keys(shopData).forEach((key) => {
+        const value = shopData[key];
+        const { type } = formatFieldValue(value);
+        const editable = !nonEditableFields.includes(key);
+        fields.push({ key, value, type, editable });
+      });
+
+      return fields.sort((a, b) => a.key.localeCompare(b.key));
+    };
+
+    const filteredFields = useMemo(() => {
+      const allFields = getAllFields();
+      if (!searchTerm.trim()) return allFields;
+
+      const searchLower = searchTerm.toLowerCase();
+      return allFields.filter(
+        (field) =>
+          field.key.toLowerCase().includes(searchLower) ||
+          formatFieldValue(field.value)
+            .display.toLowerCase()
+            .includes(searchLower)
       );
-    }
+    }, [shop, searchTerm]);
+
+    const startEditing = (fieldKey: string, currentValue: unknown) => {
+      setEditingField(fieldKey);
+      const { display } = formatFieldValue(currentValue);
+      setEditValue(display);
+    };
+
+    const cancelEditing = () => {
+      setEditingField(null);
+      setEditValue("");
+    };
+
+    const saveField = async (fieldKey: string, type: string) => {
+      try {
+        setSavingField(fieldKey);
+        let convertedValue: string | number | boolean = editValue;
+
+        switch (type) {
+          case "number":
+            convertedValue = editValue === "" ? 0 : Number(editValue);
+            if (isNaN(convertedValue)) {
+              toast.error("Geçersiz sayı formatı");
+              return;
+            }
+            break;
+          case "boolean":
+            convertedValue = editValue.toLowerCase() === "true";
+            break;
+          case "array":
+            try {
+              convertedValue = JSON.parse(editValue);
+              if (!Array.isArray(convertedValue)) {
+                convertedValue = [editValue] as unknown as
+                  | string
+                  | number
+                  | boolean;
+              }
+            } catch {
+              toast.error("Geçersiz JSON array formatı");
+              return;
+            }
+            break;
+          case "object":
+            try {
+              convertedValue = JSON.parse(editValue);
+            } catch {
+              toast.error("Geçersiz JSON object formatı");
+              return;
+            }
+            break;
+          default:
+            convertedValue = editValue;
+        }
+
+        await onFieldSave(fieldKey, convertedValue);
+        setEditingField(null);
+        setEditValue("");
+        toast.success(`${fieldKey} başarıyla güncellendi!`);
+      } catch (error) {
+        console.error("Error saving field:", error);
+        toast.error(`${fieldKey} güncellenirken hata oluştu`);
+      } finally {
+        setSavingField(null);
+      }
+    };
 
     return (
-      <div
-        ref={isLast ? lastProductElementRef : null}
-        onClick={handleProductClick}
-        className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-all duration-200 cursor-pointer group"
-      >
-        <div className="relative aspect-square">
-          {product.imageUrls?.[0] ? (
-            <Image
-              src={product.imageUrls[0]}
-              alt={product.productName || "Ürün"}
-              fill
-              className="object-cover"
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm h-full flex flex-col">
+        {/* Header with Search */}
+        <div className="p-3 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Database className="w-4 h-4 text-blue-600" />
+              <h3 className="text-sm font-semibold text-gray-900">
+                Tüm Dükkan Alanları
+              </h3>
+              <span className="text-xs text-gray-600">
+                ({filteredFields.length})
+              </span>
+            </div>
+          </div>
+
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Alan ara..."
+              className="w-full pl-7 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-900 text-xs placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
             />
-          ) : (
-            <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-              <ImageIcon className="w-8 h-8 text-gray-400" />
-            </div>
-          )}
-
-          {(product.isFeatured || product.isBoosted) && (
-            <div className="absolute top-2 left-2 flex flex-col gap-1">
-              {product.isFeatured && (
-                <span className="px-1.5 py-0.5 bg-yellow-500 text-white text-[10px] font-semibold rounded">
-                  ÖNE ÇIKAN
-                </span>
-              )}
-              {product.isBoosted && (
-                <span className="px-1.5 py-0.5 bg-purple-500 text-white text-[10px] font-semibold rounded">
-                  BOOST
-                </span>
-              )}
-            </div>
-          )}
-
-          <button className="absolute top-2 right-2 w-7 h-7 bg-white rounded-full flex items-center justify-center shadow-sm hover:bg-gray-50 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Heart className="w-3.5 h-3.5 text-gray-600" />
-          </button>
-
-          {product.sold && (
-            <div className="absolute inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">SATILDI</span>
-            </div>
-          )}
-        </div>
-
-        <div className="p-3">
-          <h3 className="text-sm font-medium text-gray-900 line-clamp-1 group-hover:text-indigo-600">
-            {product.productName || "Ürün Adı Yok"}
-          </h3>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {product.category || "Kategori Yok"}
-          </p>
-          <div className="flex items-center justify-between mt-2">
-            <span className="text-sm font-bold text-gray-900">
-              {formatPrice(product.price || 0, product.currency || "TRY")}
-            </span>
-            {product.averageRating > 0 && (
-              <div className="flex items-center gap-1">
-                <Star className="w-3 h-3 text-yellow-400 fill-current" />
-                <span className="text-xs text-gray-600">
-                  {product.averageRating.toFixed(1)}
-                </span>
-              </div>
-            )}
           </div>
         </div>
+
+        {/* Fields List - Scrollable */}
+        <div
+          ref={allFieldsContainerRef}
+          className="p-2 space-y-1 overflow-y-auto flex-1"
+        >
+          {filteredFields.map((field) => {
+            const { display, type } = formatFieldValue(field.value);
+            const isEditing = editingField === field.key;
+            const isSaving = savingField === field.key;
+            const canEdit = field.editable && type !== "timestamp";
+
+            return (
+              <div
+                key={field.key}
+                className="group bg-gray-50 hover:bg-gray-100 rounded border border-gray-200 p-2 transition-colors"
+              >
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1 mb-0.5">
+                      <span className="font-mono text-[11px] font-semibold text-gray-700 truncate">
+                        {field.key}
+                      </span>
+                      <span
+                        className={`text-[9px] px-1 py-0.5 rounded font-medium ${getTypeColor(
+                          type
+                        )} bg-white`}
+                      >
+                        {type}
+                      </span>
+                    </div>
+
+                    {isEditing ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          className="flex-1 px-2 py-1 text-xs bg-white border border-blue-500 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              saveField(field.key, type);
+                            } else if (e.key === "Escape") {
+                              cancelEditing();
+                            }
+                          }}
+                        />
+                        <button
+                          onClick={() => saveField(field.key, type)}
+                          disabled={isSaving}
+                          className="p-1 bg-green-600 hover:bg-green-700 text-white rounded transition-colors disabled:opacity-50"
+                        >
+                          {isSaving ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Check className="w-3 h-3" />
+                          )}
+                        </button>
+                        <button
+                          onClick={cancelEditing}
+                          className="p-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-700 truncate flex-1">
+                          {type === "array" || type === "object" ? (
+                            <details className="cursor-pointer">
+                              <summary className="text-xs text-gray-600 hover:text-gray-900">
+                                {type === "array"
+                                  ? `[${
+                                      Array.isArray(field.value)
+                                        ? field.value.length
+                                        : 0
+                                    }]`
+                                  : `{${
+                                      field.value &&
+                                      typeof field.value === "object"
+                                        ? Object.keys(field.value).length
+                                        : 0
+                                    }}`}
+                              </summary>
+                              <div className="mt-1 p-2 bg-gray-100 rounded border-l border-gray-300">
+                                <pre className="text-[10px] overflow-x-auto whitespace-pre-wrap text-gray-700">
+                                  {JSON.stringify(field.value, null, 2)}
+                                </pre>
+                              </div>
+                            </details>
+                          ) : (
+                            display
+                          )}
+                        </span>
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {canEdit && (
+                            <button
+                              onClick={() =>
+                                startEditing(field.key, field.value)
+                              }
+                              className="p-0.5 hover:bg-gray-200 rounded transition-colors"
+                              title="Düzenle"
+                            >
+                              <Edit className="w-3 h-3 text-blue-600" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(
+                                type === "array" || type === "object"
+                                  ? JSON.stringify(field.value, null, 2)
+                                  : String(field.value)
+                              );
+                              toast.success("Kopyalandı!");
+                            }}
+                            className="p-0.5 hover:bg-gray-200 rounded transition-colors"
+                            title="Kopyala"
+                          >
+                            <Copy className="w-3 h-3 text-gray-600" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* No Results */}
+        {filteredFields.length === 0 && (
+          <div className="text-center py-6">
+            <Search className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+            <p className="text-gray-600 text-xs">Alan bulunamadı</p>
+          </div>
+        )}
       </div>
     );
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-14">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => router.back()}
-                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="w-4 h-4 text-gray-600" />
-              </button>
-              <div>
-                <h1 className="text-sm font-semibold text-gray-900">
-                  Mağaza Detayları
-                </h1>
-              </div>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      {/* Compact Header */}
+      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+        <div className="max-w-[1800px] mx-auto px-4 py-2">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => router.back()}
+              className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4 text-gray-700" />
+            </button>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-sm font-bold text-gray-900 truncate">
+                {shop.name}
+              </h1>
+              <p className="text-xs text-gray-600 truncate">
+                {shop.address || "Adres belirtilmemiş"}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {shop.isBoosted && (
+                <span className="inline-flex items-center gap-0.5 px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded">
+                  <Zap className="w-3 h-3" />
+                  BOOST
+                </span>
+              )}
+              {shop.transactionsBadgeAcknowledged && (
+                <span className="inline-flex items-center gap-0.5 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded">
+                  <BadgeCheck className="w-3 h-3" />
+                  DOĞRULANMIŞ
+                </span>
+              )}
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        {/* Shop Profile Card */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-          <div className="flex items-start gap-4">
-            <div className="relative">
-              <div className="w-16 h-16 rounded-xl overflow-hidden">
+      <main className="max-w-[1800px] mx-auto px-4 py-4 h-screen overflow-hidden">
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-12 gap-4 h-full overflow-hidden">
+          {/* Left Column - Shop Info */}
+          <div className="col-span-3 space-y-2 overflow-y-auto h-full">
+            {/* Profile Image */}
+            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+              <div className="relative aspect-square">
                 {shop.profileImageUrl ? (
                   <Image
                     src={shop.profileImageUrl}
@@ -820,900 +721,445 @@ const [savingCommission, setSavingCommission] = useState(false);
                   />
                 ) : (
                   <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-                    <Store className="w-6 h-6 text-gray-400" />
+                    <Store className="w-12 h-12 text-gray-400" />
                   </div>
                 )}
               </div>
-              <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></div>
             </div>
 
-            <div className="flex-1">
-              <div className="flex items-start justify-between">
-                <div>
+            {/* Shop Info Cards */}
+            <div className="bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
+              <h3 className="text-xs font-semibold text-gray-900 mb-2 flex items-center gap-1">
+                <Building2 className="w-3 h-3" />
+                Mağaza Bilgileri
+              </h3>
+              <div className="space-y-2 text-xs">
+                {shop.address && (
                   <div className="flex items-center gap-2">
+                    <MapPin className="w-3 h-3 text-gray-500" />
+                    <span className="text-gray-700 truncate">
+                      {shop.address}
+                    </span>
+                  </div>
+                )}
+                {shop.contactNo && (
                   <div className="flex items-center gap-2">
-  <h2 className="text-lg font-bold text-gray-900">
-    {shop.name}
-  </h2>
-  <button
-    onClick={() => setShowCommissionModal(true)}
-    className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-medium rounded-lg transition-colors"
-  >
-    Komisyon Detayları
-  </button>
-</div>
-                    {shop.isBoosted && (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-semibold rounded">
-                        <Zap className="w-2.5 h-2.5" />
-                        BOOST
-                      </span>
-                    )}
-                    {shop.transactionsBadgeAcknowledged && (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-semibold rounded">
-                        <BadgeCheck className="w-2.5 h-2.5" />
-                        DOĞRULANMIŞ
-                      </span>
-                    )}
+                    <Phone className="w-3 h-3 text-gray-500" />
+                    <span className="text-gray-700 truncate">
+                      {shop.contactNo}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
-                    {shop.address && (
-                      <span className="flex items-center gap-1">
-                        <MapPin className="w-3 h-3" />
-                        {shop.address}
-                      </span>
-                    )}
-                    {shop.contactNo && (
-                      <span className="flex items-center gap-1">
-                        <Phone className="w-3 h-3" />
-                        {shop.contactNo}
-                      </span>
-                    )}
-                    {shop.createdAt && (
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        {shop.createdAt.toDate().getFullYear()} yılından beri
-                      </span>
-                    )}
+                )}
+                {shop.averageRating !== undefined && (
+                  <div className="flex items-center gap-2">
+                    <Star className="w-3 h-3 text-yellow-500" />
+                    <span className="text-gray-700">
+                      {shop.averageRating.toFixed(1)} ({shop.reviewCount || 0}{" "}
+                      yorum)
+                    </span>
                   </div>
-                  {shop.categories && shop.categories.length > 0 && (
-                    <div className="flex items-center gap-2 mt-2">
-                      {shop.categories.slice(0, 3).map((category, index) => (
-                        <span
-                          key={index}
-                          className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded"
-                        >
-                          {category}
-                        </span>
-                      ))}
-                      {shop.categories.length > 3 && (
-                        <span className="text-xs text-gray-500">
-                          +{shop.categories.length - 3} daha
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Stats */}
-          <div className="grid grid-cols-6 gap-2 mt-4">
-            <div className="text-center p-2 bg-gray-50 rounded-lg">
-              <div className="text-sm font-bold text-gray-900">
-                {formatNumber(products.length)}
-              </div>
-              <div className="text-xs text-gray-500">Ürünler</div>
-            </div>
-            <div className="text-center p-2 bg-gray-50 rounded-lg">
-              <div className="text-sm font-bold text-gray-900">
-                {formatNumber(shop.followerCount || 0)}
-              </div>
-              <div className="text-xs text-gray-500">Takipçi</div>
-            </div>
-            <div className="text-center p-2 bg-gray-50 rounded-lg">
-              <div className="text-sm font-bold text-gray-900">
-                {shop.averageRating ? shop.averageRating.toFixed(1) : "0.0"}
-              </div>
-              <div className="text-xs text-gray-500">Puan</div>
-            </div>
-            <div className="text-center p-2 bg-gray-50 rounded-lg">
-              <div className="text-sm font-bold text-gray-900">
-                {shop.reviewCount
-                  ? `${Math.min(
-                      Math.round((shop.reviewCount / products.length) * 100),
-                      100
-                    )}%`
-                  : "0%"}
-              </div>
-              <div className="text-xs text-gray-500">Yanıt</div>
-            </div>
-            <div className="text-center p-2 bg-gray-50 rounded-lg">
-              <div className="text-sm font-bold text-gray-900">
-                {formatNumber(shop.totalProductsSold || 0)}
-              </div>
-              <div className="text-xs text-gray-500">Satıldı</div>
-            </div>
-            <div className="text-center p-2 bg-gray-50 rounded-lg">
-              <div className="text-sm font-bold text-gray-900">
-                {formatNumber(shop.clickCount || 0)}
-              </div>
-              <div className="text-xs text-gray-500">Görüntü</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="bg-white rounded-xl border border-gray-200 mb-4">
-          <div className="flex items-center gap-6 px-4 overflow-x-auto">
-            <button
-              onClick={() => setActiveTab("products")}
-              className={`py-3 text-sm font-medium whitespace-nowrap border-b-2 ${
-                activeTab === "products"
-                  ? "border-indigo-600 text-indigo-600"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              Ürünler
-            </button>
-            <button
-              onClick={() => setActiveTab("collections")}
-              className={`py-3 text-sm font-medium whitespace-nowrap border-b-2 ${
-                activeTab === "collections"
-                  ? "border-indigo-600 text-indigo-600"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              Koleksiyonlar
-            </button>
-            <button
-              onClick={() => setActiveTab("about")}
-              className={`py-3 text-sm font-medium whitespace-nowrap border-b-2 ${
-                activeTab === "about"
-                  ? "border-indigo-600 text-indigo-600"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              Hakkında
-            </button>
-            <button
-              onClick={() => setActiveTab("reviews")}
-              className={`py-3 text-sm font-medium whitespace-nowrap border-b-2 ${
-                activeTab === "reviews"
-                  ? "border-indigo-600 text-indigo-600"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              Yorumlar
-            </button>
-            <button
-              onClick={() => setActiveTab("members")}
-              className={`py-3 text-sm font-medium whitespace-nowrap border-b-2 ${
-                activeTab === "members"
-                  ? "border-indigo-600 text-indigo-600"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              Üyeler
-            </button>
-            <button
-              onClick={() => setActiveTab("analytics")}
-              className={`py-3 text-sm font-medium whitespace-nowrap border-b-2 ${
-                activeTab === "analytics"
-                  ? "border-indigo-600 text-indigo-600"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              İstatistikler
-            </button>
-          </div>
-        </div>
-
-        {/* Tab Content */}
-        {activeTab === "products" && (
-          <>
-            {/* Filter Bar */}
-            <div className="bg-white rounded-xl border border-gray-200 p-3 mb-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                    <input
-                      type="text"
-                      value={productSearch}
-                      onChange={(e) => setProductSearch(e.target.value)}
-                      placeholder="Ürün ara..."
-                      className="pl-9 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent w-48"
-                    />
+                )}
+                {shop.createdAt && (
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-3 h-3 text-gray-500" />
+                    <span className="text-gray-700 text-[10px]">
+                      {shop.createdAt.toDate().toLocaleDateString("tr-TR")}
+                    </span>
                   </div>
-
-                  <select
-                    value={productFilter}
-                    onChange={(e) =>
-                      setProductFilter(e.target.value as FilterStatus)
-                    }
-                    className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="all">Tüm Ürünler</option>
-                    <option value="active">Aktif</option>
-                    <option value="sold">Satıldı</option>
-                    <option value="featured">Öne Çıkan</option>
-                  </select>
-
-                  <select
-                    value={productSort}
-                    onChange={(e) => setProductSort(e.target.value as SortBy)}
-                    className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="newest">En Yeni</option>
-                    <option value="oldest">En Eski</option>
-                    <option value="price_high">Fiyat: Yüksekten Düşüğe</option>
-                    <option value="price_low">Fiyat: Düşükten Yükseğe</option>
-                    <option value="popular">En Popüler</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
-                  <button
-                    onClick={() => setProductViewMode("grid")}
-                    className={`p-1.5 rounded transition-colors ${
-                      productViewMode === "grid"
-                        ? "bg-white text-gray-900"
-                        : "text-gray-400 hover:text-gray-600"
-                    }`}
-                  >
-                    <Grid3x3 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => setProductViewMode("list")}
-                    className={`p-1.5 rounded transition-colors ${
-                      productViewMode === "list"
-                        ? "bg-white text-gray-900"
-                        : "text-gray-400 hover:text-gray-600"
-                    }`}
-                  >
-                    <List className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                )}
               </div>
             </div>
 
-            {/* Products Grid/List */}
-            {filteredProducts.length === 0 && !productsLoading ? (
-              <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
-                <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                <h3 className="text-base font-semibold text-gray-900 mb-1">
-                  Ürün Bulunamadı
+            {/* Categories */}
+            {shop.categories && shop.categories.length > 0 && (
+              <div className="bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
+                <h3 className="text-xs font-semibold text-gray-900 mb-2">
+                  Kategoriler
                 </h3>
-                <p className="text-sm text-gray-500">
-                  {productSearch || productFilter !== "all"
-                    ? "Arama kriterlerinize uygun ürün bulunamadı."
-                    : "Bu mağazada henüz ürün bulunmuyor."}
-                </p>
-              </div>
-            ) : (
-              <div
-                className={`grid gap-3 ${
-                  productViewMode === "grid"
-                    ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
-                    : "grid-cols-1"
-                }`}
-              >
-                {filteredProducts.map((product, index) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    viewMode={productViewMode}
-                    isLast={index === filteredProducts.length - 1}
-                  />
-                ))}
-              </div>
-            )}
-
-            {productsLoading && (
-              <div className="flex items-center justify-center py-8">
-                <div className="flex items-center gap-2 text-gray-500">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm">Daha fazla ürün yükleniyor...</span>
+                <div className="flex flex-wrap gap-1">
+                  {shop.categories.map((category, index) => (
+                    <span
+                      key={index}
+                      className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded"
+                    >
+                      {category}
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
 
-            {!productsLoading &&
-              hasMoreProducts &&
-              filteredProducts.length > 0 && (
-                <div className="flex justify-center mt-6">
-                  <button
-                    onClick={() => fetchShopProducts(true)}
-                    className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200 transition-colors"
-                  >
-                    <Package className="w-3.5 h-3.5 inline mr-2" />
-                    Daha Fazla Ürün Yükle
-                  </button>
-                </div>
-              )}
-          </>
-        )}
-
-        {activeTab === "collections" && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-4">
-              Koleksiyonlar
-            </h3>
-
-            {collectionsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="flex items-center gap-2 text-gray-500">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm">Koleksiyonlar yükleniyor...</span>
-                </div>
-              </div>
-            ) : collections.length === 0 ? (
-              <div className="text-center py-12">
-                <FolderOpen className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                <p className="text-sm text-gray-500">
-                  Henüz koleksiyon bulunmuyor
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {collections.map((collection) => (
-                  <div
-                    key={collection.id}
-                    className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-all duration-200 cursor-pointer"
-                  >
-                    <div className="relative aspect-square">
-                      {collection.imageUrl ? (
-                        <Image
-                          src={collection.imageUrl}
-                          alt={collection.name}
-                          fill
-                          className="object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-                          <FolderOpen className="w-8 h-8 text-gray-400" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="p-3">
-                      <h4 className="text-sm font-medium text-gray-900">
-                        {collection.name}
-                      </h4>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {collection.productIds?.length || 0} ürün
-                      </p>
-                    </div>
+            {/* Owner Info */}
+            {members.owner && (
+              <div className="bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
+                <h3 className="text-xs font-semibold text-gray-900 mb-2 flex items-center gap-1">
+                  <User className="w-3 h-3" />
+                  Mağaza Sahibi
+                </h3>
+                <div className="flex items-center gap-2">
+                  <div className="relative w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
+                    {members.owner.profileImage ? (
+                      <Image
+                        src={members.owner.profileImage}
+                        alt={members.owner.displayName}
+                        fill
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                        <User className="w-4 h-4 text-gray-400" />
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === "about" && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-4">
-              Mağaza Hakkında
-            </h3>
-
-            {shop.seller_info?.info && (
-              <div className="space-y-4">
-                <h4 className="text-sm font-medium text-gray-700">
-                  Satıcı Bilgileri
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {shop.seller_info.info.ibanOwnerName && (
-                    <div className="flex items-start gap-3">
-                      <User className="w-4 h-4 text-gray-400 mt-0.5" />
-                      <div>
-                        <p className="text-xs text-gray-500">Hesap Sahibi</p>
-                        <p className="text-sm text-gray-900">
-                          {shop.seller_info.info.ibanOwnerName}{" "}
-                          {shop.seller_info.info.ibanOwnerSurname}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {shop.seller_info.info.phone && (
-                    <div className="flex items-start gap-3">
-                      <Phone className="w-4 h-4 text-gray-400 mt-0.5" />
-                      <div>
-                        <p className="text-xs text-gray-500">Telefon</p>
-                        <p className="text-sm text-gray-900">
-                          {shop.seller_info.info.phone}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {shop.seller_info.info.address && (
-                    <div className="flex items-start gap-3">
-                      <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
-                      <div>
-                        <p className="text-xs text-gray-500">Adres</p>
-                        <p className="text-sm text-gray-900">
-                          {shop.seller_info.info.address}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {shop.seller_info.info.region && (
-                    <div className="flex items-start gap-3">
-                      <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
-                      <div>
-                        <p className="text-xs text-gray-500">Bölge</p>
-                        <p className="text-sm text-gray-900">
-                          {shop.seller_info.info.region}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {shop.seller_info.info.iban && (
-                    <div className="flex items-start gap-3 md:col-span-2">
-                      <Building2 className="w-4 h-4 text-gray-400 mt-0.5" />
-                      <div className="flex-1">
-                        <p className="text-xs text-gray-500">IBAN</p>
-                        <p className="text-sm text-gray-900 font-mono bg-gray-50 p-2 rounded mt-1">
-                          {shop.seller_info.info.iban}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {shop.taxPlateCertificateUrl && (
-              <div className="mt-6 pt-6 border-t border-gray-200">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-700">
-                      Vergi Levhası
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-semibold text-gray-900 text-xs truncate">
+                      {members.owner.displayName}
                     </h4>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Resmi vergi kayıt belgesi
+                    <p className="text-[10px] text-gray-600 truncate">
+                      {members.owner.email}
                     </p>
                   </div>
-                  <a
-                    href={shop.taxPlateCertificateUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-sm rounded-lg transition-colors"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    Belgeyi Görüntüle
-                  </a>
                 </div>
               </div>
             )}
           </div>
-        )}
 
-        {activeTab === "reviews" && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-4">
-              Müşteri Yorumları
-            </h3>
+          {/* Middle Column - All Fields */}
+          <div className="col-span-5 h-full overflow-hidden">
+            <AllFieldsDisplay
+              shop={shop}
+              onFieldSave={saveIndividualField}
+              savingField={savingField}
+              setSavingField={setSavingField}
+            />
+          </div>
 
-            {reviewsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="flex items-center gap-2 text-gray-500">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm">Yorumlar yükleniyor...</span>
-                </div>
+          {/* Right Column - Tabs */}
+          <div className="col-span-4 h-full overflow-hidden">
+            <div className="bg-white border border-gray-200 rounded-lg shadow-sm h-full flex flex-col">
+              {/* Tab Headers */}
+              <div className="flex items-center border-b border-gray-200 flex-shrink-0 overflow-x-auto">
+                <button
+                  onClick={() => setActiveTab("products")}
+                  className={`flex-1 py-2 px-2 text-xs font-medium transition-colors relative whitespace-nowrap ${
+                    activeTab === "products"
+                      ? "text-gray-900 bg-gray-50"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <Package className="w-3 h-3" />
+                    Ürünler
+                  </div>
+                  {activeTab === "products" && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("collections")}
+                  className={`flex-1 py-2 px-2 text-xs font-medium transition-colors relative whitespace-nowrap ${
+                    activeTab === "collections"
+                      ? "text-gray-900 bg-gray-50"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <FolderOpen className="w-3 h-3" />
+                    Koleksiyonlar
+                  </div>
+                  {activeTab === "collections" && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("reviews")}
+                  className={`flex-1 py-2 px-2 text-xs font-medium transition-colors relative whitespace-nowrap ${
+                    activeTab === "reviews"
+                      ? "text-gray-900 bg-gray-50"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <Star className="w-3 h-3" />
+                    Yorumlar
+                  </div>
+                  {activeTab === "reviews" && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />
+                  )}
+                </button>
               </div>
-            ) : reviews.length === 0 ? (
-              <div className="text-center py-12">
-                <Star className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                <p className="text-sm text-gray-500">Henüz yorum bulunmuyor</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {reviews.map((review) => (
-                  <div
-                    key={review.id}
-                    className="border-b border-gray-200 pb-4 last:border-0"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <div className="flex items-center">
-                            {[...Array(5)].map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`w-3.5 h-3.5 ${
-                                  i < review.rating
-                                    ? "text-yellow-400 fill-current"
-                                    : "text-gray-300"
-                                }`}
-                              />
-                            ))}
-                          </div>
-                          <span className="text-xs text-gray-500">
-                            {formatDate(review.timestamp)}
-                          </span>
+
+              {/* Content Area - Scrollable */}
+              <div className="p-3 overflow-y-auto flex-1">
+                {/* Products Tab */}
+                {activeTab === "products" && (
+                  <div>
+                    {/* Controls */}
+                    <div className="space-y-2 mb-3">
+                      <div className="relative">
+                        <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+                        <input
+                          type="text"
+                          value={productSearch}
+                          onChange={(e) => setProductSearch(e.target.value)}
+                          placeholder="Ürün ara..."
+                          className="w-full pl-7 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-900 text-xs placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={productFilter}
+                          onChange={(e) =>
+                            setProductFilter(e.target.value as FilterStatus)
+                          }
+                          className="flex-1 px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        >
+                          <option value="all">Tüm Ürünler</option>
+                          <option value="active">Aktif</option>
+                          <option value="sold">Satıldı</option>
+                        </select>
+
+                        <select
+                          value={productSort}
+                          onChange={(e) =>
+                            setProductSort(e.target.value as SortBy)
+                          }
+                          className="flex-1 px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        >
+                          <option value="newest">En Yeni</option>
+                          <option value="oldest">En Eski</option>
+                          <option value="price_high">Fiyat ↓</option>
+                          <option value="price_low">Fiyat ↑</option>
+                        </select>
+
+                        <div className="flex items-center bg-gray-100 rounded p-0.5">
+                          <button
+                            onClick={() => setProductViewMode("grid")}
+                            className={`p-1 rounded transition-colors ${
+                              productViewMode === "grid"
+                                ? "bg-white text-gray-900"
+                                : "text-gray-400"
+                            }`}
+                          >
+                            <Grid3x3 className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => setProductViewMode("list")}
+                            className={`p-1 rounded transition-colors ${
+                              productViewMode === "list"
+                                ? "bg-white text-gray-900"
+                                : "text-gray-400"
+                            }`}
+                          >
+                            <List className="w-3 h-3" />
+                          </button>
                         </div>
-                        <p className="text-sm text-gray-900">{review.review}</p>
-                        {review.imageUrls && review.imageUrls.length > 0 && (
-                          <div className="flex gap-2 mt-2">
-                            {review.imageUrls.map((url, index) => (
-                              <div
-                                key={index}
-                                className="relative w-16 h-16 rounded-lg overflow-hidden"
-                              >
+                      </div>
+                    </div>
+
+                    {/* Products List */}
+                    {filteredProducts.length > 0 ? (
+                      <div
+                        className={`grid gap-2 ${
+                          productViewMode === "grid"
+                            ? "grid-cols-2"
+                            : "grid-cols-1"
+                        }`}
+                      >
+                        {filteredProducts.map((product) => (
+                          <div
+                            key={product.id}
+                            onClick={() =>
+                              router.push(
+                                `/productdetails?productId=${product.id}`
+                              )
+                            }
+                            className="bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 cursor-pointer transition-colors overflow-hidden"
+                          >
+                            {productViewMode === "grid" ? (
+                              <div>
+                                <div className="relative aspect-square">
+                                  {product.imageUrls?.[0] ? (
+                                    <Image
+                                      src={product.imageUrls[0]}
+                                      alt={product.productName}
+                                      fill
+                                      className="object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                      <Package className="w-6 h-6 text-gray-400" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="p-2">
+                                  <h4 className="font-semibold text-gray-900 text-xs truncate">
+                                    {product.productName}
+                                  </h4>
+                                  <div className="flex items-center justify-between text-[10px] text-gray-600 mt-1">
+                                    <span>
+                                      {product.price} {product.currency}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 p-2">
+                                <div className="relative w-12 h-12 rounded overflow-hidden flex-shrink-0">
+                                  {product.imageUrls?.[0] ? (
+                                    <Image
+                                      src={product.imageUrls[0]}
+                                      alt={product.productName}
+                                      fill
+                                      className="object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                      <Package className="w-4 h-4 text-gray-400" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-semibold text-gray-900 text-xs truncate">
+                                    {product.productName}
+                                  </h4>
+                                  <div className="flex items-center justify-between text-[10px] text-gray-600">
+                                    <span>
+                                      {product.price} {product.currency}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6">
+                        <Package className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                        <p className="text-gray-600 text-xs">Ürün bulunamadı</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Collections Tab */}
+                {activeTab === "collections" && (
+                  <div>
+                    {collections.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        {collections.map((collection) => (
+                          <div
+                            key={collection.id}
+                            className="bg-gray-50 rounded border border-gray-200 overflow-hidden"
+                          >
+                            <div className="relative aspect-square">
+                              {collection.imageUrl ? (
                                 <Image
-                                  src={url}
-                                  alt={`Yorum görseli ${index + 1}`}
+                                  src={collection.imageUrl}
+                                  alt={collection.name}
                                   fill
                                   className="object-cover"
                                 />
-                              </div>
-                            ))}
+                              ) : (
+                                <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                  <FolderOpen className="w-6 h-6 text-gray-400" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="p-2">
+                              <h4 className="font-semibold text-gray-900 text-xs truncate">
+                                {collection.name}
+                              </h4>
+                              <p className="text-[10px] text-gray-600">
+                                {collection.productIds?.length || 0} ürün
+                              </p>
+                            </div>
                           </div>
-                        )}
+                        ))}
                       </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === "members" && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-4">
-              Mağaza Üyeleri
-            </h3>
-
-            {membersLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="flex items-center gap-2 text-gray-500">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm">Üyeler yükleniyor...</span>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {members.owner && (
-                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-                        {members.owner.profileImage ? (
-                          <Image
-                            src={members.owner.profileImage}
-                            alt={members.owner.displayName}
-                            fill
-                            className="object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-yellow-200 flex items-center justify-center">
-                            <User className="w-5 h-5 text-yellow-600" />
-                          </div>
-                        )}
+                    ) : (
+                      <div className="text-center py-6">
+                        <FolderOpen className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                        <p className="text-gray-600 text-xs">
+                          Koleksiyon bulunamadı
+                        </p>
                       </div>
-                      <div className="flex-1">
-                        <h4 className="text-sm font-medium text-gray-900">
-                          {members.owner.displayName}
-                        </h4>
-                        <p className="text-xs text-yellow-600">Sahip</p>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 )}
 
-                {members.coOwners.map((coOwner, index) => (
-                  <div
-                    key={`coowner-${index}`}
-                    className="p-3 bg-orange-50 border border-orange-200 rounded-lg"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-                        {coOwner.profileImage ? (
-                          <Image
-                            src={coOwner.profileImage}
-                            alt={coOwner.displayName}
-                            fill
-                            className="object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-orange-200 flex items-center justify-center">
-                            <User className="w-5 h-5 text-orange-600" />
+                {/* Reviews Tab */}
+                {activeTab === "reviews" && (
+                  <div>
+                    {reviews.length > 0 ? (
+                      <div className="space-y-2">
+                        {reviews.map((review) => (
+                          <div
+                            key={review.id}
+                            className="p-2 bg-gray-50 rounded border border-gray-200"
+                          >
+                            <div className="flex items-center gap-1 mb-1">
+                              <div className="flex items-center gap-0.5">
+                                {[...Array(5)].map((_, i) => (
+                                  <Star
+                                    key={i}
+                                    className={`w-2.5 h-2.5 ${
+                                      i < review.rating
+                                        ? "text-yellow-500 fill-current"
+                                        : "text-gray-300"
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                              <span className="text-[10px] text-gray-500">
+                                {review.timestamp
+                                  .toDate()
+                                  .toLocaleDateString("tr-TR")}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-700">
+                              {review.review}
+                            </p>
                           </div>
-                        )}
+                        ))}
                       </div>
-                      <div className="flex-1">
-                        <h4 className="text-sm font-medium text-gray-900">
-                          {coOwner.displayName}
-                        </h4>
-                        <p className="text-xs text-orange-600">Ortak Sahip</p>
+                    ) : (
+                      <div className="text-center py-6">
+                        <Star className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                        <p className="text-gray-600 text-xs">
+                          Yorum bulunamadı
+                        </p>
                       </div>
-                    </div>
+                    )}
                   </div>
-                ))}
-
-                {members.editors.map((editor, index) => (
-                  <div
-                    key={`editor-${index}`}
-                    className="p-3 bg-blue-50 border border-blue-200 rounded-lg"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-                        {editor.profileImage ? (
-                          <Image
-                            src={editor.profileImage}
-                            alt={editor.displayName}
-                            fill
-                            className="object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-blue-200 flex items-center justify-center">
-                            <User className="w-5 h-5 text-blue-600" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="text-sm font-medium text-gray-900">
-                          {editor.displayName}
-                        </h4>
-                        <p className="text-xs text-blue-600">Editör</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {members.viewers.map((viewer, index) => (
-                  <div
-                    key={`viewer-${index}`}
-                    className="p-3 bg-green-50 border border-green-200 rounded-lg"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-                        {viewer.profileImage ? (
-                          <Image
-                            src={viewer.profileImage}
-                            alt={viewer.displayName}
-                            fill
-                            className="object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-green-200 flex items-center justify-center">
-                            <User className="w-5 h-5 text-green-600" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="text-sm font-medium text-gray-900">
-                          {viewer.displayName}
-                        </h4>
-                        <p className="text-xs text-green-600">İzleyici</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {!members.owner &&
-                  members.coOwners.length === 0 &&
-                  members.editors.length === 0 &&
-                  members.viewers.length === 0 && (
-                    <div className="text-center py-8">
-                      <Users className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                      <p className="text-sm text-gray-500">
-                        Üye bilgisi bulunmuyor
-                      </p>
-                    </div>
-                  )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === "analytics" && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-4">
-              Mağaza İstatistikleri
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <div className="text-2xl font-bold text-indigo-600">
-                  {products.length}
-                </div>
-                <div className="text-xs text-gray-500 mt-1">Toplam Ürün</div>
-              </div>
-
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <div className="text-2xl font-bold text-green-600">
-                  {products.filter((p) => p.sold).length}
-                </div>
-                <div className="text-xs text-gray-500 mt-1">Satılan Ürün</div>
-              </div>
-
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <div className="text-2xl font-bold text-yellow-600">
-                  {products.filter((p) => p.isFeatured || p.isBoosted).length}
-                </div>
-                <div className="text-xs text-gray-500 mt-1">Öne Çıkan</div>
-              </div>
-
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <div className="text-2xl font-bold text-purple-600">
-                  {formatNumber(
-                    products.reduce((sum, p) => sum + (p.clickCount || 0), 0)
-                  )}
-                </div>
-                <div className="text-xs text-gray-500 mt-1">Toplam Görüntü</div>
+                )}
               </div>
             </div>
-
-            <div className="mt-6 pt-6 border-t border-gray-200">
-              <h4 className="text-sm font-medium text-gray-700 mb-3">
-                Performans Metrikleri
-              </h4>
-              <div className="space-y-3">
-                <div>
-                  <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="text-gray-600">Dönüşüm Oranı</span>
-                    <span className="font-medium text-gray-900">
-                      {products.length > 0
-                        ? `${Math.round(
-                            (products.filter((p) => p.sold).length /
-                              products.length) *
-                              100
-                          )}%`
-                        : "0%"}
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-green-600 h-2 rounded-full"
-                      style={{
-                        width:
-                          products.length > 0
-                            ? `${Math.round(
-                                (products.filter((p) => p.sold).length /
-                                  products.length) *
-                                  100
-                              )}%`
-                            : "0%",
-                      }}
-                    ></div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="text-gray-600">Ortalama Ürün Puanı</span>
-                    <span className="font-medium text-gray-900">
-                      {products.length > 0
-                        ? (
-                            products.reduce(
-                              (sum, p) => sum + (p.averageRating || 0),
-                              0
-                            ) /
-                              products.filter((p) => p.averageRating > 0)
-                                .length || 0
-                          ).toFixed(1)
-                        : "0.0"}
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-yellow-600 h-2 rounded-full"
-                      style={{
-                        width:
-                          products.length > 0
-                            ? `${
-                                (products.reduce(
-                                  (sum, p) => sum + (p.averageRating || 0),
-                                  0
-                                ) /
-                                  (products.filter((p) => p.averageRating > 0)
-                                    .length || 1) /
-                                  5) *
-                                100
-                              }%`
-                            : "0%",
-                      }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
-            </div> 
           </div>
-        )}
-                   {/* Commission Modal */}
-{showCommissionModal && (
-  <div className="fixed inset-0 bg-opacity-30 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">
-            Komisyon Ayarları
-          </h3>
-          <button
-            onClick={() => setShowCommissionModal(false)}
-            className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-            disabled={savingCommission}
-          >
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
-          </button>
         </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Komisyon Oranı (%)
-            </label>
-            <div className="relative">
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                value={commissionPercentage}
-                onChange={(e) => setCommissionPercentage(parseFloat(e.target.value) || 0)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                placeholder="Örn: 15"
-                disabled={savingCommission}
-              />
-              <span className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500">
-                %
-              </span>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Bu mağazadan alınacak komisyon oranını girin
-            </p>
-          </div>
-
-          {shop?.ourComission !== undefined && (
-            <div className="p-3 bg-gray-50 rounded-lg">
-              <p className="text-xs text-gray-600">
-                Mevcut Komisyon: <span className="font-semibold text-gray-900">{shop.ourComission}%</span>
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="flex gap-3 mt-6">
-          <button
-            onClick={() => setShowCommissionModal(false)}
-            className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors"
-            disabled={savingCommission}
-          >
-            İptal
-          </button>
-          <button
-            onClick={handleSaveCommission}
-            disabled={savingCommission}
-            className="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {savingCommission ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Kaydediliyor...
-              </>
-            ) : (
-              "Kaydet"
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
       </main>
     </div>
   );
 }
 
-export default function ShopDetailsPage() {
+// Main export with Suspense wrapper
+export default function ShopDetails() {
   return (
     <ProtectedRoute>
-      <Suspense fallback={<div>Loading...</div>}>
+      <Suspense
+        fallback={
+          <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+            <div className="flex items-center gap-3 text-gray-900">
+              <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+              <span>Yükleniyor...</span>
+            </div>
+          </div>
+        }
+      >
         <ShopDetailsContent />
       </Suspense>
     </ProtectedRoute>

@@ -6,6 +6,14 @@ import { useState, useEffect, useMemo, Suspense } from "react";
 import { collection, getDocs, Timestamp } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import {
+  searchShops,
+  searchProducts,
+  searchShopProducts,
+  type AlgoliaShopHit,
+  type AlgoliaProductHit,
+  type AlgoliaShopProductHit,
+} from "../lib/algolia/dashboardSearchService";
+import {
   Search,
   User,
   Package,
@@ -16,12 +24,10 @@ import {
   MapPin,
   Phone,
   Tag,
-  DollarSign,
-  Grid,
-  List,
   Loader2,
-  ChevronRight,
-  Filter,
+  X,
+  TrendingUp,
+  ShoppingBag,
 } from "lucide-react";
 
 interface UserResult {
@@ -63,14 +69,28 @@ interface ShopResult {
 
 type SearchResult = UserResult | ProductResult | ShopResult;
 
+// Helper function to extract Firestore doc ID from Algolia objectID
+function extractFirestoreId(objectID: string, collectionName: string): string {
+  // Your Algolia objectID format: "collectionName_firestoreDocId"
+  // Example: "shops_ocKXxNqJ5lB5sfEoNzZR" -> "ocKXxNqJ5lB5sfEoNzZR"
+  const prefix = `${collectionName}_`;
+  if (objectID.startsWith(prefix)) {
+    return objectID.substring(prefix.length);
+  }
+  // Fallback if format is unexpected
+  return objectID;
+}
+
 // Loading component for Suspense fallback
 function SearchResultsLoading() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-gray-50">
       <div className="flex items-center justify-center min-h-screen">
-        <div className="flex items-center gap-3 text-gray-600">
-          <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-          <span className="font-medium">Sayfa yükleniyor...</span>
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <span className="text-sm font-medium text-gray-600">
+            Yükleniyor...
+          </span>
         </div>
       </div>
     </div>
@@ -85,7 +105,6 @@ function SearchResultsContent() {
 
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [filterType, setFilterType] = useState<
     "all" | "user" | "product" | "shop"
   >("all");
@@ -108,78 +127,71 @@ function SearchResultsContent() {
     const searchLower = searchQuery.toLowerCase();
 
     try {
-      // Search Users
-      const usersSnapshot = await getDocs(collection(db, "users"));
-      usersSnapshot.forEach((doc) => {
-        const data = doc.data();
-        if (
-          data.displayName?.toLowerCase().includes(searchLower) ||
-          data.email?.toLowerCase().includes(searchLower) ||
-          doc.id?.toLowerCase().includes(searchLower)
-        ) {
-          searchResults.push({
-            id: doc.id,
-            type: "user",
-            ...data,
-          } as UserResult);
-        }
+      // Execute all searches in parallel for better performance
+      const [usersData, shopsData, productsData, shopProductsData] =
+        await Promise.all([
+          searchUsersInFirestore(searchLower),
+          searchShops(searchQuery, { hitsPerPage: 100 }),
+          searchProducts(searchQuery, { hitsPerPage: 100 }),
+          searchShopProducts(searchQuery, { hitsPerPage: 100 }),
+        ]);
+
+      // Add users to results
+      searchResults.push(...usersData);
+
+      // Transform and add Algolia shop results
+      shopsData.hits.forEach((shop: AlgoliaShopHit) => {
+        const firestoreDocId = extractFirestoreId(shop.objectID, "shops");
+
+        searchResults.push({
+          id: firestoreDocId,
+          type: "shop",
+          name: shop.shopName,
+          description: shop.location?.city || "",
+          address: shop.location?.addressLine1 || "",
+          phone: "",
+          email: "",
+          imageUrl: "",
+          createdAt: shop.createdAt || Timestamp.now(),
+          category: shop.category || "",
+        } as ShopResult);
       });
 
-      // Search Products collection
-      const productsSnapshot = await getDocs(collection(db, "products"));
-      productsSnapshot.forEach((doc) => {
-        const data = doc.data();
-        if (
-          data.productName?.toLowerCase().includes(searchLower) ||
-          data.description?.toLowerCase().includes(searchLower) ||
-          data.category?.toLowerCase().includes(searchLower) ||
-          doc.id?.toLowerCase().includes(searchLower)
-        ) {
-          searchResults.push({
-            id: doc.id,
-            type: "product",
-            ...data,
-          } as ProductResult);
-        }
+      // Transform and add Algolia product results
+      productsData.hits.forEach((product: AlgoliaProductHit) => {
+        const firestoreDocId = extractFirestoreId(product.objectID, "products");
+
+        searchResults.push({
+          id: firestoreDocId,
+          type: "product",
+          productName: product.productName,
+          price: product.price,
+          category: product.category,
+          imageUrl: product.images?.[0] || "",
+          createdAt: product.createdAt || Timestamp.now(),
+          description: product.description || "",
+        } as ProductResult);
       });
 
-      // Search Shop Products collection
-      const shopProductsSnapshot = await getDocs(
-        collection(db, "shop_products")
-      );
-      shopProductsSnapshot.forEach((doc) => {
-        const data = doc.data();
-        if (
-          data.productName?.toLowerCase().includes(searchLower) ||
-          data.description?.toLowerCase().includes(searchLower) ||
-          data.category?.toLowerCase().includes(searchLower) ||
-          doc.id?.toLowerCase().includes(searchLower)
-        ) {
-          searchResults.push({
-            id: doc.id,
-            type: "shop_product",
-            ...data,
-          } as ProductResult);
-        }
-      });
+      // Transform and add Algolia shop product results
+      shopProductsData.hits.forEach((shopProduct: AlgoliaShopProductHit) => {
+        const firestoreDocId = extractFirestoreId(
+          shopProduct.objectID,
+          "shop_products"
+        );
 
-      // Search Shops collection
-      const shopsSnapshot = await getDocs(collection(db, "shops"));
-      shopsSnapshot.forEach((doc) => {
-        const data = doc.data();
-        if (
-          data.name?.toLowerCase().includes(searchLower) ||
-          data.description?.toLowerCase().includes(searchLower) ||
-          data.address?.toLowerCase().includes(searchLower) ||
-          data.category?.toLowerCase().includes(searchLower) ||
-          doc.id?.toLowerCase().includes(searchLower)
-        ) {
-          searchResults.push({
-            id: doc.id,
-            type: "shop",
-            ...data,
-          } as ShopResult);
-        }
+        searchResults.push({
+          id: firestoreDocId,
+          type: "shop_product",
+          productName: shopProduct.productName,
+          price: shopProduct.shopPrice || shopProduct.price,
+          category: shopProduct.category,
+          shopId: shopProduct.shopId,
+          shopName: shopProduct.shopName,
+          imageUrl: "",
+          createdAt: shopProduct.createdAt || Timestamp.now(),
+          description: "",
+        } as ProductResult);
       });
 
       setResults(searchResults);
@@ -189,6 +201,41 @@ function SearchResultsContent() {
       setLoading(false);
     }
   };
+
+  // Helper function to search users in Firestore
+  async function searchUsersInFirestore(
+    searchLower: string
+  ): Promise<UserResult[]> {
+    const userResults: UserResult[] = [];
+
+    try {
+      const usersSnapshot = await getDocs(collection(db, "users"));
+
+      usersSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (
+          data.displayName?.toLowerCase().includes(searchLower) ||
+          data.email?.toLowerCase().includes(searchLower) ||
+          doc.id?.toLowerCase().includes(searchLower)
+        ) {
+          userResults.push({
+            id: doc.id,
+            type: "user",
+            displayName: data.displayName,
+            email: data.email,
+            createdAt: data.createdAt,
+            photoURL: data.photoURL,
+            phone: data.phone,
+            location: data.location,
+          } as UserResult);
+        }
+      });
+    } catch (error) {
+      console.error("Firestore user search error:", error);
+    }
+
+    return userResults;
+  }
 
   // Filter results based on selected type
   const filteredResults = useMemo(() => {
@@ -203,6 +250,18 @@ function SearchResultsContent() {
     return results.filter((result) => result.type === filterType);
   }, [results, filterType]);
 
+  // Calculate counts for each type
+  const counts = useMemo(() => {
+    return {
+      all: results.length,
+      user: results.filter((r) => r.type === "user").length,
+      product: results.filter(
+        (r) => r.type === "product" || r.type === "shop_product"
+      ).length,
+      shop: results.filter((r) => r.type === "shop").length,
+    };
+  }, [results]);
+
   const handleNewSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchTerm.trim()) {
@@ -211,11 +270,15 @@ function SearchResultsContent() {
   };
 
   const formatDate = (timestamp: Timestamp) => {
-    if (!timestamp) return "Tarih yok";
+    if (!timestamp) return "";
     try {
-      return timestamp.toDate().toLocaleDateString("tr-TR");
+      return timestamp.toDate().toLocaleDateString("tr-TR", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
     } catch {
-      return "Tarih yok";
+      return "";
     }
   };
 
@@ -225,11 +288,25 @@ function SearchResultsContent() {
         return <User className="w-4 h-4 text-blue-600" />;
       case "product":
       case "shop_product":
-        return <Package className="w-4 h-4 text-green-600" />;
+        return <Package className="w-4 h-4 text-purple-600" />;
       case "shop":
-        return <Store className="w-4 h-4 text-purple-600" />;
+        return <Store className="w-4 h-4 text-green-600" />;
       default:
-        return <Search className="w-4 h-4 text-gray-500" />;
+        return <Search className="w-4 h-4 text-gray-600" />;
+    }
+  };
+
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case "user":
+        return "bg-blue-50 text-blue-700 border-blue-200";
+      case "product":
+      case "shop_product":
+        return "bg-purple-50 text-purple-700 border-purple-200";
+      case "shop":
+        return "bg-green-50 text-green-700 border-green-200";
+      default:
+        return "bg-gray-50 text-gray-700 border-gray-200";
     }
   };
 
@@ -240,165 +317,133 @@ function SearchResultsContent() {
       case "product":
         return "Ürün";
       case "shop_product":
-        return "Mağaza Ürünü";
+        return "Dükkan Ürünü";
       case "shop":
-        return "Mağaza";
+        return "Dükkan";
       default:
-        return "Bilinmeyen";
-    }
-  };
-
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case "user":
-        return "bg-blue-50 text-blue-700 border-blue-200";
-      case "product":
-      case "shop_product":
-        return "bg-green-50 text-green-700 border-green-200";
-      case "shop":
-        return "bg-purple-50 text-purple-700 border-purple-200";
-      default:
-        return "bg-gray-50 text-gray-700 border-gray-200";
+        return type;
     }
   };
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col gap-4">
-            {/* Top Row */}
-            <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-gray-50">
+      {/* Compact Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            {/* Back Button & Title */}
+            <div className="flex items-center gap-4">
               <button
-                onClick={() => router.back()}
-                className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors font-medium"
+                onClick={() => router.push("/dashboard")}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Geri</span>
+                <ArrowLeft className="w-5 h-5 text-gray-600" />
               </button>
-
-              <h1 className="text-lg font-semibold text-gray-900">
-                Arama Sonuçları
-              </h1>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() =>
-                    setViewMode(viewMode === "grid" ? "list" : "grid")
-                  }
-                  className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                >
-                  {viewMode === "grid" ? (
-                    <List className="w-4 h-4 text-gray-700" />
-                  ) : (
-                    <Grid className="w-4 h-4 text-gray-700" />
-                  )}
-                </button>
+              <div>
+                <h1 className="text-lg font-semibold text-gray-900">
+                  Arama Sonuçları
+                </h1>
+                {!loading && (
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {filteredResults.length} sonuç bulundu
+                  </p>
+                )}
               </div>
             </div>
 
             {/* Search Bar */}
-            <form onSubmit={handleNewSearch} className="flex gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <form onSubmit={handleNewSearch} className="flex-1 max-w-xl mx-8">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
+                  placeholder="Yeni arama yap..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Kullanıcı, ürün, mağaza ara (isim veya ID ile)"
-                  className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  className="w-full pl-10 pr-10 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
-              <button
-                type="submit"
-                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-              >
-                Ara
-              </button>
             </form>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Results Header */}
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-1">
-              &quot;{query}&quot; için sonuçlar
-            </h2>
-            <p className="text-sm text-gray-600">
-              {loading
-                ? "Aranıyor..."
-                : `${filteredResults.length} sonuç bulundu`}
-            </p>
-          </div>
-
-          {/* Filter Buttons */}
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-gray-500" />
-            <div className="flex flex-wrap gap-2">
-              {[
-                { key: "all", label: "Tümü", count: results.length },
-                {
-                  key: "user",
-                  label: "Kullanıcılar",
-                  count: results.filter((r) => r.type === "user").length,
-                },
-                {
-                  key: "product",
-                  label: "Ürünler",
-                  count: results.filter(
-                    (r) => r.type === "product" || r.type === "shop_product"
-                  ).length,
-                },
-                {
-                  key: "shop",
-                  label: "Mağazalar",
-                  count: results.filter((r) => r.type === "shop").length,
-                },
-              ].map((filter) => (
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Filter Tabs - Compact */}
+        {!loading && results.length > 0 && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 mb-6">
+            <div className="flex items-center gap-2 overflow-x-auto">
+              <button
+                onClick={() => setFilterType("all")}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-all ${
+                  filterType === "all"
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+                }`}
+              >
+                Tümü ({counts.all})
+              </button>
+              {counts.user > 0 && (
                 <button
-                  key={filter.key}
-                  onClick={() =>
-                    setFilterType(
-                      filter.key as "all" | "user" | "product" | "shop"
-                    )
-                  }
-                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
-                    filterType === filter.key
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  onClick={() => setFilterType("user")}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-all ${
+                    filterType === "user"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "bg-gray-50 text-gray-700 hover:bg-gray-100"
                   }`}
                 >
-                  {filter.label} ({filter.count})
+                  Kullanıcılar ({counts.user})
                 </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Loading State */}
-        {loading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="flex items-center gap-3 text-gray-600">
-              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-              <span>Arama yapılıyor...</span>
+              )}
+              {counts.shop > 0 && (
+                <button
+                  onClick={() => setFilterType("shop")}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-all ${
+                    filterType === "shop"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  Dükkanlar ({counts.shop})
+                </button>
+              )}
+              {counts.product > 0 && (
+                <button
+                  onClick={() => setFilterType("product")}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-all ${
+                    filterType === "product"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  Ürünler ({counts.product})
+                </button>
+              )}
             </div>
           </div>
         )}
 
-        {/* Results Grid/List */}
+        {/* Loading State */}
+        {loading && (
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-3" />
+            <span className="text-sm text-gray-600">Aranıyor...</span>
+          </div>
+        )}
+
+        {/* Results Grid - Compact */}
         {!loading && filteredResults.length > 0 && (
-          <div
-            className={
-              viewMode === "grid"
-                ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-                : "space-y-3"
-            }
-          >
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
             {filteredResults.map((result) => {
               const isClickable =
                 result.type === "user" ||
@@ -423,65 +468,53 @@ function SearchResultsContent() {
                 <div
                   key={`${result.type}-${result.id}`}
                   onClick={isClickable ? handleClick : undefined}
-                  className={`bg-white border border-gray-200 rounded-lg p-4 transition-all duration-200 ${
+                  className={`bg-white border border-gray-200 rounded-lg p-3.5 transition-all duration-200 ${
                     isClickable
                       ? "hover:border-blue-300 hover:shadow-md cursor-pointer group"
-                      : "hover:border-gray-300"
+                      : ""
                   }`}
                 >
-                  {/* Result Header */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-start gap-3 flex-1">
-                      <div className="p-2 bg-gray-50 rounded-md">
-                        {getResultIcon(result.type)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3
-                            className={`font-medium text-gray-900 truncate ${
-                              isClickable ? "group-hover:text-blue-700" : ""
-                            }`}
-                          >
-                            {result.type === "user"
-                              ? (result as UserResult).displayName
-                              : result.type === "shop"
-                              ? (result as ShopResult).name
-                              : (result as ProductResult).productName}
-                          </h3>
-                        </div>
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded border ${getTypeColor(
-                            result.type
-                          )}`}
-                        >
-                          {getResultTypeText(result.type)}
-                        </span>
-                      </div>
+                  {/* Header - Compact */}
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-9 h-9 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                      {getResultIcon(result.type)}
                     </div>
-
-                    {isClickable && (
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity ml-2">
-                        <ChevronRight className="w-4 h-4 text-gray-400" />
-                      </div>
-                    )}
+                    <div className="flex-1 min-w-0">
+                      <h3
+                        className={`font-medium text-sm text-gray-900 truncate mb-1 ${
+                          isClickable ? "group-hover:text-blue-700" : ""
+                        }`}
+                      >
+                        {result.type === "user"
+                          ? (result as UserResult).displayName
+                          : result.type === "shop"
+                          ? (result as ShopResult).name
+                          : (result as ProductResult).productName}
+                      </h3>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${getTypeColor(
+                          result.type
+                        )}`}
+                      >
+                        {getResultTypeText(result.type)}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Result Details */}
-                  <div className="space-y-2">
+                  {/* Details - Compact */}
+                  <div className="space-y-1.5 text-xs">
                     {result.type === "user" && (
                       <>
                         <div className="flex items-center gap-2 text-gray-600">
-                          <Mail className="w-3.5 h-3.5" />
-                          <span className="text-sm truncate">
+                          <Mail className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span className="truncate">
                             {(result as UserResult).email}
                           </span>
                         </div>
                         {(result as UserResult).phone && (
                           <div className="flex items-center gap-2 text-gray-600">
-                            <Phone className="w-3.5 h-3.5" />
-                            <span className="text-sm">
-                              {(result as UserResult).phone}
-                            </span>
+                            <Phone className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span>{(result as UserResult).phone}</span>
                           </div>
                         )}
                       </>
@@ -491,26 +524,33 @@ function SearchResultsContent() {
                       result.type === "shop_product") && (
                       <>
                         {(result as ProductResult).price && (
-                          <div className="flex items-center gap-2 text-green-600">
-                            <DollarSign className="w-3.5 h-3.5" />
-                            <span className="text-sm font-medium">
-                              {(result as ProductResult).price} TL
+                          <div className="flex items-center gap-2 text-green-600 font-semibold">
+                            <TrendingUp className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span>
+                              {(result as ProductResult).price?.toLocaleString(
+                                "tr-TR"
+                              )}{" "}
+                              ₺
                             </span>
                           </div>
                         )}
                         {(result as ProductResult).category && (
                           <div className="flex items-center gap-2 text-gray-600">
-                            <Tag className="w-3.5 h-3.5" />
-                            <span className="text-sm">
+                            <Tag className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span className="truncate">
                               {(result as ProductResult).category}
                             </span>
                           </div>
                         )}
-                        {(result as ProductResult).description && (
-                          <p className="text-sm text-gray-600 line-clamp-2">
-                            {(result as ProductResult).description}
-                          </p>
-                        )}
+                        {result.type === "shop_product" &&
+                          (result as ProductResult).shopName && (
+                            <div className="flex items-center gap-2 text-gray-600">
+                              <ShoppingBag className="w-3.5 h-3.5 flex-shrink-0" />
+                              <span className="truncate">
+                                {(result as ProductResult).shopName}
+                              </span>
+                            </div>
+                          )}
                       </>
                     )}
 
@@ -518,30 +558,26 @@ function SearchResultsContent() {
                       <>
                         {(result as ShopResult).address && (
                           <div className="flex items-center gap-2 text-gray-600">
-                            <MapPin className="w-3.5 h-3.5" />
-                            <span className="text-sm truncate">
+                            <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span className="truncate">
                               {(result as ShopResult).address}
                             </span>
                           </div>
                         )}
-                        {(result as ShopResult).phone && (
+                        {(result as ShopResult).category && (
                           <div className="flex items-center gap-2 text-gray-600">
-                            <Phone className="w-3.5 h-3.5" />
-                            <span className="text-sm">
-                              {(result as ShopResult).phone}
+                            <Tag className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span className="truncate">
+                              {(result as ShopResult).category}
                             </span>
                           </div>
-                        )}
-                        {(result as ShopResult).description && (
-                          <p className="text-sm text-gray-600 line-clamp-2">
-                            {(result as ShopResult).description}
-                          </p>
                         )}
                       </>
                     )}
 
-                    <div className="flex items-center gap-2 text-gray-500 pt-2 border-t border-gray-100">
-                      <Calendar className="w-3.5 h-3.5" />
+                    {/* Date - Always shown, compact */}
+                    <div className="flex items-center gap-2 text-gray-400 pt-1.5 mt-1.5 border-t border-gray-100">
+                      <Calendar className="w-3 h-3 flex-shrink-0" />
                       <span className="text-xs">
                         {formatDate(result.createdAt)}
                       </span>
@@ -553,24 +589,41 @@ function SearchResultsContent() {
           </div>
         )}
 
-        {/* No Results */}
+        {/* No Results - Compact */}
         {!loading && filteredResults.length === 0 && query && (
-          <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
               <Search className="w-8 h-8 text-gray-400" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
               Sonuç bulunamadı
             </h3>
-            <p className="text-gray-600 mb-6">
-              &quot;{query}&quot; araması için herhangi bir sonuç bulunamadı.
+            <p className="text-sm text-gray-600 mb-6 text-center max-w-md">
+              &quot;{query}&quot; için herhangi bir sonuç bulunamadı. Farklı
+              anahtar kelimeler deneyin.
             </p>
             <button
               onClick={() => router.push("/dashboard")}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
             >
               Panele Dön
             </button>
+          </div>
+        )}
+
+        {/* No Query State */}
+        {!loading && !query && (
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+              <Search className="w-8 h-8 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Arama yapmaya başlayın
+            </h3>
+            <p className="text-sm text-gray-600 mb-6">
+              Kullanıcı, dükkan veya ürün aramak için yukarıdaki arama çubuğunu
+              kullanın.
+            </p>
           </div>
         )}
       </main>

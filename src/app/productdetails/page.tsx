@@ -5,7 +5,6 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import {
   ArrowLeft,
-  Package,
   X,
   Loader2,
   Image as ImageIcon,
@@ -21,16 +20,12 @@ import {
   Edit,
   Check,
   Search,
-  Grid,
-  List,
   MessageCircle,
   Palette,
   Ruler,
-  Info,
   Zap,
   Copy,
   Database,
-  ArrowRight,
 } from "lucide-react";
 import {
   useState,
@@ -46,15 +41,12 @@ import {
   getDoc,
   getDocs,
   query,
-  where,
   orderBy,
   limit,
-  startAfter,
   Timestamp,
-  DocumentSnapshot,
   updateDoc,
 } from "firebase/firestore";
-import { auth, db } from "../lib/firebase";
+import { db } from "../lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { toast } from "react-hot-toast";
@@ -155,18 +147,14 @@ interface ReviewData {
   verified?: boolean;
 }
 
-type ViewMode = "grid" | "list";
-type FilterStatus = "all" | "active" | "sold" | "featured";
-type SortBy = "newest" | "oldest" | "price_high" | "price_low" | "popular";
-
 // Create a separate component that uses useSearchParams
 function ProductDetailsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const productId = searchParams.get("productId");
 
-  // Refs for infinite scroll
-  const lastRelatedProductElementRef = useRef<HTMLDivElement | null>(null);
+  // Refs
+  const allFieldsContainerRef = useRef<HTMLDivElement | null>(null);
 
   // State Management
   const [product, setProduct] = useState<ProductData | null>(null);
@@ -187,10 +175,8 @@ function ProductDetailsContent() {
   >("category");
   const [categoryModalField, setCategoryModalField] = useState<string>("");
 
-  const [relatedProducts, setRelatedProducts] = useState<ProductData[]>([]);
   const [reviews, setReviews] = useState<ReviewData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [relatedLoading, setRelatedLoading] = useState(false);
   const [reviewsLoading, setReviewsLoading] = useState(false);
 
   const [showBoostModal, setShowBoostModal] = useState(false);
@@ -200,19 +186,6 @@ function ProductDetailsContent() {
   // Image Gallery State
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
-
-  // Filter and Search States for Related Products
-  const [relatedSearch, setRelatedSearch] = useState("");
-  const [relatedViewMode, setRelatedViewMode] = useState<ViewMode>("grid");
-  const [relatedFilter, setRelatedFilter] = useState<FilterStatus>("all");
-  const [relatedSort, setRelatedSort] = useState<SortBy>("newest");
-
-  // Pagination for Related Products
-  const [lastRelatedDoc, setLastRelatedDoc] = useState<DocumentSnapshot | null>(
-    null
-  );
-
-  const ITEMS_PER_PAGE = 8;
 
   // Get current image URLs based on selected color
   const currentImageUrls = useMemo(() => {
@@ -467,16 +440,15 @@ function ProductDetailsContent() {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-        <div className="relative bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 max-h-[80vh] overflow-y-auto">
+        <div className="relative bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 max-h-[80vh] overflow-y-auto border border-gray-200">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-lg font-semibold text-white">
+              <h3 className="text-lg font-semibold text-gray-900">
                 {flowState.step === "category" && "Kategori Seç"}
                 {flowState.step === "subcategory" && "Alt Kategori Seç"}
                 {flowState.step === "subsubcategory" && "Alt Alt Kategori Seç"}
               </h3>
-              {/* Show progress breadcrumb */}
-              <div className="text-sm text-gray-400 mt-1">
+              <div className="text-sm text-gray-600 mt-1">
                 {flowState.step === "subcategory" &&
                   flowState.selectedCategory && (
                     <span>{flowState.selectedCategory}</span>
@@ -491,23 +463,22 @@ function ProductDetailsContent() {
                   )}
               </div>
             </div>
-            <button onClick={onClose} className="p-1 hover:bg-white/10 rounded">
-              <X className="w-5 h-5 text-gray-400" />
+            <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
+              <X className="w-5 h-5 text-gray-600" />
             </button>
           </div>
 
-          {/* Warning message for cascading changes */}
           {fieldType === "category" && flowState.step === "category" && (
-            <div className="mb-4 p-3 bg-yellow-600/20 border border-yellow-600/30 rounded-lg">
-              <p className="text-yellow-300 text-sm">
+            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-yellow-800 text-sm">
                 ⚠️ Kategori değiştirildiğinde alt kategori ve alt alt kategori
                 de seçilmelidir.
               </p>
             </div>
           )}
           {fieldType === "subcategory" && flowState.step === "subcategory" && (
-            <div className="mb-4 p-3 bg-yellow-600/20 border border-yellow-600/30 rounded-lg">
-              <p className="text-yellow-300 text-sm">
+            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-yellow-800 text-sm">
                 ⚠️ Alt kategori değiştirildiğinde alt alt kategori de
                 seçilmelidir.
               </p>
@@ -522,7 +493,7 @@ function ProductDetailsContent() {
                 className={`w-full text-left p-3 rounded-lg transition-colors ${
                   getCurrentValue() === option
                     ? "bg-blue-600 text-white"
-                    : "bg-white/10 text-gray-300 hover:bg-white/15"
+                    : "bg-gray-50 text-gray-700 hover:bg-gray-100"
                 }`}
               >
                 {option}
@@ -532,28 +503,26 @@ function ProductDetailsContent() {
 
           {options.length === 0 && (
             <div className="text-center py-8">
-              <p className="text-gray-400">Bu kategoride seçenek bulunmuyor</p>
+              <p className="text-gray-600">Bu kategoride seçenek bulunmuyor</p>
             </div>
           )}
 
           <div className="flex gap-2">
-            {/* Back button */}
             {flowState.step !== "category" &&
               fieldType !== "subsubcategory" && (
                 <button
                   onClick={handleBack}
-                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg transition-colors"
                 >
                   Geri
                 </button>
               )}
 
-            {/* Next/Save button */}
             {isLastStep() ? (
               <button
                 onClick={handleSave}
                 disabled={!canProceed()}
-                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 text-white rounded-lg transition-colors"
+                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-lg transition-colors"
               >
                 Kaydet
               </button>
@@ -561,7 +530,7 @@ function ProductDetailsContent() {
               <button
                 onClick={handleNext}
                 disabled={!canProceed()}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-white rounded-lg transition-colors"
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg transition-colors"
               >
                 İleri
               </button>
@@ -588,41 +557,12 @@ function ProductDetailsContent() {
       const functions = getFunctions(undefined, "europe-west3");
       const boostProducts = httpsCallable(functions, "boostProducts");
 
-      // Debug logging - let's see what we have
-      console.log("=== BOOST DEBUG INFO ===");
-      console.log("Product data:", {
-        id: product.id,
-        shopId: product.shopId,
-        userId: product.userId,
-        isBoosted: product.isBoosted,
-        boostEndTime: product.boostEndTime,
-      });
-
-      // Check current user's auth state
-      const { currentUser } = auth;
-      console.log("Current user:", {
-        uid: currentUser?.uid,
-        email: currentUser?.email,
-      });
-
-      // Check shop data if available
-      if (shop) {
-        console.log("Shop data:", {
-          id: shop.id,
-          ownerId: shop.ownerId,
-          name: shop.name,
-        });
-      }
-
-      // Determine collection and shopId
       const collection = product.shopId ? "shop_products" : "products";
 
-      // CRITICAL FIX: Ensure shopId is provided for shop_products
       if (collection === "shop_products" && !product.shopId) {
         throw new Error("Shop products must have a shopId");
       }
 
-      // Build the item object according to cloud function requirements
       const item: {
         itemId: string;
         collection: string;
@@ -632,7 +572,6 @@ function ProductDetailsContent() {
         collection: collection,
       };
 
-      // Only add shopId if it exists and collection is shop_products
       if (collection === "shop_products" && product.shopId) {
         item.shopId = product.shopId;
       }
@@ -642,16 +581,9 @@ function ProductDetailsContent() {
         boostDuration: durationInMinutes,
       };
 
-      console.log("Request payload:", JSON.stringify(request, null, 2));
-      console.log("=== END DEBUG INFO ===");
-
       const result = await boostProducts(request);
 
-      console.log("Boost result:", result.data);
-
-      // Check if the response indicates success
       if (result.data && (result.data as { success: boolean }).success) {
-        // Update local product state
         setProduct((prev) =>
           prev
             ? {
@@ -669,23 +601,19 @@ function ProductDetailsContent() {
         setShowBoostModal(false);
         toast.success(`Ürün ${durationInMinutes} dakika boyunca boost edildi!`);
       } else {
-        // Handle case where cloud function returns success: false
         throw new Error(
           (result.data as { message: string }).message ||
             "Boost işlemi başarısız oldu"
         );
       }
     } catch (error: unknown) {
-      console.error("=== BOOST ERROR ===");
-      console.error("Full error object:", error);
+      console.error("Boost error:", error);
 
       let errorMessage = "Boost işlemi sırasında hata oluştu";
 
-      // Better error handling
       if (error && typeof error === "object") {
         if ("code" in error) {
           const errorCode = (error as { code: string }).code;
-          console.error("Error code:", errorCode);
 
           if (errorCode === "unauthenticated") {
             errorMessage = "Bu işlem için giriş yapmanız gerekiyor";
@@ -698,14 +626,9 @@ function ProductDetailsContent() {
           }
         } else if ("message" in error) {
           const message = (error as { message: string }).message;
-          console.error("Error message:", message);
-
-          // Extract more specific error messages
           if (message.includes("No valid items found")) {
-            errorMessage = `Ürün boost edilemedi. Olası nedenler:
-            • Ürün zaten boost edilmiş olabilir
-            • Bu mağaza için yetkiniz bulunmuyor olabilir
-            • Ürün geçerli olmayabilir`;
+            errorMessage =
+              "Ürün boost edilemedi. Ürün geçerli olmayabilir veya yetkiniz bulunmuyor olabilir.";
           } else if (message.includes("permissions")) {
             errorMessage = "Bu ürünü boost etme yetkiniz yok";
           } else if (message.includes("shopId")) {
@@ -716,7 +639,6 @@ function ProductDetailsContent() {
         }
       }
 
-      console.error("=== END BOOST ERROR ===");
       toast.error(errorMessage);
     } finally {
       setIsBoostLoading(false);
@@ -729,17 +651,13 @@ function ProductDetailsContent() {
   ) => {
     if (!productId) throw new Error("Product ID not found");
 
-    // Determine which collection to update
     const collectionName = product?.shopId ? "shop_products" : "products";
-
-    // Update the specific field in Firestore
     const productRef = doc(db, collectionName, productId);
     await updateDoc(productRef, {
       [field]: value,
       updatedAt: Timestamp.now(),
     });
 
-    // Update local state
     setProduct((prev) =>
       prev ? { ...prev, [field]: value, updatedAt: Timestamp.now() } : null
     );
@@ -753,7 +671,6 @@ function ProductDetailsContent() {
     try {
       setSavingField(categoryModalField);
 
-      // Apply all the changes
       if (values.category !== undefined) {
         await saveIndividualField("category", values.category);
       }
@@ -774,7 +691,6 @@ function ProductDetailsContent() {
     }
   };
 
-  // Fetch product reviews
   const fetchProductReviews = useCallback(
     async (prodId: string, isShopProduct: boolean) => {
       try {
@@ -831,99 +747,6 @@ function ProductDetailsContent() {
     []
   );
 
-  // Fetch related products
-  const fetchRelatedProducts = useCallback(
-    async (append = false) => {
-      if (!product || relatedLoading) return;
-
-      try {
-        setRelatedLoading(true);
-
-        let q = query(
-          collection(db, "shop_products"),
-          where("shopId", "==", product.shopId),
-          orderBy(
-            relatedSort === "newest"
-              ? "createdAt"
-              : relatedSort === "oldest"
-              ? "createdAt"
-              : relatedSort === "price_high"
-              ? "price"
-              : relatedSort === "price_low"
-              ? "price"
-              : "clickCount",
-            relatedSort === "oldest" || relatedSort === "price_low"
-              ? "asc"
-              : "desc"
-          ),
-          limit(ITEMS_PER_PAGE)
-        );
-
-        // Apply pagination
-        if (append && lastRelatedDoc) {
-          q = query(q, startAfter(lastRelatedDoc));
-        }
-
-        const snapshot = await getDocs(q);
-        const newProducts = snapshot.docs
-          .map((doc) => ({ id: doc.id, ...doc.data() } as ProductData))
-          .filter((p) => p.id !== product.id); // Exclude current product
-
-        if (append) {
-          setRelatedProducts((prev) => [...prev, ...newProducts]);
-        } else {
-          setRelatedProducts(newProducts);
-          setLastRelatedDoc(null);
-        }
-
-        // Set last document for pagination
-        if (newProducts.length > 0) {
-          setLastRelatedDoc(snapshot.docs[snapshot.docs.length - 1]);
-        }
-      } catch (error) {
-        console.error("Error fetching related products:", error);
-        toast.error("İlgili ürünler yüklenirken hata oluştu");
-      } finally {
-        setRelatedLoading(false);
-      }
-    },
-    [product, relatedSort, lastRelatedDoc, relatedLoading]
-  );
-
-  // Filter related products
-  const filteredRelatedProducts = useMemo(() => {
-    let filtered = relatedProducts;
-
-    // Apply search filter
-    if (relatedSearch.trim()) {
-      const searchTerm = relatedSearch.toLowerCase().trim();
-      filtered = filtered.filter(
-        (product) =>
-          product.productName?.toLowerCase().includes(searchTerm) ||
-          product.category?.toLowerCase().includes(searchTerm) ||
-          product.brandModel?.toLowerCase().includes(searchTerm)
-      );
-    }
-
-    // Apply status filter
-    if (relatedFilter !== "all") {
-      filtered = filtered.filter((product) => {
-        switch (relatedFilter) {
-          case "active":
-            return !product.sold;
-          case "sold":
-            return product.sold;
-          case "featured":
-            return product.isFeatured || product.isBoosted;
-          default:
-            return true;
-        }
-      });
-    }
-
-    return filtered;
-  }, [relatedProducts, relatedSearch, relatedFilter]);
-
   const filteredQuestions = useMemo(() => {
     if (questionFilter === "all") {
       return questions;
@@ -931,7 +754,6 @@ function ProductDetailsContent() {
     return questions.filter((question) => question.answered);
   }, [questions, questionFilter]);
 
-  // Handle color selection
   const handleColorSelect = (color: string) => {
     if (selectedColor === color) {
       setSelectedColor(null);
@@ -942,36 +764,9 @@ function ProductDetailsContent() {
     }
   };
 
-  // Format price
-  const formatPrice = (price: number, currency: string = "TRY") => {
-    return new Intl.NumberFormat("tr-TR", {
-      style: "currency",
-      currency: currency === "TL" ? "TRY" : currency,
-      minimumFractionDigits: 0,
-    }).format(price);
-  };
-
-  // Effects
   useEffect(() => {
     fetchProductData();
   }, [fetchProductData]);
-
-  useEffect(() => {
-    if (product && product.shopId) {
-      setRelatedProducts([]);
-      setLastRelatedDoc(null);
-      fetchRelatedProducts();
-    }
-  }, [product]);
-
-  // Reset related products when sort changes
-  useEffect(() => {
-    if (product && product.shopId) {
-      setRelatedProducts([]);
-      setLastRelatedDoc(null);
-      fetchRelatedProducts();
-    }
-  }, [relatedSort]);
 
   const BoostCountdown = ({ boostEndTime }: { boostEndTime: Timestamp }) => {
     const [timeRemaining, setTimeRemaining] = useState<{
@@ -999,44 +794,35 @@ function ProductDetailsContent() {
 
           setTimeRemaining({ days, hours, minutes, seconds });
         } else {
-          // Boost has expired
           setTimeRemaining({ days: 0, hours: 0, minutes: 0, seconds: 0 });
-          // Update the product state to reflect that boost has ended
           setProduct((prev) => (prev ? { ...prev, isBoosted: false } : null));
         }
       };
 
-      // Update immediately
       updateCountdown();
-
-      // Update every second
       const interval = setInterval(updateCountdown, 1000);
-
       return () => clearInterval(interval);
     }, [boostEndTime]);
 
     const formatTime = (time: number) => time.toString().padStart(2, "0");
 
     return (
-      <div className="p-2 bg-gradient-to-r from-purple-600/90 to-pink-600/90 text-white rounded-lg shadow-lg backdrop-blur-sm border border-purple-500/50">
-        <div className="flex items-center gap-2 mb-1">
-          <Zap className="w-4 h-4 animate-pulse" />
-          <span className="text-xs font-medium">Boost Aktif</span>
-        </div>
-        <div className="text-xs font-mono">
+      <div className="px-2 py-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded text-xs font-medium flex items-center gap-1 shadow-sm">
+        <Zap className="w-3 h-3" />
+        <span>
           {timeRemaining.days > 0 && <span>{timeRemaining.days}g </span>}
           {formatTime(timeRemaining.hours)}:{formatTime(timeRemaining.minutes)}:
           {formatTime(timeRemaining.seconds)}
-        </div>
+        </span>
       </div>
     );
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="flex items-center gap-3 text-white">
-          <Loader2 className="w-6 h-6 animate-spin" />
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+        <div className="flex items-center gap-3 text-gray-900">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
           <span>Ürün bilgileri yükleniyor...</span>
         </div>
       </div>
@@ -1045,16 +831,16 @@ function ProductDetailsContent() {
 
   if (!product) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-center text-white">
-          <h2 className="text-xl font-semibold mb-2">Ürün Bulunamadı</h2>
-          <p className="text-gray-400">Aradığınız ürün mevcut değil.</p>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-2 text-gray-900">
+            Ürün Bulunamadı
+          </h2>
+          <p className="text-gray-600">Aradığınız ürün mevcut değil.</p>
         </div>
       </div>
     );
   }
-
-  // Add this new component after the EditableField component definition:
 
   const AllFieldsDisplay = ({
     product,
@@ -1070,12 +856,10 @@ function ProductDetailsContent() {
     savingField: string | null;
     setSavingField: (field: string | null) => void;
   }) => {
-    const [isExpanded, setIsExpanded] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [editingField, setEditingField] = useState<string | null>(null);
     const [editValue, setEditValue] = useState<string>("");
 
-    // Function to format field values based on their type
     const formatFieldValue = (
       value: unknown
     ): { display: string; type: string } => {
@@ -1103,7 +887,6 @@ function ProductDetailsContent() {
             "toDate" in value &&
             typeof (value as { toDate: () => Date }).toDate === "function"
           ) {
-            // Firestore Timestamp
             return {
               display: (value as { toDate: () => Date })
                 .toDate()
@@ -1123,33 +906,31 @@ function ProductDetailsContent() {
       }
     };
 
-    // Function to get color based on type
     const getTypeColor = (type: string): string => {
       switch (type) {
         case "string":
-          return "text-green-400";
+          return "text-green-600";
         case "number":
-          return "text-blue-400";
+          return "text-blue-600";
         case "boolean":
-          return "text-purple-400";
+          return "text-purple-600";
         case "timestamp":
-          return "text-yellow-400";
+          return "text-orange-600";
         case "date":
-          return "text-yellow-400";
+          return "text-orange-600";
         case "array":
-          return "text-orange-400";
+          return "text-pink-600";
         case "object":
-          return "text-pink-400";
+          return "text-indigo-600";
         case "null":
           return "text-gray-500";
         case "undefined":
           return "text-gray-500";
         default:
-          return "text-white";
+          return "text-gray-900";
       }
     };
 
-    // Get all fields from the product object
     const getAllFields = () => {
       const fields: Array<{
         key: string;
@@ -1158,7 +939,6 @@ function ProductDetailsContent() {
         editable: boolean;
       }> = [];
 
-      // Define non-editable fields
       const nonEditableFields = [
         "id",
         "createdAt",
@@ -1167,7 +947,6 @@ function ProductDetailsContent() {
         "shopId",
       ];
 
-      // Convert the product object to a plain object to get all fields
       const productData = { ...product } as Record<string, unknown>;
 
       Object.keys(productData).forEach((key) => {
@@ -1177,11 +956,9 @@ function ProductDetailsContent() {
         fields.push({ key, value, type, editable });
       });
 
-      // Sort fields alphabetically
       return fields.sort((a, b) => a.key.localeCompare(b.key));
     };
 
-    // Filter fields based on search term
     const filteredFields = useMemo(() => {
       const allFields = getAllFields();
 
@@ -1199,9 +976,7 @@ function ProductDetailsContent() {
       );
     }, [product, searchTerm]);
 
-    // Start editing a field
     const startEditing = (fieldKey: string, currentValue: unknown) => {
-      // Check if this is a category-related field
       if (
         fieldKey === "category" ||
         fieldKey === "subcategory" ||
@@ -1215,26 +990,22 @@ function ProductDetailsContent() {
         return;
       }
 
-      // For other fields, use the normal editing
       setEditingField(fieldKey);
       const { display } = formatFieldValue(currentValue);
       setEditValue(display);
     };
 
-    // Cancel editing
     const cancelEditing = () => {
       setEditingField(null);
       setEditValue("");
     };
 
-    // Save field changes
     const saveField = async (fieldKey: string, type: string) => {
       try {
         setSavingField(fieldKey);
 
         let convertedValue: string | number | boolean = editValue;
 
-        // Convert the string input to the appropriate type
         switch (type) {
           case "number":
             convertedValue = editValue === "" ? 0 : Number(editValue);
@@ -1284,66 +1055,40 @@ function ProductDetailsContent() {
       }
     };
 
-    if (!isExpanded) {
-      return (
-        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-          <button
-            onClick={() => setIsExpanded(true)}
-            className="flex items-center justify-between w-full text-left"
-          >
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm h-full flex flex-col">
+        {/* Header with Search */}
+        <div className="p-3 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <Database className="w-5 h-5 text-blue-400" />
-              <h3 className="text-lg font-semibold text-white">
+              <Database className="w-4 h-4 text-blue-600" />
+              <h3 className="text-sm font-semibold text-gray-900">
                 Tüm Ürün Alanları
               </h3>
-              <span className="text-sm text-gray-400">
-                ({getAllFields().length} alan)
+              <span className="text-xs text-gray-600">
+                ({filteredFields.length})
               </span>
             </div>
-            <div className="flex items-center gap-2 text-gray-400">
-              <span className="text-sm">Genişlet</span>
-              <ArrowRight className="w-4 h-4" />
-            </div>
-          </button>
-        </div>
-      );
-    }
-
-    return (
-      <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Database className="w-5 h-5 text-blue-400" />
-            <h3 className="text-lg font-semibold text-white">
-              Tüm Ürün Alanları
-            </h3>
-            <span className="text-sm text-gray-400">
-              ({filteredFields.length} alan)
-            </span>
           </div>
-          <button
-            onClick={() => setIsExpanded(false)}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5 text-gray-400" />
-          </button>
+
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Alan ara..."
+              className="w-full pl-7 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-900 text-xs placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
         </div>
 
-        {/* Search */}
-        <div className="relative mb-4">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Alan adı veya değer ara..."
-            className="w-full pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        {/* Fields List */}
-        <div className="space-y-2 max-h-[600px] overflow-y-auto">
+        {/* Fields List - Scrollable */}
+        <div
+          ref={allFieldsContainerRef}
+          className="p-2 space-y-1 overflow-y-auto flex-1"
+        >
           {filteredFields.map((field) => {
             const { display, type } = formatFieldValue(field.value);
             const isEditing = editingField === field.key;
@@ -1353,47 +1098,42 @@ function ProductDetailsContent() {
             return (
               <div
                 key={field.key}
-                className={`border rounded-lg p-2 transition-all group ${
+                className={`border rounded p-2 transition-all text-xs ${
                   field.editable
-                    ? "border-white/10 bg-white/5 hover:border-white/20"
-                    : "border-gray-600/50 bg-gray-800/20"
-                } ${isEditing ? "border-blue-500/50 bg-blue-600/10" : ""}`}
+                    ? "border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-gray-100"
+                    : "border-gray-200 bg-gray-100"
+                } ${isEditing ? "border-blue-400 bg-blue-50" : ""}`}
               >
-                <div className="flex items-start gap-3">
-                  <div className="flex-1">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
                     {/* Field Name */}
-                    <div className="flex items-center gap-2 mb-0">
-                      <span className="font-mono font-semibold text-blue-300">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="font-mono font-semibold text-blue-700 text-xs">
                         {field.key}
                       </span>
                       <span
-                        className={`text-xs px-2 py-1 rounded ${getTypeColor(
+                        className={`text-[10px] px-1.5 py-0.5 rounded ${getTypeColor(
                           type
-                        )} bg-white/10`}
+                        )} bg-gray-100 font-medium`}
                       >
                         {type}
                       </span>
                       {!field.editable && (
-                        <span className="text-xs px-2 py-1 rounded bg-gray-600/50 text-gray-400">
-                          Salt Okunur
-                        </span>
-                      )}
-                      {isEditing && (
-                        <span className="text-xs px-2 py-1 rounded bg-blue-600/50 text-blue-300">
-                          Düzenleniyor
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">
+                          RO
                         </span>
                       )}
                     </div>
 
                     {/* Field Value */}
-                    <div className="ml-1">
+                    <div>
                       {isEditing ? (
-                        <div className="space-y-2">
+                        <div className="space-y-1">
                           {type === "boolean" ? (
                             <select
                               value={editValue}
                               onChange={(e) => setEditValue(e.target.value)}
-                              className="w-full p-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="w-full p-1.5 bg-white border border-gray-300 rounded text-gray-900 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                               disabled={isSaving}
                             >
                               <option value="true">true</option>
@@ -1403,8 +1143,8 @@ function ProductDetailsContent() {
                             <textarea
                               value={editValue}
                               onChange={(e) => setEditValue(e.target.value)}
-                              className="w-full p-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                              rows={4}
+                              className="w-full p-1.5 bg-white border border-gray-300 rounded text-gray-900 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                              rows={3}
                               placeholder="JSON formatında giriniz"
                               disabled={isSaving}
                             />
@@ -1413,61 +1153,62 @@ function ProductDetailsContent() {
                               type={type === "number" ? "number" : "text"}
                               value={editValue}
                               onChange={(e) => setEditValue(e.target.value)}
-                              className="w-full p-2 bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="w-full p-1.5 bg-white border border-gray-300 rounded text-gray-900 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                               disabled={isSaving}
                             />
                           )}
 
                           {/* Edit Actions */}
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1">
                             <button
                               onClick={() => saveField(field.key, type)}
                               disabled={isSaving}
-                              className="px-3 py-1 bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 text-white rounded text-sm transition-colors flex items-center gap-1"
+                              className="px-2 py-1 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded text-[10px] transition-colors flex items-center gap-1"
                             >
                               {isSaving ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <Loader2 className="w-2.5 h-2.5 animate-spin" />
                               ) : (
-                                <Check className="w-3 h-3" />
+                                <Check className="w-2.5 h-2.5" />
                               )}
                               Kaydet
                             </button>
                             <button
                               onClick={cancelEditing}
                               disabled={isSaving}
-                              className="px-3 py-1 bg-red-600 hover:bg-red-700 disabled:bg-red-600/50 text-white rounded text-sm transition-colors flex items-center gap-1"
+                              className="px-2 py-1 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white rounded text-[10px] transition-colors flex items-center gap-1"
                             >
-                              <X className="w-3 h-3" />
+                              <X className="w-2.5 h-2.5" />
                               İptal
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 group">
                           <span
-                            className={`font-mono text-sm ${getTypeColor(
+                            className={`font-mono ${getTypeColor(
                               type
-                            )} flex-1`}
+                            )} flex-1 truncate text-xs`}
+                            title={display}
                           >
                             {type === "array" || type === "object" ? (
-                              <details className="group">
-                                <summary className="cursor-pointer hover:text-white transition-colors">
+                              <details className="inline">
+                                <summary className="cursor-pointer hover:text-gray-900 transition-colors inline">
                                   {type === "array"
-                                    ? `Array(${
+                                    ? `[${
                                         Array.isArray(field.value)
                                           ? (field.value as unknown as string[])
                                               .length
                                           : 0
-                                      })`
-                                    : `Object(${
+                                      }]`
+                                    : `{${
                                         field.value &&
                                         typeof field.value === "object"
                                           ? Object.keys(field.value).length
                                           : 0
-                                      })`}
+                                      }}`}
                                 </summary>
-                                <div className="mt-2 ml-4 p-3 bg-black/20 rounded border-l-2 border-white/20">
-                                  <pre className="text-xs overflow-x-auto whitespace-pre-wrap">
+                                <div className="mt-1 p-2 bg-gray-100 rounded border-l border-gray-300">
+                                  <pre className="text-[10px] overflow-x-auto whitespace-pre-wrap text-gray-700">
                                     {JSON.stringify(field.value, null, 2)}
                                   </pre>
                                 </div>
@@ -1476,55 +1217,37 @@ function ProductDetailsContent() {
                               display
                             )}
                           </span>
-                          {canEdit && (
+                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {canEdit && (
+                              <button
+                                onClick={() =>
+                                  startEditing(field.key, field.value)
+                                }
+                                className="p-0.5 hover:bg-gray-200 rounded transition-colors"
+                                title="Düzenle"
+                              >
+                                <Edit className="w-3 h-3 text-blue-600" />
+                              </button>
+                            )}
                             <button
-                              onClick={() =>
-                                startEditing(field.key, field.value)
-                              }
-                              className="p-1 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100"
-                              title={
-                                [
-                                  "category",
-                                  "subcategory",
-                                  "subsubcategory",
-                                ].includes(field.key)
-                                  ? "Seçeneklerden seç"
-                                  : "Düzenle"
-                              }
+                              onClick={() => {
+                                navigator.clipboard.writeText(
+                                  type === "array" || type === "object"
+                                    ? JSON.stringify(field.value, null, 2)
+                                    : String(field.value)
+                                );
+                                toast.success("Kopyalandı!");
+                              }}
+                              className="p-0.5 hover:bg-gray-200 rounded transition-colors"
+                              title="Kopyala"
                             >
-                              {[
-                                "category",
-                                "subcategory",
-                                "subsubcategory",
-                              ].includes(field.key) ? (
-                                <Grid className="w-3 h-3 text-blue-400" />
-                              ) : (
-                                <Edit className="w-3 h-3 text-blue-400" />
-                              )}
+                              <Copy className="w-3 h-3 text-gray-600" />
                             </button>
-                          )}
+                          </div>
                         </div>
                       )}
                     </div>
                   </div>
-
-                  {/* Copy Button */}
-                  {!isEditing && (
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(
-                          type === "array" || type === "object"
-                            ? JSON.stringify(field.value, null, 2)
-                            : String(field.value)
-                        );
-                        toast.success("Kopyalandı!");
-                      }}
-                      className="p-1 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100"
-                      title="Değeri kopyala"
-                    >
-                      <Copy className="w-4 h-4 text-gray-400" />
-                    </button>
-                  )}
                 </div>
               </div>
             );
@@ -1533,207 +1256,59 @@ function ProductDetailsContent() {
 
         {/* No Results */}
         {filteredFields.length === 0 && (
-          <div className="text-center py-8">
-            <Search className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-            <p className="text-gray-400">
-              Arama kriterinize uygun alan bulunamadı
-            </p>
+          <div className="text-center py-6">
+            <Search className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+            <p className="text-gray-600 text-xs">Alan bulunamadı</p>
           </div>
         )}
-
-        {/* Summary */}
-        <div className="mt-4 pt-4 border-t border-white/20">
-          <div className="flex flex-wrap gap-4 text-sm text-gray-400">
-            <span>Toplam: {getAllFields().length} alan</span>
-            <span>Gösterilen: {filteredFields.length} alan</span>
-            <span>
-              Düzenlenebilir: {getAllFields().filter((f) => f.editable).length}{" "}
-              alan
-            </span>
-            <span>Ürün ID: {product.id}</span>
-            {editingField && (
-              <span className="text-blue-400">Düzenlenen: {editingField}</span>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const ProductCard = ({
-    product: relatedProduct,
-    viewMode,
-    isLast = false,
-  }: {
-    product: ProductData;
-    viewMode: ViewMode;
-    isLast?: boolean;
-  }) => {
-    // Add click handler
-    const handleProductClick = () => {
-      router.push(`/productdetails?productId=${relatedProduct.id}`);
-    };
-
-    if (viewMode === "list") {
-      return (
-        <div
-          ref={isLast ? lastRelatedProductElementRef : null}
-          onClick={handleProductClick}
-          className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4 transition-all duration-200 hover:bg-white/15 hover:border-white/30 cursor-pointer hover:border-blue-500/50 hover:scale-[1.02] group"
-        >
-          <div className="flex items-center gap-4">
-            <div className="relative w-20 h-20 rounded-lg overflow-hidden flex-shrink-0">
-              {relatedProduct.imageUrls?.[0] ? (
-                <Image
-                  src={relatedProduct.imageUrls[0]}
-                  alt={relatedProduct.productName || "Product"}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                  <ImageIcon className="w-8 h-8 text-gray-400" />
-                </div>
-              )}
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-white truncate group-hover:text-blue-300">
-                {relatedProduct.productName || "Ürün Adı Yok"}
-              </h3>
-              <p className="text-sm text-gray-400">
-                {relatedProduct.brandModel || "Marka Model Yok"}
-              </p>
-              <div className="flex items-center gap-4 mt-1">
-                <span className="text-lg font-bold text-green-400">
-                  {formatPrice(
-                    relatedProduct.price || 0,
-                    relatedProduct.currency || "TRY"
-                  )}
-                </span>
-                <span className="text-xs text-gray-400">
-                  {relatedProduct.condition || "Durum Belirtilmemiş"}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-6 text-sm text-gray-400">
-              <div className="flex items-center gap-1">
-                <Eye className="w-4 h-4" />
-                <span>{relatedProduct.clickCount || 0}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Heart className="w-4 h-4" />
-                <span>{relatedProduct.favoritesCount || 0}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <ShoppingBag className="w-4 h-4" />
-                <span>{relatedProduct.purchaseCount || 0}</span>
-              </div>
-            </div>
-
-            {/* Add visual indicator for clickable item */}
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-              <ExternalLink className="w-5 h-5 text-blue-400" />
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div
-        ref={isLast ? lastRelatedProductElementRef : null}
-        onClick={handleProductClick}
-        className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden transition-all duration-200 hover:bg-white/15 hover:border-white/30 hover:shadow-lg group cursor-pointer hover:border-blue-500/50 hover:scale-[1.02]"
-      >
-        <div className="relative aspect-square">
-          {relatedProduct.imageUrls?.[0] ? (
-            <Image
-              src={relatedProduct.imageUrls[0]}
-              alt={relatedProduct.productName || "Product"}
-              fill
-              className="object-cover"
-            />
-          ) : (
-            <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-              <ImageIcon className="w-12 h-12 text-gray-400" />
-            </div>
-          )}
-
-          {(relatedProduct.isFeatured || relatedProduct.isBoosted) && (
-            <div className="absolute top-2 left-2 flex flex-col gap-1">
-              {relatedProduct.isFeatured && (
-                <span className="px-2 py-1 bg-yellow-600/90 text-white text-xs rounded">
-                  ÖNE ÇIKAN
-                </span>
-              )}
-              {relatedProduct.isBoosted && (
-                <span className="px-2 py-1 bg-purple-600/90 text-white text-xs rounded">
-                  BOOST
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Add visual indicator for clickable item */}
-          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="p-1 bg-blue-600/90 rounded-full">
-              <ExternalLink className="w-3 h-3 text-white" />
-            </div>
-          </div>
-        </div>
-
-        <div className="p-4">
-          <h3 className="font-semibold text-white mb-1 line-clamp-2 group-hover:text-blue-300">
-            {relatedProduct.productName || "Ürün Adı Yok"}
-          </h3>
-          <p className="text-sm text-gray-400 mb-2">
-            {relatedProduct.brandModel || "Marka Model Yok"}
-          </p>
-          <div className="flex items-center justify-between">
-            <span className="text-lg font-bold text-green-400">
-              {formatPrice(
-                relatedProduct.price || 0,
-                relatedProduct.currency || "TRY"
-              )}
-            </span>
-            <span className="text-xs text-gray-400">
-              {relatedProduct.condition || "Durum Belirtilmemiş"}
-            </span>
-          </div>
-        </div>
       </div>
     );
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      {/* Header */}
-      <header className="backdrop-blur-xl bg-white/10 border-b border-white/20 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-4 py-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      {/* Compact Header */}
+      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+        <div className="max-w-[1800px] mx-auto px-4 py-2">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => router.back()}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              className="p-1.5 hover:bg-gray-100 rounded transition-colors"
             >
-              <ArrowLeft className="w-5 h-5 text-white" />
+              <ArrowLeft className="w-4 h-4 text-gray-700" />
             </button>
-            <div>
-              <h1 className="text-xl font-bold text-white">Ürün Detayları</h1>
-              <p className="text-sm text-gray-400">{product.productName}</p>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-sm font-bold text-gray-900 truncate">
+                {product.productName}
+              </h1>
+              <p className="text-xs text-gray-600 truncate">
+                {product.brandModel} • {product.category}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {!product.isBoosted ? (
+                <button
+                  onClick={() => setShowBoostModal(true)}
+                  className="px-2 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded text-xs transition-colors flex items-center gap-1"
+                >
+                  <Zap className="w-3 h-3" />
+                  <span>Boost</span>
+                </button>
+              ) : product.boostEndTime ? (
+                <BoostCountdown boostEndTime={product.boostEndTime} />
+              ) : null}
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Product Details Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Product Images */}
-          <div className="space-y-4">
+      <main className="max-w-[1800px] mx-auto px-4 py-4 h-screen overflow-hidden">
+        {/* Main Content Grid - Maximized Width & Height Usage */}
+        <div className="grid grid-cols-12 gap-4 h-full overflow-hidden">
+          {/* Left Column - Product Images (Compact) */}
+          <div className="col-span-3 space-y-2 overflow-y-auto h-full">
             {/* Main Image */}
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden">
+            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
               <div className="relative aspect-square">
                 {currentImageUrls[selectedImageIndex] ? (
                   <Image
@@ -1743,8 +1318,8 @@ function ProductDetailsContent() {
                     className="object-cover"
                   />
                 ) : (
-                  <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                    <ImageIcon className="w-16 h-16 text-gray-400" />
+                  <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                    <ImageIcon className="w-12 h-12 text-gray-400" />
                   </div>
                 )}
 
@@ -1757,9 +1332,9 @@ function ProductDetailsContent() {
                           prev > 0 ? prev - 1 : currentImageUrls.length - 1
                         )
                       }
-                      className="absolute left-2 top-1/2 transform -translate-y-1/2 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors"
+                      className="absolute left-1 top-1/2 transform -translate-y-1/2 p-1 bg-white/90 hover:bg-white text-gray-700 rounded-full transition-colors shadow"
                     >
-                      <ArrowLeft className="w-4 h-4" />
+                      <ArrowLeft className="w-3 h-3" />
                     </button>
                     <button
                       onClick={() =>
@@ -1767,52 +1342,31 @@ function ProductDetailsContent() {
                           prev < currentImageUrls.length - 1 ? prev + 1 : 0
                         )
                       }
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors"
+                      className="absolute right-1 top-1/2 transform -translate-y-1/2 p-1 bg-white/90 hover:bg-white text-gray-700 rounded-full transition-colors shadow"
                     >
-                      <ArrowLeft className="w-4 h-4 rotate-180" />
+                      <ArrowLeft className="w-3 h-3 rotate-180" />
                     </button>
                   </>
                 )}
-
-                <div className="absolute top-2 right-2">
-                  {!product.isBoosted ? (
-                    <button
-                      onClick={() => setShowBoostModal(true)}
-                      className="p-2 bg-purple-600/90 hover:bg-purple-700/90 text-white rounded-lg transition-colors shadow-lg backdrop-blur-sm border border-purple-500/50 flex items-center gap-2"
-                      title="Ürünü Öne Çıkar"
-                    >
-                      <Zap className="w-4 h-4" />
-                      <span className="text-sm font-medium">Boost</span>
-                    </button>
-                  ) : // Replace the old static boost active div with the countdown component
-                  product.boostEndTime ? (
-                    <BoostCountdown boostEndTime={product.boostEndTime} />
-                  ) : (
-                    <div className="p-2 bg-gradient-to-r from-purple-600/90 to-pink-600/90 text-white rounded-lg shadow-lg backdrop-blur-sm border border-purple-500/50 flex items-center gap-2">
-                      <Zap className="w-4 h-4 animate-pulse" />
-                      <span className="text-sm font-medium">Boost Aktif</span>
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
 
             {/* Image Thumbnails */}
             {currentImageUrls.length > 1 && (
-              <div className="flex gap-2 overflow-x-auto pb-2">
+              <div className="flex gap-1 overflow-x-auto pb-1">
                 {currentImageUrls.map((image, index) => (
                   <button
                     key={index}
                     onClick={() => setSelectedImageIndex(index)}
-                    className={`relative w-20 h-20 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-colors ${
+                    className={`relative w-14 h-14 rounded overflow-hidden flex-shrink-0 border-2 transition-colors ${
                       selectedImageIndex === index
-                        ? "border-blue-400"
-                        : "border-white/20 hover:border-white/40"
+                        ? "border-blue-500"
+                        : "border-gray-200 hover:border-gray-300"
                     }`}
                   >
                     <Image
                       src={image}
-                      alt={`Product thumbnail ${index + 1}`}
+                      alt={`Thumbnail ${index + 1}`}
                       fill
                       className="object-cover"
                     />
@@ -1821,22 +1375,22 @@ function ProductDetailsContent() {
               </div>
             )}
 
-            {/* Color Selection */}
+            {/* Color/Size Selection - Compact */}
             {product.availableColors && product.availableColors.length > 0 && (
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-                <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                  <Palette className="w-4 h-4" />
-                  Mevcut Renkler
+              <div className="bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
+                <h3 className="text-xs font-semibold text-gray-900 mb-1.5 flex items-center gap-1">
+                  <Palette className="w-3 h-3" />
+                  Renkler
                 </h3>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1">
                   {product.availableColors.map((color, index) => (
                     <button
                       key={index}
                       onClick={() => handleColorSelect(color)}
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${
                         selectedColor === color
-                          ? "bg-blue-600 text-white border-2 border-blue-400"
-                          : "bg-white/10 text-gray-300 border-2 border-white/20 hover:bg-white/15 hover:border-white/30"
+                          ? "bg-blue-600 text-white"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                       }`}
                     >
                       {color}
@@ -1846,18 +1400,17 @@ function ProductDetailsContent() {
               </div>
             )}
 
-            {/* Size Selection */}
             {product.availableSizes && product.availableSizes.length > 0 && (
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-                <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                  <Ruler className="w-4 h-4" />
-                  Mevcut Bedenler
+              <div className="bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
+                <h3 className="text-xs font-semibold text-gray-900 mb-1.5 flex items-center gap-1">
+                  <Ruler className="w-3 h-3" />
+                  Bedenler
                 </h3>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1">
                   {product.availableSizes.map((size, index) => (
                     <span
                       key={index}
-                      className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-sm text-gray-300"
+                      className="px-2 py-1 bg-gray-100 border border-gray-200 rounded text-[10px] text-gray-700"
                     >
                       {size}
                     </span>
@@ -1865,647 +1418,416 @@ function ProductDetailsContent() {
                 </div>
               </div>
             )}
-          </div>
 
-          {/* Product Information */}
-          <div className="space-y-6">
-            <AllFieldsDisplay
-              product={product}
-              onFieldSave={saveIndividualField}
-              savingField={savingField}
-              setSavingField={setSavingField}
-            />
-
-            {/* Statistics */}
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">
+            {/* Quick Stats - Compact */}
+            <div className="bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
+              <h3 className="text-xs font-semibold text-gray-900 mb-2">
                 İstatistikler
               </h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Eye className="w-4 h-4 text-blue-400" />
-                    <span className="text-sm text-gray-300">Görüntülenme</span>
+                  <div className="flex items-center gap-1">
+                    <Eye className="w-3 h-3 text-blue-600" />
+                    <span className="text-gray-700">Görüntülenme</span>
                   </div>
-                  <span className="text-white font-semibold">
+                  <span className="text-gray-900 font-semibold">
                     {product.clickCount || 0}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Heart className="w-4 h-4 text-red-400" />
-                    <span className="text-sm text-gray-300">Beğeni</span>
+                  <div className="flex items-center gap-1">
+                    <Heart className="w-3 h-3 text-red-500" />
+                    <span className="text-gray-700">Beğeni</span>
                   </div>
-                  <span className="text-white font-semibold">
+                  <span className="text-gray-900 font-semibold">
                     {product.favoritesCount || 0}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ShoppingBag className="w-4 h-4 text-green-400" />
-                    <span className="text-sm text-gray-300">Sepete Ekleme</span>
+                  <div className="flex items-center gap-1">
+                    <ShoppingBag className="w-3 h-3 text-green-600" />
+                    <span className="text-gray-700">Sepet</span>
                   </div>
-                  <span className="text-white font-semibold">
+                  <span className="text-gray-900 font-semibold">
                     {product.cartCount || 0}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-purple-400" />
-                    <span className="text-sm text-gray-300">Satın Alma</span>
+                  <div className="flex items-center gap-1">
+                    <TrendingUp className="w-3 h-3 text-purple-600" />
+                    <span className="text-gray-700">Satış</span>
                   </div>
-                  <span className="text-white font-semibold">
+                  <span className="text-gray-900 font-semibold">
                     {product.purchaseCount || 0}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between col-span-2">
-                  <div className="flex items-center gap-2">
-                    <Star className="w-4 h-4 text-yellow-400" />
-                    <span className="text-sm text-gray-300">Ortalama Puan</span>
+                  <div className="flex items-center gap-1">
+                    <Star className="w-3 h-3 text-yellow-500" />
+                    <span className="text-gray-700">Ortalama Puan</span>
                   </div>
-                  <span className="text-white font-semibold">
+                  <span className="text-gray-900 font-semibold">
                     {product.averageRating
                       ? product.averageRating.toFixed(1)
                       : "0.0"}
-                    <span className="text-gray-400 text-xs ml-1">
-                      ({product.reviewCount || 0} değerlendirme)
+                    <span className="text-gray-600 text-[10px] ml-1">
+                      ({product.reviewCount || 0})
                     </span>
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Shop & Seller Info */}
-            <div className="space-y-4">
-              {/* Shop Info */}
-              {shop && (
-                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-                  <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                    <Store className="w-5 h-5" />
-                    Mağaza Bilgileri
-                  </h3>
-                  <div className="flex items-center gap-4">
-                    <div className="relative w-12 h-12 rounded-full overflow-hidden flex-shrink-0">
-                      {shop.profileImageUrl ? (
-                        <Image
-                          src={shop.profileImageUrl}
-                          alt={shop.name}
-                          fill
-                          className="object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                          <Store className="w-6 h-6 text-gray-400" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-semibold text-white">
-                          {shop.name}
-                        </h4>
-                        {shop.verified && (
-                          <Badge className="w-4 h-4 text-blue-400" />
-                        )}
-                        {shop.isBoosted && (
-                          <span className="px-2 py-1 bg-purple-600/20 text-purple-400 text-xs rounded">
-                            BOOST
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4 text-sm text-gray-400">
-                        <div className="flex items-center gap-1">
-                          <Star className="w-3 h-3 text-yellow-400" />
-                          <span>{shop.averageRating?.toFixed(1) || "0.0"}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <User className="w-3 h-3" />
-                          <span>{shop.followerCount || 0} takipçi</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Package className="w-3 h-3" />
-                          <span>{shop.totalProductsSold || 0} satış</span>
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() =>
-                        router.push(`/shopdetails?shopId=${shop.id}`)
-                      }
-                      className="p-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg transition-colors"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Additional Info */}
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-              <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                <Info className="w-5 h-5" />
-                Ek Bilgiler
-              </h3>
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-300">Oluşturulma Tarihi</span>
-                  <span className="text-white">
-                    {product.createdAt?.toDate().toLocaleDateString("tr-TR")}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-300">Son Güncelleme</span>
-                  <span className="text-white">
-                    {product.updatedAt?.toDate().toLocaleDateString("tr-TR")}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Reviews and Questions Section */}
-        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6 mb-8">
-          {/* Tab Headers */}
-          <div className="flex items-center gap-4 mb-6 border-b border-white/20">
-            <button
-              onClick={() => setActiveTab("reviews")}
-              className={`pb-3 px-1 text-sm font-medium transition-colors relative ${
-                activeTab === "reviews"
-                  ? "text-white border-b-2 border-blue-400"
-                  : "text-gray-400 hover:text-white"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <MessageCircle className="w-4 h-4" />
-                Değerlendirmeler ({reviews.length})
-              </div>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("questions")}
-              className={`pb-3 px-1 text-sm font-medium transition-colors relative ${
-                activeTab === "questions"
-                  ? "text-white border-b-2 border-blue-400"
-                  : "text-gray-400 hover:text-white"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <MessageCircle className="w-4 h-4" />
-                Sorular ({questions.length})
-              </div>
-            </button>
-          </div>
-
-          {/* Reviews Tab Content */}
-          {activeTab === "reviews" && (
-            <div>
-              {reviewsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
-                  <span className="text-gray-400 ml-2">
-                    Değerlendirmeler yükleniyor...
-                  </span>
-                </div>
-              ) : reviews.length > 0 ? (
-                <div className="space-y-4">
-                  {reviews.map((review) => (
-                    <div
-                      key={review.id}
-                      className="p-4 bg-white/5 rounded-lg border border-white/10"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-                          {review.userImage ? (
-                            <Image
-                              src={review.userImage}
-                              alt={review.userName}
-                              fill
-                              className="object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                              <User className="w-5 h-5 text-gray-400" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h4 className="font-semibold text-white text-sm">
-                              {review.userName}
-                            </h4>
-                            {review.verified && (
-                              <Badge className="w-3 h-3 text-blue-400" />
-                            )}
-                            <div className="flex items-center gap-1">
-                              {[...Array(5)].map((_, i) => (
-                                <Star
-                                  key={i}
-                                  className={`w-3 h-3 ${
-                                    i < review.rating
-                                      ? "text-yellow-400 fill-current"
-                                      : "text-gray-600"
-                                  }`}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                          <p className="text-gray-300 text-sm mb-2">
-                            {review.review}
-                          </p>
-                          <div className="flex items-center gap-4 text-xs text-gray-400">
-                            <span>
-                              {review.timestamp
-                                ?.toDate()
-                                .toLocaleDateString("tr-TR")}
-                            </span>
-                            <div className="flex items-center gap-1">
-                              <Heart className="w-3 h-3" />
-                              <span>{review.likes?.length || 0}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <MessageCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-gray-400">
-                    Henüz değerlendirme bulunmuyor
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Questions Tab Content */}
-          {activeTab === "questions" && (
-            <div>
-              {/* Question Filter Toggle */}
-              <div className="flex items-center gap-3 mb-4">
-                <button
-                  onClick={() => setQuestionFilter("all")}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    questionFilter === "all"
-                      ? "bg-blue-600 text-white"
-                      : "bg-white/10 text-gray-300 hover:bg-white/15 hover:text-white"
-                  }`}
-                >
-                  Hepsi ({questions.length})
-                </button>
-                <button
-                  onClick={() => setQuestionFilter("answered")}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    questionFilter === "answered"
-                      ? "bg-blue-600 text-white"
-                      : "bg-white/10 text-gray-300 hover:bg-white/15 hover:text-white"
-                  }`}
-                >
-                  Cevaplananlar ({questions.filter((q) => q.answered).length})
-                </button>
-              </div>
-
-              {/* Questions List */}
-              {questionsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
-                  <span className="text-gray-400 ml-2">
-                    Sorular yükleniyor...
-                  </span>
-                </div>
-              ) : filteredQuestions.length > 0 ? (
-                <div className="space-y-4">
-                  {filteredQuestions.map((question) => (
-                    <div
-                      key={question.id}
-                      className="p-4 bg-white/5 rounded-lg border border-white/10"
-                    >
-                      {/* Question */}
-                      <div className="mb-3">
-                        <div className="flex items-center gap-2 mb-2">
-                          <h4 className="font-semibold text-white text-sm">
-                            {question.askerNameVisible
-                              ? question.askerName
-                              : "Anonim"}
-                          </h4>
-                          <span className="text-xs text-gray-400">
-                            {question.timestamp
-                              ?.toDate()
-                              .toLocaleDateString("tr-TR")}
-                          </span>
-                        </div>
-                        <p className="text-gray-300 text-sm">
-                          {question.questionText}
-                        </p>
-                      </div>
-
-                      {/* Answer */}
-                      {question.answered && question.answerText && (
-                        <div className="ml-4 pl-4 border-l-2 border-blue-400/30 bg-white/5 rounded-r-lg p-3">
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="relative w-6 h-6 rounded-full overflow-hidden flex-shrink-0">
-                              {question.answererProfileImage ? (
-                                <Image
-                                  src={question.answererProfileImage}
-                                  alt="Seller"
-                                  fill
-                                  className="object-cover"
-                                />
-                              ) : (
-                                <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                                  <User className="w-3 h-3 text-gray-400" />
-                                </div>
-                              )}
-                            </div>
-                            <h5 className="font-semibold text-blue-300 text-sm">
-                              {question.answererName || shop?.name || "Satıcı"}
-                            </h5>
-                            <span className="text-xs text-gray-400">
-                              {question.answerTimestamp
-                                ?.toDate()
-                                .toLocaleDateString("tr-TR")}
-                            </span>
-                          </div>
-                          <p className="text-gray-300 text-sm">
-                            {question.answerText}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <MessageCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-gray-400">
-                    {questionFilter === "all"
-                      ? "Henüz soru bulunmuyor"
-                      : "Henüz cevaplanmış soru bulunmuyor"}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Related Products Section */}
-        {product.shopId && (
-          <div className="space-y-6">
-            {/* Related Product Controls */}
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-white">
-                  Mağazadaki Diğer Ürünler
-                </h2>
-                <div className="flex items-center gap-2 text-sm text-gray-400">
-                  <Package className="w-4 h-4" />
-                  <span>{filteredRelatedProducts.length} ürün</span>
-                </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-                  {/* Search */}
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                      type="text"
-                      value={relatedSearch}
-                      onChange={(e) => setRelatedSearch(e.target.value)}
-                      placeholder="Ürün ara..."
-                      className="pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
-                    />
-                  </div>
-
-                  {/* Filter */}
-                  <select
-                    value={relatedFilter}
-                    onChange={(e) =>
-                      setRelatedFilter(e.target.value as FilterStatus)
-                    }
-                    className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    style={{ color: "white" }}
-                  >
-                    <option
-                      value="all"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      Tüm Ürünler
-                    </option>
-                    <option
-                      value="active"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      Aktif
-                    </option>
-                    <option
-                      value="sold"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      Satılan
-                    </option>
-                    <option
-                      value="featured"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      Öne Çıkan
-                    </option>
-                  </select>
-
-                  {/* Sort */}
-                  <select
-                    value={relatedSort}
-                    onChange={(e) => setRelatedSort(e.target.value as SortBy)}
-                    className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    style={{ color: "white" }}
-                  >
-                    <option
-                      value="newest"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      En Yeni
-                    </option>
-                    <option
-                      value="oldest"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      En Eski
-                    </option>
-                    <option
-                      value="price_high"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      Fiyat: Yüksek → Düşük
-                    </option>
-                    <option
-                      value="price_low"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      Fiyat: Düşük → Yüksek
-                    </option>
-                    <option
-                      value="popular"
-                      style={{ backgroundColor: "#1f2937", color: "white" }}
-                    >
-                      En Popüler
-                    </option>
-                  </select>
-                </div>
-
-                {/* View Mode Toggle */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setRelatedViewMode("grid")}
-                    className={`p-2 rounded-lg transition-colors ${
-                      relatedViewMode === "grid"
-                        ? "bg-blue-600 text-white"
-                        : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
-                    }`}
-                  >
-                    <Grid className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setRelatedViewMode("list")}
-                    className={`p-2 rounded-lg transition-colors ${
-                      relatedViewMode === "list"
-                        ? "bg-blue-600 text-white"
-                        : "bg-white/10 text-gray-400 hover:text-white hover:bg-white/15"
-                    }`}
-                  >
-                    <List className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Related Products Grid/List */}
-            {filteredRelatedProducts.length === 0 && !relatedLoading ? (
-              <div className="text-center py-12">
-                <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-white mb-2">
-                  İlgili Ürün Bulunamadı
+            {/* Shop Info - Compact */}
+            {shop && (
+              <div className="bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
+                <h3 className="text-xs font-semibold text-gray-900 mb-2 flex items-center gap-1">
+                  <Store className="w-3 h-3" />
+                  Mağaza
                 </h3>
-                <p className="text-gray-400">
-                  {relatedSearch || relatedFilter !== "all"
-                    ? "Arama kriterlerinize uygun ürün bulunamadı."
-                    : "Bu mağazanın başka ürünü bulunmuyor."}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div
-                  className={`grid gap-4 ${
-                    relatedViewMode === "grid"
-                      ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-                      : "grid-cols-1"
-                  }`}
-                >
-                  {filteredRelatedProducts.map((relatedProduct, index) => (
-                    <ProductCard
-                      key={relatedProduct.id}
-                      product={relatedProduct}
-                      viewMode={relatedViewMode}
-                      isLast={index === filteredRelatedProducts.length - 1}
-                    />
-                  ))}
-                </div>
-
-                {/* Loading indicator for infinite scroll */}
-                {relatedLoading && (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="flex items-center gap-3 text-white">
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>Daha fazla ürün yükleniyor...</span>
+                <div className="flex items-center gap-2">
+                  <div className="relative w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
+                    {shop.profileImageUrl ? (
+                      <Image
+                        src={shop.profileImageUrl}
+                        alt={shop.name}
+                        fill
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                        <Store className="w-4 h-4 text-gray-500" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1">
+                      <h4 className="font-semibold text-gray-900 text-xs truncate">
+                        {shop.name}
+                      </h4>
+                      {shop.verified && (
+                        <Badge className="w-3 h-3 text-blue-600" />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] text-gray-600">
+                      <div className="flex items-center gap-0.5">
+                        <Star className="w-2.5 h-2.5 text-yellow-500" />
+                        <span>{shop.averageRating?.toFixed(1) || "0.0"}</span>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <User className="w-2.5 h-2.5" />
+                        <span>{shop.followerCount || 0}</span>
+                      </div>
                     </div>
                   </div>
-                )}
+                  <button
+                    onClick={() =>
+                      router.push(`/shopdetails?shopId=${shop.id}`)
+                    }
+                    className="p-1 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded transition-colors"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             )}
           </div>
-        )}
 
-        {/* Analytics Summary */}
-        <div className="mt-8 backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">
-            Ürün Performans Özeti
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-400">
-                {product.clickCount || 0}
-              </div>
-              <div className="text-sm text-gray-400">Görüntülenme</div>
-            </div>
+          {/* Middle Column - All Fields (Extended Height) */}
+          <div className="col-span-5 h-full overflow-hidden">
+            <AllFieldsDisplay
+              product={product}
+              onFieldSave={saveIndividualField}
+              savingField={savingField}
+              setSavingField={setSavingField}
+            />
+          </div>
 
-            <div className="text-center">
-              <div className="text-2xl font-bold text-red-400">
-                {product.favoritesCount || 0}
-              </div>
-              <div className="text-sm text-gray-400">Beğeni</div>
-            </div>
+          {/* Right Column - Reviews & Questions (Extended Height) */}
+          <div className="col-span-4 h-full overflow-hidden">
+            <div className="bg-white border border-gray-200 rounded-lg shadow-sm h-full flex flex-col">
+              {/* Tab Headers */}
+              <div className="flex items-center border-b border-gray-200 flex-shrink-0">
+                <button
+                  onClick={() => setActiveTab("reviews")}
+                  className={`flex-1 py-2 px-3 text-xs font-medium transition-colors relative ${
+                    activeTab === "reviews"
+                      ? "text-gray-900 bg-gray-50"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <MessageCircle className="w-3 h-3" />
+                    Değerlendirmeler ({reviews.length})
+                  </div>
+                  {activeTab === "reviews" && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />
+                  )}
+                </button>
 
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-400">
-                {product.cartCount || 0}
+                <button
+                  onClick={() => setActiveTab("questions")}
+                  className={`flex-1 py-2 px-3 text-xs font-medium transition-colors relative ${
+                    activeTab === "questions"
+                      ? "text-gray-900 bg-gray-50"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <MessageCircle className="w-3 h-3" />
+                    Sorular ({questions.length})
+                  </div>
+                  {activeTab === "questions" && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />
+                  )}
+                </button>
               </div>
-              <div className="text-sm text-gray-400">Sepete Ekleme</div>
-            </div>
 
-            <div className="text-center">
-              <div className="text-2xl font-bold text-purple-400">
-                {product.purchaseCount || 0}
-              </div>
-              <div className="text-sm text-gray-400">Satış</div>
-            </div>
+              {/* Content Area - Scrollable with Extended Height */}
+              <div className="p-3 overflow-y-auto flex-1">
+                {/* Reviews Tab Content */}
+                {activeTab === "reviews" && (
+                  <div>
+                    {reviewsLoading ? (
+                      <div className="flex items-center justify-center py-6">
+                        <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                        <span className="text-gray-600 ml-2 text-xs">
+                          Yükleniyor...
+                        </span>
+                      </div>
+                    ) : reviews.length > 0 ? (
+                      <div className="space-y-2">
+                        {reviews.map((review) => (
+                          <div
+                            key={review.id}
+                            className="p-2 bg-gray-50 rounded border border-gray-200"
+                          >
+                            <div className="flex items-start gap-2">
+                              <div className="relative w-6 h-6 rounded-full overflow-hidden flex-shrink-0">
+                                {review.userImage ? (
+                                  <Image
+                                    src={review.userImage}
+                                    alt={review.userName}
+                                    fill
+                                    className="object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                    <User className="w-3 h-3 text-gray-500" />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1 mb-0.5">
+                                  <h4 className="font-semibold text-gray-900 text-xs truncate">
+                                    {review.userName}
+                                  </h4>
+                                  <div className="flex items-center gap-0.5">
+                                    {[...Array(5)].map((_, i) => (
+                                      <Star
+                                        key={i}
+                                        className={`w-2.5 h-2.5 ${
+                                          i < review.rating
+                                            ? "text-yellow-500 fill-current"
+                                            : "text-gray-300"
+                                        }`}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                                <p className="text-gray-700 text-xs">
+                                  {review.review}
+                                </p>
+                                <div className="flex items-center gap-2 text-[10px] text-gray-500 mt-1">
+                                  <span>
+                                    {review.timestamp
+                                      ?.toDate()
+                                      .toLocaleDateString("tr-TR")}
+                                  </span>
+                                  <div className="flex items-center gap-0.5">
+                                    <Heart className="w-2.5 h-2.5" />
+                                    <span>{review.likes?.length || 0}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6">
+                        <MessageCircle className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                        <p className="text-gray-600 text-xs">
+                          Henüz değerlendirme bulunmuyor
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-            <div className="text-center">
-              <div className="text-2xl font-bold text-yellow-400">
-                {product.averageRating?.toFixed(1) || "0.0"}
+                {/* Questions Tab Content */}
+                {activeTab === "questions" && (
+                  <div>
+                    {/* Question Filter */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <button
+                        onClick={() => setQuestionFilter("all")}
+                        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                          questionFilter === "all"
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        }`}
+                      >
+                        Hepsi ({questions.length})
+                      </button>
+                      <button
+                        onClick={() => setQuestionFilter("answered")}
+                        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                          questionFilter === "answered"
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        }`}
+                      >
+                        Cevaplananlar (
+                        {questions.filter((q) => q.answered).length})
+                      </button>
+                    </div>
+
+                    {/* Questions List */}
+                    {questionsLoading ? (
+                      <div className="flex items-center justify-center py-6">
+                        <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                        <span className="text-gray-600 ml-2 text-xs">
+                          Yükleniyor...
+                        </span>
+                      </div>
+                    ) : filteredQuestions.length > 0 ? (
+                      <div className="space-y-2">
+                        {filteredQuestions.map((question) => (
+                          <div
+                            key={question.id}
+                            className="p-2 bg-gray-50 rounded border border-gray-200"
+                          >
+                            {/* Question */}
+                            <div className="mb-2">
+                              <div className="flex items-center gap-1 mb-0.5">
+                                <h4 className="font-semibold text-gray-900 text-xs">
+                                  {question.askerNameVisible
+                                    ? question.askerName
+                                    : "Anonim"}
+                                </h4>
+                                <span className="text-[10px] text-gray-500">
+                                  {question.timestamp
+                                    ?.toDate()
+                                    .toLocaleDateString("tr-TR")}
+                                </span>
+                              </div>
+                              <p className="text-gray-700 text-xs">
+                                {question.questionText}
+                              </p>
+                            </div>
+
+                            {/* Answer */}
+                            {question.answered && question.answerText && (
+                              <div className="ml-2 pl-2 border-l border-blue-400 bg-blue-50 rounded-r p-2">
+                                <div className="flex items-center gap-1 mb-0.5">
+                                  <div className="relative w-4 h-4 rounded-full overflow-hidden flex-shrink-0">
+                                    {question.answererProfileImage ? (
+                                      <Image
+                                        src={question.answererProfileImage}
+                                        alt="Seller"
+                                        fill
+                                        className="object-cover"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                        <User className="w-2.5 h-2.5 text-gray-500" />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <h5 className="font-semibold text-blue-700 text-xs">
+                                    {question.answererName ||
+                                      shop?.name ||
+                                      "Satıcı"}
+                                  </h5>
+                                  <span className="text-[10px] text-gray-500">
+                                    {question.answerTimestamp
+                                      ?.toDate()
+                                      .toLocaleDateString("tr-TR")}
+                                  </span>
+                                </div>
+                                <p className="text-gray-700 text-xs">
+                                  {question.answerText}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6">
+                        <MessageCircle className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                        <p className="text-gray-600 text-xs">
+                          {questionFilter === "all"
+                            ? "Henüz soru bulunmuyor"
+                            : "Henüz cevaplanmış soru bulunmuyor"}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="text-sm text-gray-400">Ortalama Puan</div>
             </div>
           </div>
         </div>
       </main>
-      <BoostModal
-        isOpen={showBoostModal}
-        onClose={() => setShowBoostModal(false)}
-        onBoost={handleBoostProduct}
-        productName={product.productName || "Ürün"}
-        isLoading={isBoostLoading}
-      />
-      <CategorySelectionModal
-        isOpen={showCategoryModal}
-        onClose={() => setShowCategoryModal(false)}
-        fieldType={categoryModalType}
-        currentValue={String(
-          product[categoryModalField as keyof ProductData] || ""
-        )}
-        onSave={handleCategorySave}
-        currentCategory={product.category}
-        currentSubcategory={product.subcategory}
-      />
+
+      {/* Modals */}
+      {showBoostModal && (
+        <BoostModal
+          isOpen={showBoostModal}
+          productName={product?.productName || ""}
+          onClose={() => setShowBoostModal(false)}
+          onBoost={handleBoostProduct}
+          isLoading={isBoostLoading}
+        />
+      )}
+
+      {showCategoryModal && (
+        <CategorySelectionModal
+          isOpen={showCategoryModal}
+          onClose={() => setShowCategoryModal(false)}
+          fieldType={categoryModalType}
+          currentValue={
+            categoryModalType === "category"
+              ? product.category
+              : categoryModalType === "subcategory"
+              ? product.subcategory
+              : product.subsubcategory || ""
+          }
+          onSave={handleCategorySave}
+          currentCategory={product.category}
+          currentSubcategory={product.subcategory}
+        />
+      )}
     </div>
   );
 }
 
-// Main component that wraps the content with Suspense
-export default function ProductDetailsPage() {
+// Main export with Suspense wrapper
+export default function ProductDetails() {
   return (
     <ProtectedRoute>
       <Suspense
         fallback={
-          <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-            <div className="flex items-center gap-3 text-white">
-              <Loader2 className="w-6 h-6 animate-spin" />
-              <span>Sayfa yükleniyor...</span>
+          <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+            <div className="flex items-center gap-3 text-gray-900">
+              <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+              <span>Yükleniyor...</span>
             </div>
           </div>
         }

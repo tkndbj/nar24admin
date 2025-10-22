@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import {
   ArrowLeft,
@@ -13,12 +13,17 @@ import {
   Maximize2,
   Search,
   X,
-  Store,
+  Store as StoreIcon,
   Package,
-  Link,
+  Link as LinkIcon,
   Calendar,
   ExternalLink,
-  Info,
+  Pause,
+  Play,
+  Clock,
+  Eye,
+  Download,
+  Filter,
 } from "lucide-react";
 import {
   collection,
@@ -40,598 +45,1104 @@ import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 
-interface ThinBanner {
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+
+type AdStatus = "pending" | "approved" | "active" | "expired" | "rejected";
+type AdType = "topBanner" | "thinBanner" | "marketBanner";
+type LinkType = "shop" | "product" | "shop_product";
+
+interface BaseAd {
   id: string;
   imageUrl: string;
   createdAt: Timestamp;
-  linkType?: string;
+  isActive: boolean;
+  linkType?: LinkType;
   linkId?: string;
+  linkedName?: string;
+}
+
+interface AdSubmission {
+  id: string;
+  userId: string;
+  shopId: string;
+  shopName: string;
+  adType: AdType;
+  imageUrl: string;
+  price: number;
+  duration: string;
+  status: AdStatus;
+  paymentLink?: string;
+  activeAdId?: string;
+  createdAt: Timestamp;
+  approvedAt?: Timestamp;
+  activatedAt?: Timestamp;
+  expiresAt?: Timestamp;
+  linkType?: LinkType;
+  linkedShopId?: string;
+  linkedProductId?: string;
+  linkedName?: string;
+}
+
+interface ThinBannerAd extends BaseAd {
+  submissionId?: string;
+  isManual?: boolean;
 }
 
 interface SearchResult {
   id: string;
   title: string;
-  type: "shop" | "product" | "shop_product";
+  type: LinkType;
   subtitle?: string;
 }
+
+interface ImageModalProps {
+  isOpen: boolean;
+  imageUrl: string;
+  onClose: () => void;
+  bannerName: string;
+}
+
+interface FilterState {
+  status: "manual" | "pending" | "active" | "expired";
+  hasLink: "linked" | "unlinked";
+}
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const PAGE_SIZE = 20;
+const ACTIVE_ADS_COLLECTION = "market_thin_banners";
+const SUBMISSIONS_COLLECTION = "ad_submissions";
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+const formatDate = (timestamp: Timestamp | undefined): string => {
+  if (!timestamp) return "—";
+  const date = timestamp.toDate();
+  return new Intl.DateTimeFormat("tr-TR", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+};
+
+const formatPrice = (price: number | undefined): string => {
+  if (!price) return "—";
+  return new Intl.NumberFormat("tr-TR", {
+    style: "currency",
+    currency: "TRY",
+  }).format(price);
+};
+
+const getDurationLabel = (duration: string | undefined): string => {
+  switch (duration) {
+    case "oneWeek":
+      return "1 Hafta";
+    case "twoWeeks":
+      return "2 Hafta";
+    case "oneMonth":
+      return "1 Ay";
+    default:
+      return "—";
+  }
+};
+
+const getStatusColor = (status: AdStatus | "manual"): string => {
+  switch (status) {
+    case "pending":
+      return "bg-yellow-100 text-yellow-800 border-yellow-200";
+    case "approved":
+      return "bg-blue-100 text-blue-800 border-blue-200";
+    case "active":
+      return "bg-green-100 text-green-800 border-green-200";
+    case "expired":
+      return "bg-gray-100 text-gray-800 border-gray-200";
+    case "rejected":
+      return "bg-red-100 text-red-800 border-red-200";
+    case "manual":
+      return "bg-purple-100 text-purple-800 border-purple-200";
+    default:
+      return "bg-gray-100 text-gray-800 border-gray-200";
+  }
+};
+
+const getStatusLabel = (status: AdStatus | "manual"): string => {
+  switch (status) {
+    case "pending":
+      return "Beklemede";
+    case "approved":
+      return "Onaylandı";
+    case "active":
+      return "Aktif";
+    case "expired":
+      return "Süresi Doldu";
+    case "rejected":
+      return "Reddedildi";
+    case "manual":
+      return "Manuel";
+    default:
+      return "Bilinmiyor";
+  }
+};
+
+const getTypeIcon = (type: LinkType): React.ReactNode => {
+  switch (type) {
+    case "shop":
+      return <StoreIcon className="w-4 h-4 text-blue-600" />;
+    case "product":
+    case "shop_product":
+      return <Package className="w-4 h-4 text-green-600" />;
+  }
+};
+
+const getTypeBadge = (type: LinkType): React.ReactNode => {
+  const labels: Record<LinkType, string> = {
+    shop: "Mağaza",
+    product: "Ürün",
+    shop_product: "Mağaza Ürünü",
+  };
+
+  const colors: Record<LinkType, string> = {
+    shop: "bg-blue-100 text-blue-700",
+    product: "bg-green-100 text-green-700",
+    shop_product: "bg-purple-100 text-purple-700",
+  };
+
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${colors[type]}`}
+    >
+      {labels[type]}
+    </span>
+  );
+};
+
+// ============================================================================
+// IMAGE MODAL COMPONENT
+// ============================================================================
+
+const ImageModal: React.FC<ImageModalProps> = ({
+  isOpen,
+  imageUrl,
+  onClose,
+  bannerName,
+}) => {
+  if (!isOpen) return null;
+
+  const downloadImage = async () => {
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${bannerName}_banner.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Download failed:", error);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center">
+      <div className="absolute top-0 left-0 right-0 bg-black/50 backdrop-blur-sm p-4 z-10">
+        <div className="flex items-center justify-between text-white">
+          <div>
+            <h3 className="text-lg font-semibold">{bannerName}</h3>
+            <p className="text-sm text-gray-300">Banner Görseli</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={downloadImage}
+              className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              <span className="text-sm">İndir</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="relative max-w-7xl max-h-full p-16">
+        <img
+          src={imageUrl}
+          alt="Banner"
+          className="max-w-full max-h-full object-contain"
+        />
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
 
 export default function ThinBannerPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [banners, setBanners] = useState<ThinBanner[]>([]);
+
+  // State
+  const [activeAds, setActiveAds] = useState<ThinBannerAd[]>([]);
+  const [submissions, setSubmissions] = useState<AdSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-
-  // Link management states
-  const [editingBanner, setEditingBanner] = useState<string | null>(null);
+  const [editingAdId, setEditingAdId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [imageModal, setImageModal] = useState({
+    isOpen: false,
+    imageUrl: "",
+    bannerName: "",
+  });
+  const [filters, setFilters] = useState<FilterState>({
+    status: "active",
+    hasLink: "linked",
+  });
 
+  // ============================================================================
+  // DATA FETCHING
+  // ============================================================================
+
+  // Fetch active ads
   useEffect(() => {
     const q = query(
-      collection(db, "market_thin_banners"),
-      orderBy("createdAt", "desc")
+      collection(db, ACTIVE_ADS_COLLECTION),
+      orderBy("createdAt", "desc"),
+      limit(PAGE_SIZE)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const bannersData = snapshot.docs.map((doc) => ({
+      const adsData = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
-      })) as ThinBanner[];
+      })) as ThinBannerAd[];
 
-      setBanners(bannersData);
+      setActiveAds(adsData);
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
-  // Search functionality
-  const searchContent = async (searchTerm: string) => {
-    if (!searchTerm.trim()) {
+  // Fetch submissions (pending, approved, expired)
+  useEffect(() => {
+    const q = query(
+      collection(db, SUBMISSIONS_COLLECTION),
+      where("adType", "==", "thinBanner"),
+      orderBy("createdAt", "desc"),
+      limit(PAGE_SIZE)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const submissionsData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as AdSubmission[];
+
+      setSubmissions(submissionsData);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Search for shops/products
+  useEffect(() => {
+    if (!editingAdId || searchQuery.length < 2) {
       setSearchResults([]);
       return;
     }
 
-    setSearchLoading(true);
-    const results: SearchResult[] = [];
+    const timer = setTimeout(async () => {
+      setSearchLoading(true);
+      const results: SearchResult[] = [];
 
-    try {
-      // Search shops
-      const shopsQuery = query(
-        collection(db, "shops"),
-        where("name", ">=", searchTerm),
-        where("name", "<=", searchTerm + "\uf8ff"),
-        limit(5)
-      );
-      const shopsSnapshot = await getDocs(shopsQuery);
-      shopsSnapshot.forEach((doc) => {
-        const data = doc.data() as { name?: string; description?: string };
-        results.push({
-          id: doc.id,
-          title: data.name || "İsimsiz Mağaza",
-          type: "shop",
-          subtitle: data.description || "Mağaza",
+      try {
+        // Search shops
+        const shopsQuery = query(
+          collection(db, "shops"),
+          where("name", ">=", searchQuery),
+          where("name", "<=", searchQuery + "\uf8ff"),
+          limit(5)
+        );
+        const shopsSnapshot = await getDocs(shopsQuery);
+        shopsSnapshot.forEach((doc) => {
+          const data = doc.data();
+          results.push({
+            id: doc.id,
+            title: data.name || "İsimsiz Mağaza",
+            type: "shop",
+            subtitle: "Mağaza",
+          });
         });
-      });
 
-      // Search products
-      const productsQuery = query(
-        collection(db, "products"),
-        where("productName", ">=", searchTerm),
-        where("productName", "<=", searchTerm + "\uf8ff"),
-        limit(5)
-      );
-      const productsSnapshot = await getDocs(productsQuery);
-      productsSnapshot.forEach((doc) => {
-        const data = doc.data() as { productName?: string; price?: number };
-        results.push({
-          id: doc.id,
-          title: data.productName || "İsimsiz Ürün",
-          type: "product",
-          subtitle: `${data.price || 0} TL`,
+        // Search products
+        const productsQuery = query(
+          collection(db, "products"),
+          where("productName", ">=", searchQuery),
+          where("productName", "<=", searchQuery + "\uf8ff"),
+          limit(5)
+        );
+        const productsSnapshot = await getDocs(productsQuery);
+        productsSnapshot.forEach((doc) => {
+          const data = doc.data();
+          results.push({
+            id: doc.id,
+            title: data.productName || "İsimsiz Ürün",
+            type: "product",
+            subtitle: `${data.price || 0} TL`,
+          });
         });
-      });
 
-      // Search shop products
-      const shopProductsQuery = query(
-        collection(db, "shop_products"),
-        where("productName", ">=", searchTerm),
-        where("productName", "<=", searchTerm + "\uf8ff"),
-        limit(5)
-      );
-      const shopProductsSnapshot = await getDocs(shopProductsQuery);
-      shopProductsSnapshot.forEach((doc) => {
-        const data = doc.data() as { productName?: string; price?: number };
-        results.push({
-          id: doc.id,
-          title: data.productName || "İsimsiz Mağaza Ürünü",
-          type: "shop_product",
-          subtitle: `${data.price || 0} TL`,
+        // Search shop products
+        const shopProductsQuery = query(
+          collection(db, "shop_products"),
+          where("productName", ">=", searchQuery),
+          where("productName", "<=", searchQuery + "\uf8ff"),
+          limit(5)
+        );
+        const shopProductsSnapshot = await getDocs(shopProductsQuery);
+        shopProductsSnapshot.forEach((doc) => {
+          const data = doc.data();
+          results.push({
+            id: doc.id,
+            title: data.productName || "İsimsiz Mağaza Ürünü",
+            type: "shop_product",
+            subtitle: `${data.price || 0} TL`,
+          });
         });
-      });
 
-      setSearchResults(results);
-    } catch (error) {
-      console.error("Search error:", error);
-    } finally {
-      setSearchLoading(false);
-    }
-  };
-
-  // Debounced search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      searchContent(searchQuery);
+        setSearchResults(results);
+      } catch (error) {
+        console.error("Search error:", error);
+      } finally {
+        setSearchLoading(false);
+      }
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, editingAdId]);
+
+  // ============================================================================
+  // HANDLERS
+  // ============================================================================
+
+  const handleFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      await uploadBanner(file);
+    }
+  };
+
+  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDragOver(false);
+    const file = event.dataTransfer.files[0];
+    if (file) {
+      await uploadBanner(file);
+    }
+  };
 
   const uploadBanner = async (file: File) => {
-    setUploading(true);
     try {
-      const path = `market_thin_banners/${Date.now()}_${file.name}`;
-      const storage = getStorage();
-      const uploadRef = ref(storage, path);
-      await uploadBytes(uploadRef, file);
-      const downloadUrl = await getDownloadURL(uploadRef);
+      setUploading(true);
 
-      await addDoc(collection(db, "market_thin_banners"), {
+      // Upload to storage
+      const storage = getStorage();
+      const timestamp = Date.now();
+      const storageRef = ref(
+        storage,
+        `thin_banners/manual/${timestamp}_${file.name}`
+      );
+
+      await uploadBytes(storageRef, file);
+      const downloadUrl = await getDownloadURL(storageRef);
+
+      // Add to active ads collection
+      await addDoc(collection(db, ACTIVE_ADS_COLLECTION), {
         imageUrl: downloadUrl,
-        createdAt: serverTimestamp(),
         isActive: true,
+        isManual: true,
+        createdAt: serverTimestamp(),
       });
     } catch (error) {
-      console.error("Error uploading banner:", error);
+      console.error("Upload error:", error);
+      alert("Yükleme başarısız oldu. Lütfen tekrar deneyin.");
     } finally {
       setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
   };
 
-  const deleteBanner = async (bannerId: string) => {
-    if (!confirm("Bu banner'ı silmek istediğinizden emin misiniz?")) {
-      return;
+  const toggleAdStatus = async (adId: string, currentStatus: boolean) => {
+    try {
+      await updateDoc(doc(db, ACTIVE_ADS_COLLECTION, adId), {
+        isActive: !currentStatus,
+      });
+    } catch (error) {
+      console.error("Toggle status error:", error);
+      alert("Durum güncellenemedi.");
     }
+  };
+
+  const deleteAd = async (adId: string, submissionId?: string) => {
+    if (!confirm("Bu reklamı silmek istediğinizden emin misiniz?")) return;
 
     try {
-      await deleteDoc(doc(db, "market_thin_banners", bannerId));
+      // Delete from active ads
+      await deleteDoc(doc(db, ACTIVE_ADS_COLLECTION, adId));
+
+      // If has submission, update it
+      if (submissionId) {
+        await updateDoc(doc(db, SUBMISSIONS_COLLECTION, submissionId), {
+          status: "expired" as AdStatus,
+          activeAdId: null,
+        });
+      }
     } catch (error) {
-      console.error("Error deleting banner:", error);
+      console.error("Delete error:", error);
+      alert("Silme işlemi başarısız oldu.");
     }
   };
 
-  const updateBannerLink = async (
-    bannerId: string,
-    linkType: string,
-    linkId: string
+  const updateAdLink = async (
+    adId: string,
+    linkData: {
+      linkType: LinkType | null;
+      linkId: string | null;
+      linkedName: string | null;
+    }
   ) => {
     try {
-      await updateDoc(doc(db, "market_thin_banners", bannerId), {
-        linkType,
-        linkId,
-      });
-      setEditingBanner(null);
+      await updateDoc(doc(db, ACTIVE_ADS_COLLECTION, adId), linkData);
+      setEditingAdId(null);
       setSearchQuery("");
       setSearchResults([]);
     } catch (error) {
-      console.error("Error updating banner link:", error);
+      console.error("Update link error:", error);
+      alert("Bağlantı güncellenemedi.");
     }
   };
 
-  const removeBannerLink = async (bannerId: string) => {
+  const activateSubmission = async (submission: AdSubmission) => {
+    if (!confirm("Bu başvuruyu manuel olarak aktif etmek istiyor musunuz?"))
+      return;
+
     try {
-      await updateDoc(doc(db, "market_thin_banners", bannerId), {
-        linkType: null,
-        linkId: null,
+      // Create active ad
+      const adRef = await addDoc(collection(db, ACTIVE_ADS_COLLECTION), {
+        imageUrl: submission.imageUrl,
+        isActive: true,
+        isManual: false,
+        submissionId: submission.id,
+        linkType: submission.linkType || null,
+        linkId: submission.linkedShopId || submission.linkedProductId || null,
+        linkedName: submission.linkedName || null,
+        createdAt: serverTimestamp(),
+      });
+
+      // Update submission
+      await updateDoc(doc(db, SUBMISSIONS_COLLECTION, submission.id), {
+        status: "active" as AdStatus,
+        activeAdId: adRef.id,
+        activatedAt: serverTimestamp(),
       });
     } catch (error) {
-      console.error("Error removing banner link:", error);
+      console.error("Activate error:", error);
+      alert("Aktivasyon başarısız oldu.");
     }
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file && file.type.startsWith("image/")) {
-      uploadBanner(file);
-    }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
+  const deleteSubmission = async (submissionId: string) => {
+    if (!confirm("Bu başvuruyu silmek istediğinizden emin misiniz?")) return;
 
-  const handleDrop = (event: React.DragEvent) => {
-    event.preventDefault();
-    setDragOver(false);
-
-    const files = Array.from(event.dataTransfer.files);
-    const imageFile = files.find((file) => file.type.startsWith("image/"));
-
-    if (imageFile) {
-      uploadBanner(imageFile);
+    try {
+      await deleteDoc(doc(db, SUBMISSIONS_COLLECTION, submissionId));
+    } catch (error) {
+      console.error("Delete submission error:", error);
+      alert("Silme işlemi başarısız oldu.");
     }
   };
 
-  const handleDragOver = (event: React.DragEvent) => {
-    event.preventDefault();
-    setDragOver(true);
-  };
+  // ============================================================================
+  // FILTERING
+  // ============================================================================
 
-  const handleDragLeave = (event: React.DragEvent) => {
-    event.preventDefault();
-    setDragOver(false);
-  };
+  const getFilteredActiveAds = useCallback(() => {
+    let filtered = [...activeAds];
 
-  const formatDate = (timestamp: Timestamp | null | undefined) => {
-    if (!timestamp) {
-      return "Yükleniyor...";
+    if (filters.status === "manual") {
+      filtered = filtered.filter((ad) => ad.isManual === true);
+    } else if (filters.status === "active") {
+      filtered = filtered.filter((ad) => ad.isActive === true);
     }
-    
-    return timestamp.toDate().toLocaleDateString("tr-TR", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case "shop":
-        return <Store className="w-4 h-4" />;
-      case "product":
-      case "shop_product":
-        return <Package className="w-4 h-4" />;
-      default:
-        return <Package className="w-4 h-4" />;
+
+    if (filters.hasLink === "linked") {
+      filtered = filtered.filter((ad) => ad.linkId);
+    } else if (filters.hasLink === "unlinked") {
+      filtered = filtered.filter((ad) => !ad.linkId);
     }
-  };
 
-  const getTypeBadge = (type: string) => {
-    const config = {
-      shop: { label: "Mağaza", color: "bg-blue-100 text-blue-700" },
-      product: { label: "Ürün", color: "bg-green-100 text-green-700" },
-      shop_product: {
-        label: "Mağaza Ürünü",
-        color: "bg-purple-100 text-purple-700",
-      },
-    };
+    return filtered;
+  }, [activeAds, filters]);
 
-    const typeConfig = config[type as keyof typeof config] || config.product;
+  const getFilteredSubmissions = useCallback(() => {
+    let filtered = [...submissions];
 
-    return (
-      <span
-        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${typeConfig.color}`}
-      >
-        {getTypeIcon(type)}
-        {typeConfig.label}
-      </span>
-    );
-  };
+    if (filters.status === "pending") {
+      filtered = filtered.filter((sub) => sub.status === "pending");
+    } else if (filters.status === "active") {
+      filtered = filtered.filter((sub) => sub.status === "active");
+    } else if (filters.status === "expired") {
+      filtered = filtered.filter((sub) => sub.status === "expired");
+    }
+
+    return filtered;
+  }, [submissions, filters]);
+
+  const filteredActiveAds = getFilteredActiveAds();
+  const filteredSubmissions = getFilteredSubmissions();
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
         {/* Header */}
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+        <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-40 shadow-sm">
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <button
-                  onClick={() => router.back()}
+                  onClick={() => router.push("/dashboard")}
                   className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   <ArrowLeft className="w-5 h-5 text-gray-600" />
                 </button>
-
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-orange-100 rounded-lg">
-                    <Maximize2 className="w-5 h-5 text-orange-600" />
-                  </div>
-                  <div>
-                    <h1 className="text-xl font-semibold text-gray-900">
-                      İnce Banner Yönetimi
-                    </h1>
-                    <p className="text-sm text-gray-500">
-                      Ana ekran ince bannerlarını yönetin
-                    </p>
-                  </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    İnce Banner Yönetimi
+                  </h1>
+                  <p className="text-sm text-gray-600">
+                    Ana ekran ince banner yönetimi
+                  </p>
                 </div>
               </div>
 
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {uploading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4" />
-                )}
-                Banner Ekle
+                <Plus className="w-4 h-4" />
+                <span className="font-medium">Manuel Banner Ekle</span>
               </button>
             </div>
           </div>
         </header>
 
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          onChange={handleFileSelect}
-          className="hidden"
-        />
-
-        <div className="max-w-7xl mx-auto px-6 py-6">
-          {/* Info Card */}
-          <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-start gap-3">
-              <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-              <div>
-                <h3 className="text-blue-900 font-medium mb-1">
-                  İnce Banner Kullanım Bilgisi
-                </h3>
-                <p className="text-blue-700 text-sm">
-                  İnce bannerlar uygulamanın ana ekranında yatay olarak
-                  görüntülenir. En iyi sonuç için yatay (landscape)
-                  orientasyonda, ince format resimler kullanın. Her bannerı bir
-                  mağaza veya ürüne bağlayabilirsiniz.
-                </p>
+        <main className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+          {/* Stats */}
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                </div>
               </div>
-            </div>
-          </div>
-
-          {/* Upload Zone */}
-          <div
-            className={`mb-6 border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 cursor-pointer ${
-              dragOver
-                ? "border-blue-400 bg-blue-50"
-                : "border-gray-300 bg-gray-50 hover:bg-gray-100"
-            }`}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onClick={() => !uploading && fileInputRef.current?.click()}
-          >
-            <div className="flex flex-col items-center">
-              {uploading ? (
-                <>
-                  <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-                  <p className="text-gray-900 font-medium">
-                    Banner yükleniyor...
-                  </p>
-                  <p className="text-gray-600 text-sm mt-1">
-                    Lütfen bekleyin, işlem tamamlanıyor
-                  </p>
-                </>
-              ) : (
-                <>
-                  <Upload className="w-12 h-12 text-gray-400 mb-4" />
-                  <p className="text-gray-900 font-medium mb-2">
-                    Banner yüklemek için tıklayın veya sürükleyip bırakın
-                  </p>
-                  <p className="text-gray-600 text-sm">
-                    PNG, JPG, GIF dosyaları desteklenir • İnce format önerilir
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Banners List */}
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-              <span className="ml-3 text-gray-600">
-                Bannerlar yükleniyor...
-              </span>
-            </div>
-          ) : banners.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
-              <div className="flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4">
-                <Maximize2 className="w-8 h-8 text-gray-400" />
-              </div>
-              <h3 className="text-xl font-medium text-gray-900 mb-2">
-                Henüz banner eklenmemiş
-              </h3>
-              <p className="text-gray-600">
-                İlk bannerınızı eklemek için yukarıdaki alana tıklayın
+              <p className="text-sm text-gray-600 mb-1">Aktif Reklamlar</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {activeAds.filter((ad) => ad.isActive).length}
               </p>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {banners.map((banner) => (
-                <div
-                  key={banner.id}
-                  className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow"
+
+            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                  <Clock className="w-5 h-5 text-yellow-600" />
+                </div>
+              </div>
+              <p className="text-sm text-gray-600 mb-1">Bekleyen Başvurular</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {submissions.filter((sub) => sub.status === "pending").length}
+              </p>
+            </div>
+
+            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                  <Maximize2 className="w-5 h-5 text-orange-600" />
+                </div>
+              </div>
+              <p className="text-sm text-gray-600 mb-1">Manuel Reklamlar</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {activeAds.filter((ad) => ad.isManual).length}
+              </p>
+            </div>
+
+            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                  <AlertCircle className="w-5 h-5 text-gray-600" />
+                </div>
+              </div>
+              <p className="text-sm text-gray-600 mb-1">Süresi Dolan</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {submissions.filter((sub) => sub.status === "expired").length}
+              </p>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+            <div className="flex items-center gap-4">
+              <Filter className="w-5 h-5 text-gray-600" />
+              <div className="flex items-center gap-2 flex-1">
+                <span className="text-sm font-medium text-gray-700">
+                  Durum:
+                </span>
+                <select
+                  value={filters.status}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      status: e.target.value as FilterState["status"],
+                    }))
+                  }
+                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                 >
-                  <div className="flex flex-col">
+                  <option value="manual">Manuel</option>
+                  <option value="pending">Beklemede</option>
+                  <option value="active">Aktif</option>
+                  <option value="expired">Süresi Dolan</option>
+                </select>
+
+                <span className="text-sm font-medium text-gray-700 ml-4">
+                  Bağlantı:
+                </span>
+                <select
+                  value={filters.hasLink}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      hasLink: e.target.value as FilterState["hasLink"],
+                    }))
+                  }
+                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                >
+                  <option value="linked">Bağlantılı</option>
+                  <option value="unlinked">Bağlantısız</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Upload Area */}
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
+              dragOver
+                ? "border-orange-500 bg-orange-50"
+                : "border-gray-300 bg-white"
+            }`}
+          >
+            <Upload
+              className={`w-12 h-12 mx-auto mb-4 ${
+                dragOver ? "text-orange-600" : "text-gray-400"
+              }`}
+            />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Banner Yükle
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Dosyayı buraya sürükleyin veya tıklayarak seçin
+            </p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+          </div>
+
+          {/* Active Ads List */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Aktif & Manuel Reklamlar
+                </h2>
+                <span className="text-sm text-gray-600">
+                  {filteredActiveAds.length} reklam
+                </span>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="p-12 text-center">
+                <Loader2 className="w-8 h-8 text-orange-600 animate-spin mx-auto mb-4" />
+                <p className="text-gray-600">Yükleniyor...</p>
+              </div>
+            ) : filteredActiveAds.length === 0 ? (
+              <div className="p-12 text-center">
+                <Maximize2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600">Henüz aktif reklam yok</p>
+              </div>
+            ) : (
+              <div className="p-6 space-y-4">
+                {filteredActiveAds.map((ad) => (
+                  <div
+                    key={ad.id}
+                    className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
+                  >
                     <div className="flex flex-col lg:flex-row">
-                      {/* Banner Image - Thin/Wide format */}
-                      <div className="relative w-full lg:w-80 h-32 bg-gray-100 flex-shrink-0">
+                      {/* Thin Banner Image */}
+                      <div className="relative w-full lg:w-96 h-32 bg-gray-100 flex-shrink-0 group">
                         <Image
-                          src={banner.imageUrl}
+                          src={ad.imageUrl}
                           alt="Thin Banner"
                           fill
                           className="object-cover"
                         />
+
+                        {/* Hover Overlay */}
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                          <button
+                            onClick={() =>
+                              setImageModal({
+                                isOpen: true,
+                                imageUrl: ad.imageUrl,
+                                bannerName: `ThinBanner_${ad.id.slice(-6)}`,
+                              })
+                            }
+                            className="p-2 bg-white/90 hover:bg-white rounded-lg transition-colors"
+                            title="Görseli Görüntüle"
+                          >
+                            <Eye className="w-4 h-4 text-gray-900" />
+                          </button>
+                        </div>
+
+                        {/* Status Badge */}
+                        <div className="absolute top-3 left-3">
+                          {ad.isActive ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200 shadow-lg">
+                              <div className="w-1.5 h-1.5 bg-green-600 rounded-full animate-pulse" />
+                              Yayında
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200 shadow-lg">
+                              Duraklatıldı
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Type Badge */}
+                        <div className="absolute top-3 right-3">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border shadow-lg ${getStatusColor(
+                              ad.isManual ? "manual" : "active"
+                            )}`}
+                          >
+                            {ad.isManual ? "Manuel" : "Kullanıcı"}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Banner Info */}
                       <div className="flex-1 p-4 flex items-center justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-3">
+                        <div className="flex-1 space-y-3">
+                          <div className="flex items-center gap-3">
                             <Maximize2 className="w-5 h-5 text-orange-600" />
                             <h3 className="text-lg font-medium text-gray-900">
                               İnce Banner
                             </h3>
-                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                              <CheckCircle className="w-3 h-3" />
-                              Aktif
-                            </span>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-2">
-                            <div className="flex items-center gap-1">
-                              <Calendar className="w-4 h-4" />
-                              <span>{formatDate(banner.createdAt)}</span>
-                            </div>
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <Calendar className="w-4 h-4" />
+                            <span>{formatDate(ad.createdAt)}</span>
                           </div>
 
-                          {/* Link info */}
-                          {banner.linkType && banner.linkId ? (
+                          {/* Link Info */}
+                          {ad.linkId ? (
                             <div className="flex items-center gap-2">
                               <ExternalLink className="w-4 h-4 text-blue-600" />
-                              <span className="text-sm text-gray-600 mr-2">
-                                Bağlantı:
-                              </span>
-                              {getTypeBadge(banner.linkType)}
+                              <div className="flex items-center gap-2">
+                                {ad.linkType && getTypeBadge(ad.linkType)}
+                                <span className="text-sm text-gray-900 font-medium">
+                                  {ad.linkedName || ad.linkId.slice(0, 8)}
+                                </span>
+                              </div>
+                            </div>
+                          ) : editingAdId === ad.id ? (
+                            <div className="space-y-2 max-w-md">
+                              <div className="relative">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                  <Search className="h-4 w-4 text-gray-400" />
+                                </div>
+                                <input
+                                  type="text"
+                                  placeholder="Ara..."
+                                  value={searchQuery}
+                                  autoFocus
+                                  onChange={(e) =>
+                                    setSearchQuery(e.target.value)
+                                  }
+                                  className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                />
+                              </div>
+
+                              {searchLoading && (
+                                <div className="flex items-center justify-center py-2">
+                                  <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
+                                </div>
+                              )}
+
+                              {searchResults.length > 0 && (
+                                <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg bg-white">
+                                  {searchResults.map((result) => (
+                                    <button
+                                      key={`${result.type}-${result.id}`}
+                                      onClick={() => {
+                                        updateAdLink(ad.id, {
+                                          linkType: result.type,
+                                          linkId: result.id,
+                                          linkedName: result.title,
+                                        });
+                                      }}
+                                      className="w-full flex items-center gap-2 p-2 hover:bg-gray-50 transition-colors text-left text-sm"
+                                    >
+                                      {getTypeIcon(result.type)}
+                                      <div className="flex-1 min-w-0">
+                                        <p className="font-medium truncate">
+                                          {result.title}
+                                        </p>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+
+                              <button
+                                onClick={() => {
+                                  setEditingAdId(null);
+                                  setSearchQuery("");
+                                  setSearchResults([]);
+                                }}
+                                className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm"
+                              >
+                                İptal
+                              </button>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-2 text-gray-500">
-                              <AlertCircle className="w-4 h-4" />
-                              <span className="text-sm">
-                                Bağlantı eklenmemiş
-                              </span>
-                            </div>
+                            <button
+                              onClick={() => {
+                                setEditingAdId(ad.id);
+                                setSearchQuery("");
+                              }}
+                              className="flex items-center gap-2 text-sm text-orange-600 hover:text-orange-700 font-medium"
+                            >
+                              <LinkIcon className="w-4 h-4" />
+                              Bağlantı Ekle
+                            </button>
                           )}
                         </div>
 
                         {/* Action Buttons */}
                         <div className="flex items-center gap-2 ml-4">
                           <button
-                            onClick={() => setEditingBanner(banner.id)}
-                            className="flex items-center justify-center w-9 h-9 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-lg transition-colors"
-                            title="Bağlantı ekle/düzenle"
+                            onClick={() => toggleAdStatus(ad.id, ad.isActive)}
+                            className={`p-2 rounded-lg transition-colors ${
+                              ad.isActive
+                                ? "text-orange-600 hover:bg-orange-50"
+                                : "text-green-600 hover:bg-green-50"
+                            }`}
+                            title={ad.isActive ? "Duraklat" : "Aktif Et"}
                           >
-                            <Link className="w-4 h-4" />
+                            {ad.isActive ? (
+                              <Pause className="w-5 h-5" />
+                            ) : (
+                              <Play className="w-5 h-5" />
+                            )}
                           </button>
-                          {banner.linkType && (
+
+                          {ad.linkId && (
                             <button
-                              onClick={() => removeBannerLink(banner.id)}
-                              className="flex items-center justify-center w-9 h-9 bg-orange-100 hover:bg-orange-200 text-orange-600 rounded-lg transition-colors"
-                              title="Bağlantıyı kaldır"
+                              onClick={() =>
+                                updateAdLink(ad.id, {
+                                  linkType: null,
+                                  linkId: null,
+                                  linkedName: null,
+                                })
+                              }
+                              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                              title="Bağlantıyı Kaldır"
                             >
-                              <X className="w-4 h-4" />
+                              <X className="w-5 h-5" />
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => deleteAd(ad.id, ad.submissionId)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Sil"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Submissions Section */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Kullanıcı Başvuruları
+                </h2>
+                <span className="text-sm text-gray-600">
+                  {filteredSubmissions.length} başvuru
+                </span>
+              </div>
+            </div>
+
+            {filteredSubmissions.length === 0 ? (
+              <div className="p-12 text-center">
+                <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600">Henüz başvuru yok</p>
+              </div>
+            ) : (
+              <div className="p-6 space-y-4">
+                {filteredSubmissions.map((submission) => (
+                  <div
+                    key={submission.id}
+                    className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
+                  >
+                    <div className="flex flex-col lg:flex-row">
+                      <div className="relative w-full lg:w-96 h-32 bg-gray-100">
+                        <Image
+                          src={submission.imageUrl}
+                          alt="Submission"
+                          fill
+                          className="object-cover cursor-pointer"
+                          onClick={() =>
+                            setImageModal({
+                              isOpen: true,
+                              imageUrl: submission.imageUrl,
+                              bannerName: `Submission_${submission.id.slice(
+                                -6
+                              )}`,
+                            })
+                          }
+                        />
+                        <div className="absolute top-3 right-3">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border shadow-lg ${getStatusColor(
+                              submission.status
+                            )}`}
+                          >
+                            {getStatusLabel(submission.status)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex-1 p-4 flex items-center justify-between">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <StoreIcon className="w-4 h-4 text-gray-600" />
+                            <span className="font-medium text-gray-900">
+                              {submission.shopName}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className="text-gray-600">
+                              {getDurationLabel(submission.duration)}
+                            </span>
+                            <span className="font-semibold text-gray-900">
+                              {formatPrice(submission.price)}
+                            </span>
+                          </div>
+                          {submission.expiresAt && (
+                            <div className="text-xs text-gray-600">
+                              Bitiş: {formatDate(submission.expiresAt)}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {submission.status === "pending" && (
+                            <button
+                              onClick={() => activateSubmission(submission)}
+                              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
+                            >
+                              Aktif Et
                             </button>
                           )}
                           <button
-                            onClick={() => deleteBanner(banner.id)}
-                            className="flex items-center justify-center w-9 h-9 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition-colors"
-                            title="Banner'ı sil"
+                            onClick={() => deleteSubmission(submission.id)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Sil"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
                     </div>
-
-                    {/* Link Editor */}
-                    {editingBanner === banner.id && (
-                      <div className="border-t border-gray-200 p-4 bg-gray-50">
-                        <div className="space-y-4">
-                          <h4 className="text-lg font-medium text-gray-900">
-                            Banner Bağlantısı Ekle
-                          </h4>
-
-                          {/* Search Input */}
-                          <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <Search className="h-5 w-5 text-gray-400" />
-                            </div>
-                            <input
-                              type="text"
-                              placeholder="Mağaza veya ürün ara..."
-                              value={searchQuery}
-                              onChange={(e) => setSearchQuery(e.target.value)}
-                              className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                          </div>
-
-                          {/* Search Results */}
-                          {searchLoading && (
-                            <div className="flex items-center justify-center py-4">
-                              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-                              <span className="ml-2 text-gray-600">
-                                Aranıyor...
-                              </span>
-                            </div>
-                          )}
-
-                          {searchResults.length > 0 && (
-                            <div className="max-h-48 overflow-y-auto space-y-2 border border-gray-200 rounded-lg bg-white">
-                              {searchResults.map((result) => (
-                                <button
-                                  key={`${result.type}-${result.id}`}
-                                  onClick={() => {
-                                    updateBannerLink(
-                                      banner.id,
-                                      result.type,
-                                      result.id
-                                    );
-                                  }}
-                                  className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 transition-colors text-left border-b border-gray-100 last:border-b-0"
-                                >
-                                  <div className="flex items-center justify-center w-10 h-10 bg-blue-100 rounded-lg">
-                                    {getTypeIcon(result.type)}
-                                  </div>
-                                  <div className="flex-1">
-                                    <p className="text-gray-900 font-medium">
-                                      {result.title}
-                                    </p>
-                                    <div className="flex items-center gap-2 mt-1">
-                                      {getTypeBadge(result.type)}
-                                      <span className="text-gray-500 text-sm">
-                                        {result.subtitle}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-
-                          {searchQuery &&
-                            !searchLoading &&
-                            searchResults.length === 0 && (
-                              <div className="text-center py-4 text-gray-500">
-                                <AlertCircle className="w-6 h-6 mx-auto mb-2" />
-                                <p>Aramanızla eşleşen sonuç bulunamadı</p>
-                              </div>
-                            )}
-
-                          {/* Cancel Button */}
-                          <div className="flex justify-end">
-                            <button
-                              onClick={() => {
-                                setEditingBanner(null);
-                                setSearchQuery("");
-                                setSearchResults([]);
-                              }}
-                              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
-                            >
-                              İptal
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </main>
+
+        {/* Image Modal */}
+        <ImageModal
+          isOpen={imageModal.isOpen}
+          imageUrl={imageModal.imageUrl}
+          onClose={() => setImageModal((prev) => ({ ...prev, isOpen: false }))}
+          bannerName={imageModal.bannerName}
+        />
 
         {/* Upload Overlay */}
         {uploading && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-8 text-center shadow-xl">
-              <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-8 text-center shadow-2xl">
+              <Loader2 className="w-12 h-12 text-orange-600 animate-spin mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-gray-900 mb-2">
                 Banner Yükleniyor
               </h3>

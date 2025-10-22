@@ -1,41 +1,27 @@
 "use client";
 
+import React from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { getAuth, sendPasswordResetEmail } from "firebase/auth";
 import { httpsCallable } from "firebase/functions";
 import {
   ArrowLeft,
-  ArrowRight,
+  X,
+  Loader2,
   User,
   ShoppingBag,
   Store,
   Edit,
-  X,
   Check,
-  Loader2,
-  Image as ImageIcon,
   Package,
-  MapPin,
-  Star,
-  Eye,
-  Heart,
-  TrendingUp,
-  Activity,
   Search,
-  Grid,
-  List,
-  Users,
   Database,
-  Save,
-  Calendar,
-  Hash,
-  Type,
-  ToggleLeft,
-  ToggleRight,
-  Phone,
+  Copy,
   Mail,
-  User as UserIcon,
-  Image as ImageIconImport,
+  Phone,
+  Calendar,
+  MapPin,
+  Activity,
 } from "lucide-react";
 import {
   useState,
@@ -52,19 +38,17 @@ import {
   getDocs,
   query,
   where,
-  orderBy,
+  orderBy as firestoreOrderBy,
   limit,
-  startAfter,
   updateDoc,
   Timestamp,
-  DocumentSnapshot,
 } from "firebase/firestore";
 import { db, functions } from "../lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { toast } from "react-hot-toast";
 
-// Types (keeping all the same types)
+// Types
 interface UserData {
   id: string;
   displayName: string;
@@ -81,100 +65,27 @@ interface UserData {
   updatedAt?: Timestamp;
 }
 
-interface OrderData {
-  id: string;
-  buyerId: string;
-  totalPrice: number;
-  totalQuantity: number;
-  paymentMethod: "PlayPoints" | "Card";
-  timestamp: Timestamp;
-  address: {
-    addressLine1: string;
-    addressLine2?: string;
-    city: string;
-    phoneNumber: string;
-    location: {
-      latitude: number;
-      longitude: number;
-    };
-  };
-  itemCount: number;
-}
-
-interface OrderItemData {
-  id: string;
-  orderId: string;
-  buyerId: string;
-  productId: string;
-  productName: string;
-  price: number;
-  currency: string;
-  quantity: number;
-  sellerName: string;
-  buyerName: string;
-  productImage: string;
-  selectedColor?: string;
-  selectedSize?: string;
-  selectedFootwearSize?: string;
-  selectedWaistSize?: string;
-  selectedHeightSize?: string;
-  sellerId: string;
-  shopId?: string;
-  shipmentStatus: string;
-  timestamp: Timestamp;
-  needsProductReview: boolean;
-  needsSellerReview: boolean;
-  needsAnyReview: boolean;
-}
-
 interface ProductData {
   id: string;
   productName: string;
   price: number;
   currency: string;
-  category: string;
-  subcategory: string;
   imageUrls: string[];
-  condition: string;
-  clickCount: number;
-  favoritesCount: number;
-  purchaseCount: number;
-  averageRating: number;
-  reviewCount: number;
   sold: boolean;
-  isFeatured: boolean;
-  isBoosted: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-  address: string;
-  region: string;
 }
 
 interface ShopData {
   id: string;
   name: string;
   profileImageUrl?: string;
-  coverImageUrls?: string[];
-  categories?: string[];
-  address?: string;
-  contactNo?: string;
-  followerCount?: number;
-  averageRating?: number;
-  reviewCount?: number;
-  clickCount?: number;
-  isBoosted?: boolean;
-  createdAt?: Timestamp;
 }
 
-interface EditableField {
-  field: keyof UserData;
-  value: string;
-  isEditing: boolean;
+interface OrderData {
+  id: string;
+  totalPrice: number;
+  timestamp: Timestamp;
+  itemCount: number;
 }
-
-type ViewMode = "grid" | "list";
-type FilterStatus = "all" | "active" | "sold" | "featured";
-type SortBy = "newest" | "oldest" | "price_high" | "price_low" | "popular";
 
 // Create a separate component that uses useSearchParams
 function UserDetailsContent() {
@@ -182,290 +93,31 @@ function UserDetailsContent() {
   const searchParams = useSearchParams();
   const userId = searchParams.get("userId");
 
-  // Refs for infinite scroll
-  const productsObserverRef = useRef<IntersectionObserver | null>(null);
-  const shopsObserverRef = useRef<IntersectionObserver | null>(null);
-  const lastProductElementRef = useRef<HTMLDivElement | null>(null);
-  const lastShopElementRef = useRef<HTMLDivElement | null>(null);
-
-  const [showDatabaseModal, setShowDatabaseModal] = useState(false);
-  const [allUserFields, setAllUserFields] = useState<
-    Record<string, string | boolean | number | string[] | Timestamp>
-  >({});
-  const [editingField, setEditingField] = useState<string | null>(null);
-  const [fieldValues, setFieldValues] = useState<
-    Record<string, string | boolean | number | string[] | Timestamp>
-  >({});
-
-  const deleteUserAccountCallable = httpsCallable(
-    functions,
-    "deleteUserAccount"
-  );
+  // Refs
+  const allFieldsContainerRef = useRef<HTMLDivElement | null>(null);
 
   // State Management
   const [user, setUser] = useState<UserData | null>(null);
   const [products, setProducts] = useState<ProductData[]>([]);
   const [shops, setShops] = useState<ShopData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [productsLoading, setProductsLoading] = useState(false);
-  const [shopsLoading, setShopsLoading] = useState(false);
-  const [editableFields, setEditableFields] = useState<EditableField[]>([]);
-  const [isSaving, setIsSaving] = useState(false);
-
   const [orders, setOrders] = useState<OrderData[]>([]);
-  const [orderItems, setOrderItems] = useState<OrderItemData[]>([]);
-  const [ordersLoading, setOrdersLoading] = useState(false);
-  const [lastOrderDoc, setLastOrderDoc] = useState<DocumentSnapshot | null>(
-    null
-  );
-  const [hasMoreOrders, setHasMoreOrders] = useState(true);
-  const ordersObserverRef = useRef<IntersectionObserver | null>(null);
-  const lastOrderElementRef = useRef<HTMLDivElement | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [savingField, setSavingField] = useState<string | null>(null);
 
-  // Filter and Search States
+  // Search states
   const [productSearch, setProductSearch] = useState("");
   const [shopSearch, setShopSearch] = useState("");
-  const [productViewMode, setProductViewMode] = useState<ViewMode>("grid");
-  const [shopViewMode, setShopViewMode] = useState<ViewMode>("grid");
-  const [productFilter, setProductFilter] = useState<FilterStatus>("all");
-  const [productSort, setProductSort] = useState<SortBy>("newest");
+  const [orderSearch, setOrderSearch] = useState("");
+
+  // Active tab
   const [activeTab, setActiveTab] = useState<"products" | "shops" | "orders">(
     "products"
   );
 
-  // Pagination
-  const [lastProductDoc, setLastProductDoc] = useState<DocumentSnapshot | null>(
-    null
+  const deleteUserAccountCallable = httpsCallable(
+    functions,
+    "deleteUserAccount"
   );
-  const [lastShopDoc, setLastShopDoc] = useState<DocumentSnapshot | null>(null);
-  const [hasMoreProducts, setHasMoreProducts] = useState(true);
-  const [hasMoreShops, setHasMoreShops] = useState(true);
-  const ITEMS_PER_PAGE = 12;
-
-  const auth = getAuth();
-
-  const handleResetPassword = async () => {
-    if (!user?.email) {
-      toast.error("E‑posta adresi bulunamadı");
-      return;
-    }
-    try {
-      await sendPasswordResetEmail(auth, user.email);
-      toast.success("Şifre sıfırlama e‑postası gönderildi");
-    } catch (err: unknown) {
-      console.error("Reset email error:", err);
-      const msg =
-        (err as { code?: string; message?: string }).code ===
-        "auth/user-not-found"
-          ? "Bu e‑posta adresine kayıtlı kullanıcı yok"
-          : (err as { message?: string }).message || "Bilinmeyen hata";
-      toast.error(`Hata: ${msg}`);
-    }
-  };
-
-  const fetchAllUserFields = useCallback(async () => {
-    if (!userId) return;
-
-    try {
-      const userDoc = await getDoc(doc(db, "users", userId));
-      if (userDoc.exists()) {
-        const data = userDoc.data();
-        setAllUserFields(data);
-        setFieldValues(data);
-      }
-    } catch (error) {
-      console.error("Error fetching all user fields:", error);
-      toast.error("Tüm kullanıcı verileri yüklenirken hata oluştu");
-    }
-  }, [userId]);
-
-  const handleDatabaseFieldUpdate = async (
-    fieldName: string,
-    value: string | boolean | number | string[] | Timestamp
-  ) => {
-    if (!userId) return;
-
-    try {
-      await updateDoc(doc(db, "users", userId), {
-        [fieldName]: value,
-        updatedAt: new Date(),
-      });
-
-      setAllUserFields((prev) => ({ ...prev, [fieldName]: value }));
-      setFieldValues((prev) => ({ ...prev, [fieldName]: value }));
-      setEditingField(null);
-
-      // Update the main user state if it's a field that's displayed
-      if (user && fieldName in user) {
-        setUser((prev) => (prev ? { ...prev, [fieldName]: value } : null));
-      }
-
-      toast.success("Alan başarıyla güncellendi");
-    } catch (error) {
-      console.error("Error updating field:", error);
-      toast.error("Alan güncellenirken hata oluştu");
-    }
-  };
-
-  // Add this function to render different field types
-  const renderFieldInput = (
-    fieldName: string,
-    value: string | boolean | number | string[] | Timestamp,
-    type: string
-  ) => {
-    const handleChange = (
-      newValue: string | boolean | number | string[] | Timestamp
-    ) => {
-      setFieldValues((prev) => ({ ...prev, [fieldName]: newValue }));
-    };
-
-    const inputClassName =
-      "w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm";
-
-    switch (type) {
-      case "boolean":
-        return (
-          <button
-            onClick={() => handleChange(!value)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors w-full justify-center text-sm ${
-              value
-                ? "bg-green-100 text-green-800 border border-green-300"
-                : "bg-gray-100 text-gray-600 border border-gray-300"
-            }`}
-          >
-            {value ? (
-              <ToggleRight className="w-4 h-4" />
-            ) : (
-              <ToggleLeft className="w-4 h-4" />
-            )}
-            {value ? "True" : "False"}
-          </button>
-        );
-
-      case "number":
-        return (
-          <input
-            type="number"
-            value={(value as number) || ""}
-            onChange={(e) => handleChange(Number(e.target.value))}
-            className={inputClassName}
-          />
-        );
-
-      case "date":
-        const dateValue =
-          value instanceof Timestamp
-            ? value.toDate().toISOString().slice(0, 16)
-            : "";
-        return (
-          <input
-            type="datetime-local"
-            value={dateValue}
-            onChange={(e) =>
-              handleChange(new Timestamp(new Date(e.target.value).getTime(), 0))
-            }
-            className={inputClassName}
-          />
-        );
-
-      case "array":
-        return (
-          <textarea
-            value={Array.isArray(value) ? value.join(", ") : ""}
-            onChange={(e) =>
-              handleChange(
-                e.target.value.split(", ").filter((item) => item.trim())
-              )
-            }
-            className={`${inputClassName} resize-none`}
-            rows={2}
-            placeholder="Virgülle ayırın"
-          />
-        );
-
-      default:
-        return (
-          <input
-            type="text"
-            value={(value as string) || ""}
-            onChange={(e) => handleChange(e.target.value)}
-            className={inputClassName}
-          />
-        );
-    }
-  };
-
-  // Add this function to get field type
-  const getFieldType = (
-    value: string | boolean | number | string[] | Timestamp
-  ) => {
-    if (value === null || value === undefined) return "string";
-    if (typeof value === "boolean") return "boolean";
-    if (typeof value === "number") return "number";
-    if (Array.isArray(value)) return "array";
-    if (value instanceof Timestamp) return "date"; // Firestore Timestamp
-    return "string";
-  };
-
-  // Add this function to get field icon
-  const getFieldIcon = (fieldName: string, type: string, value: boolean) => {
-    if (fieldName.includes("email") || fieldName.includes("Email"))
-      return <Mail className="w-4 h-4" />;
-    if (fieldName.includes("phone") || fieldName.includes("Phone"))
-      return <Phone className="w-4 h-4" />;
-    if (fieldName.includes("address") || fieldName.includes("Address"))
-      return <MapPin className="w-4 h-4" />;
-    if (fieldName.includes("image") || fieldName.includes("Image"))
-      return <ImageIconImport className="w-4 h-4" />;
-    if (fieldName.includes("name") || fieldName.includes("Name"))
-      return <UserIcon className="w-4 h-4" />;
-    if (fieldName.includes("id") || fieldName.includes("Id"))
-      return <Hash className="w-4 h-4" />;
-    if (type === "date") return <Calendar className="w-4 h-4" />;
-    if (type === "boolean")
-      return value ? (
-        <ToggleRight className="w-4 h-4" />
-      ) : (
-        <ToggleLeft className="w-4 h-4" />
-      );
-    return <Type className="w-4 h-4" />;
-  };
-
-  const handleDeleteAccount = async () => {
-    // a clear, un‑missable confirmation
-    const ok = window.confirm(
-      `"${user?.displayName}" adlı kullanıcının hesabı kalıcı olarak silinecek.\n` +
-        `Bu işlem geri alınamaz. Devam etmek istediğinize emin misiniz?`
-    );
-    if (!ok) return;
-
-    try {
-      // pass the target uid so the function runs in "admin" mode
-      const { data } = await deleteUserAccountCallable({ uid: userId });
-      toast.success((data as { message: string }).message);
-      router.push("/dashboard");
-    } catch (e: unknown) {
-      console.error("deleteUserAccount error:", e);
-      toast.error(
-        (e as { message?: string }).message ||
-          "Hesap silinirken bir hata oluştu. Lütfen tekrar deneyin."
-      );
-    }
-  };
-
-  // Initialize editable fields
-  const initializeEditableFields = useCallback((userData: UserData) => {
-    setEditableFields([
-      {
-        field: "displayName",
-        value: userData.displayName || "",
-        isEditing: false,
-      },
-      { field: "email", value: userData.email || "", isEditing: false },
-      { field: "phone", value: userData.phone || "", isEditing: false },
-      { field: "gender", value: userData.gender || "", isEditing: false },
-    ]);
-  }, []);
 
   // Fetch user data
   const fetchUserData = useCallback(async () => {
@@ -477,8 +129,9 @@ function UserDetailsContent() {
 
     try {
       setLoading(true);
-      const userDoc = await getDoc(doc(db, "users", userId));
 
+      // Fetch user
+      const userDoc = await getDoc(doc(db, "users", userId));
       if (!userDoc.exists()) {
         toast.error("Kullanıcı bulunamadı");
         router.push("/dashboard");
@@ -487,420 +140,156 @@ function UserDetailsContent() {
 
       const userData = { id: userDoc.id, ...userDoc.data() } as UserData;
       setUser(userData);
-      initializeEditableFields(userData);
+
+      // Fetch products (limit to 50 for performance)
+      const productsQuery = query(
+        collection(db, "products"),
+        where("userId", "==", userId),
+        firestoreOrderBy("createdAt", "desc"),
+        limit(50)
+      );
+      const productsSnapshot = await getDocs(productsQuery);
+      const productsData = productsSnapshot.docs.map(
+        (doc) => ({ id: doc.id, ...doc.data() } as ProductData)
+      );
+      setProducts(productsData);
+
+      // Fetch shops (limit to 20 for performance)
+      const shopsQuery = query(
+        collection(db, "shops"),
+        where("ownerId", "==", userId),
+        limit(20)
+      );
+      const shopsSnapshot = await getDocs(shopsQuery);
+      const shopsData = shopsSnapshot.docs.map(
+        (doc) => ({ id: doc.id, ...doc.data() } as ShopData)
+      );
+      setShops(shopsData);
+
+      // Fetch orders (limit to 30 for performance)
+      const ordersQuery = query(
+        collection(db, "orders"),
+        where("buyerId", "==", userId),
+        firestoreOrderBy("timestamp", "desc"),
+        limit(30)
+      );
+      const ordersSnapshot = await getDocs(ordersQuery);
+      const ordersData = ordersSnapshot.docs.map(
+        (doc) => ({ id: doc.id, ...doc.data() } as OrderData)
+      );
+      setOrders(ordersData);
     } catch (error) {
-      console.error("Error fetching user:", error);
-      toast.error("Kullanıcı bilgileri yüklenirken hata oluştu");
+      console.error("Error fetching user data:", error);
+      toast.error("Kullanıcı verileri yüklenemedi");
     } finally {
       setLoading(false);
     }
-  }, [userId, router, initializeEditableFields]);
+  }, [userId, router]);
 
-  const fetchUserOrders = useCallback(
-    async (append = false) => {
-      if (!userId || ordersLoading) return;
-
-      try {
-        setOrdersLoading(true);
-        let q = query(
-          collection(db, "orders"),
-          where("buyerId", "==", userId),
-          orderBy("timestamp", "desc"),
-          limit(ITEMS_PER_PAGE)
-        );
-
-        // Apply pagination
-        if (append && lastOrderDoc) {
-          q = query(q, startAfter(lastOrderDoc));
-        }
-
-        const snapshot = await getDocs(q);
-        const ordersData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as OrderData[];
-
-        // Fetch order items for each order
-        const allOrderItems: OrderItemData[] = [];
-        for (const order of ordersData) {
-          const itemsQuery = query(
-            collection(db, "orders", order.id, "items"),
-            orderBy("timestamp", "desc")
-          );
-          const itemsSnapshot = await getDocs(itemsQuery);
-          const items = itemsSnapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          })) as OrderItemData[];
-          allOrderItems.push(...items);
-        }
-
-        if (append) {
-          setOrders((prev) => [...prev, ...ordersData]);
-          setOrderItems((prev) => [...prev, ...allOrderItems]);
-        } else {
-          setOrders(ordersData);
-          setOrderItems(allOrderItems);
-          setLastOrderDoc(null);
-        }
-
-        // Set last document for pagination
-        if (ordersData.length > 0) {
-          setLastOrderDoc(snapshot.docs[snapshot.docs.length - 1]);
-        }
-
-        setHasMoreOrders(ordersData.length === ITEMS_PER_PAGE);
-      } catch (error) {
-        console.error("Error fetching orders:", error);
-        toast.error("Siparişler yüklenirken hata oluştu");
-      } finally {
-        setOrdersLoading(false);
-      }
-    },
-    [userId, lastOrderDoc, ordersLoading]
-  );
-
-  // Fetch user products with pagination and filters
-  const fetchUserProducts = useCallback(
-    async (append = false) => {
-      if (!userId || productsLoading) return;
-
-      try {
-        setProductsLoading(true);
-
-        let q = query(
-          collection(db, "products"),
-          where("userId", "==", userId),
-          orderBy(
-            productSort === "newest"
-              ? "createdAt"
-              : productSort === "oldest"
-              ? "createdAt"
-              : productSort === "price_high"
-              ? "price"
-              : productSort === "price_low"
-              ? "price"
-              : "clickCount",
-            productSort === "oldest" || productSort === "price_low"
-              ? "asc"
-              : "desc"
-          ),
-          limit(ITEMS_PER_PAGE)
-        );
-
-        // Apply pagination
-        if (append && lastProductDoc) {
-          q = query(q, startAfter(lastProductDoc));
-        }
-
-        const snapshot = await getDocs(q);
-        const newProducts = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as ProductData[];
-
-        if (append) {
-          setProducts((prev) => [...prev, ...newProducts]);
-        } else {
-          setProducts(newProducts);
-          setLastProductDoc(null);
-        }
-
-        // Set last document for pagination
-        if (newProducts.length > 0) {
-          setLastProductDoc(snapshot.docs[snapshot.docs.length - 1]);
-        }
-
-        setHasMoreProducts(newProducts.length === ITEMS_PER_PAGE);
-      } catch (error) {
-        console.error("Error fetching products:", error);
-        toast.error("Ürünler yüklenirken hata oluştu");
-      } finally {
-        setProductsLoading(false);
-      }
-    },
-    [userId, productSort, lastProductDoc, productsLoading]
-  );
-
-  // Fetch user shops
-  const fetchUserShops = useCallback(
-    async (append = false) => {
-      if (!userId || shopsLoading) return;
-
-      try {
-        setShopsLoading(true);
-        let q = query(
-          collection(db, "shops"),
-          where("ownerId", "==", userId),
-          orderBy("createdAt", "desc"),
-          limit(ITEMS_PER_PAGE)
-        );
-
-        // Apply pagination
-        if (append && lastShopDoc) {
-          q = query(q, startAfter(lastShopDoc));
-        }
-
-        const snapshot = await getDocs(q);
-        const shopsData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as ShopData[];
-
-        if (append) {
-          setShops((prev) => [...prev, ...shopsData]);
-        } else {
-          setShops(shopsData);
-          setLastShopDoc(null);
-        }
-
-        // Set last document for pagination
-        if (shopsData.length > 0) {
-          setLastShopDoc(snapshot.docs[snapshot.docs.length - 1]);
-        }
-
-        setHasMoreShops(shopsData.length === ITEMS_PER_PAGE);
-      } catch (error) {
-        console.error("Error fetching shops:", error);
-        toast.error("Mağazalar yüklenirken hata oluştu");
-      } finally {
-        setShopsLoading(false);
-      }
-    },
-    [userId, lastShopDoc, shopsLoading]
-  );
-
-  // Setup infinite scroll for products
-  const setupProductsInfiniteScroll = useCallback(() => {
-    if (productsObserverRef.current) {
-      productsObserverRef.current.disconnect();
-    }
-
-    productsObserverRef.current = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMoreProducts && !productsLoading) {
-          fetchUserProducts(true);
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (lastProductElementRef.current) {
-      productsObserverRef.current.observe(lastProductElementRef.current);
-    }
-  }, [hasMoreProducts, productsLoading, fetchUserProducts]);
-
-  // Setup infinite scroll for shops
-  const setupShopsInfiniteScroll = useCallback(() => {
-    if (shopsObserverRef.current) {
-      shopsObserverRef.current.disconnect();
-    }
-
-    shopsObserverRef.current = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMoreShops && !shopsLoading) {
-          fetchUserShops(true);
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (lastShopElementRef.current) {
-      shopsObserverRef.current.observe(lastShopElementRef.current);
-    }
-  }, [hasMoreShops, shopsLoading, fetchUserShops]);
-
-  const setupOrdersInfiniteScroll = useCallback(() => {
-    if (ordersObserverRef.current) {
-      ordersObserverRef.current.disconnect();
-    }
-
-    ordersObserverRef.current = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMoreOrders && !ordersLoading) {
-          fetchUserOrders(true);
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (lastOrderElementRef.current) {
-      ordersObserverRef.current.observe(lastOrderElementRef.current);
-    }
-  }, [hasMoreOrders, ordersLoading, fetchUserOrders]);
-
-  // Filter products based on search and filter criteria
-  const filteredProducts = useMemo(() => {
-    let filtered = products;
-
-    // Apply search filter
-    if (productSearch.trim()) {
-      const searchTerm = productSearch.toLowerCase().trim();
-      filtered = filtered.filter(
-        (product) =>
-          product.productName?.toLowerCase().includes(searchTerm) ||
-          product.category?.toLowerCase().includes(searchTerm) ||
-          product.subcategory?.toLowerCase().includes(searchTerm)
-      );
-    }
-
-    // Apply status filter
-    if (productFilter !== "all") {
-      filtered = filtered.filter((product) => {
-        switch (productFilter) {
-          case "active":
-            return !product.sold;
-          case "sold":
-            return product.sold;
-          case "featured":
-            return product.isFeatured || product.isBoosted;
-          default:
-            return true;
-        }
-      });
-    }
-
-    return filtered;
-  }, [products, productSearch, productFilter]);
-
-  // Filter shops based on search
-  const filteredShops = useMemo(() => {
-    if (!shopSearch.trim()) return shops;
-
-    const searchTerm = shopSearch.toLowerCase().trim();
-    return shops.filter(
-      (shop) =>
-        shop.name?.toLowerCase().includes(searchTerm) ||
-        (shop.categories &&
-          shop.categories.some((cat) => cat.toLowerCase().includes(searchTerm)))
-    );
-  }, [shops, shopSearch]);
-
-  // Handle field editing
-  const handleFieldEdit = (field: keyof UserData) => {
-    setEditableFields((prev) =>
-      prev.map((item) =>
-        item.field === field ? { ...item, isEditing: true } : item
-      )
-    );
-  };
-
-  const handleFieldChange = (field: keyof UserData, value: string) => {
-    setEditableFields((prev) =>
-      prev.map((item) => (item.field === field ? { ...item, value } : item))
-    );
-  };
-
-  const handleFieldSave = async (field: keyof UserData) => {
-    if (!userId || !user) return;
-
-    const fieldData = editableFields.find((item) => item.field === field);
-    if (!fieldData) return;
-
-    try {
-      setIsSaving(true);
-
-      await updateDoc(doc(db, "users", userId), {
-        [field]: fieldData.value,
-        updatedAt: new Date(),
-      });
-
-      setUser((prev) => (prev ? { ...prev, [field]: fieldData.value } : null));
-      setEditableFields((prev) =>
-        prev.map((item) =>
-          item.field === field ? { ...item, isEditing: false } : item
-        )
-      );
-
-      toast.success("Bilgi başarıyla güncellendi");
-    } catch (error) {
-      console.error("Error updating field:", error);
-      toast.error("Güncelleme sırasında hata oluştu");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleFieldCancel = (field: keyof UserData) => {
-    const originalValue = user?.[field]?.toString() || "";
-    setEditableFields((prev) =>
-      prev.map((item) =>
-        item.field === field
-          ? { ...item, value: originalValue, isEditing: false }
-          : item
-      )
-    );
-  };
-
-  // Effects
   useEffect(() => {
     fetchUserData();
   }, [fetchUserData]);
 
-  useEffect(() => {
-    if (user) {
-      setProducts([]);
-      setShops([]);
-      setOrders([]);
-      setOrderItems([]);
-      setLastProductDoc(null);
-      setLastShopDoc(null);
-      setLastOrderDoc(null);
-      setHasMoreProducts(true);
-      setHasMoreShops(true);
-      setHasMoreOrders(true);
-      fetchUserProducts();
-      fetchUserShops();
-      fetchUserOrders();
-    }
-  }, [user]);
+  // Save individual field
+  const saveIndividualField = async (
+    field: string,
+    value: string | number | boolean | string[]
+  ) => {
+    if (!user) return;
 
-  // Reset products when sort changes
-  useEffect(() => {
-    if (user) {
-      setProducts([]);
-      setLastProductDoc(null);
-      setHasMoreProducts(true);
-      fetchUserProducts();
-    }
-  }, [productSort]);
+    try {
+      setSavingField(field);
 
-  // Setup infinite scroll
-  useEffect(() => {
-    if (activeTab === "products") {
-      setupProductsInfiniteScroll();
-    } else if (activeTab === "shops") {
-      setupShopsInfiniteScroll();
-    } else if (activeTab === "orders") {
-      setupOrdersInfiniteScroll();
+      await updateDoc(doc(db, "users", user.id), {
+        [field]: value,
+        updatedAt: Timestamp.now(),
+      });
+
+      setUser((prev) => (prev ? { ...prev, [field]: value } : null));
+      toast.success(`${field} güncellendi!`);
+    } catch (error) {
+      console.error("Error updating field:", error);
+      toast.error(`${field} güncellenirken hata oluştu`);
+    } finally {
+      setSavingField(null);
+    }
+  };
+
+  // Handle password reset
+  const handleResetPassword = async () => {
+    if (!user?.email) return;
+
+    if (
+      !window.confirm(
+        `${user.email} adresine şifre sıfırlama e-postası gönderilecek. Devam edilsin mi?`
+      )
+    ) {
+      return;
     }
 
-    return () => {
-      if (productsObserverRef.current) {
-        productsObserverRef.current.disconnect();
-      }
-      if (shopsObserverRef.current) {
-        shopsObserverRef.current.disconnect();
-      }
-      if (ordersObserverRef.current) {
-        ordersObserverRef.current.disconnect();
-      }
-    };
-  }, [
-    activeTab,
-    filteredProducts.length,
-    filteredShops.length,
-    orders.length,
-    setupProductsInfiniteScroll,
-    setupShopsInfiniteScroll,
-    setupOrdersInfiniteScroll,
-  ]);
+    try {
+      const auth = getAuth();
+      await sendPasswordResetEmail(auth, user.email);
+      toast.success("Şifre sıfırlama e-postası gönderildi!");
+    } catch (error) {
+      console.error("Error sending password reset email:", error);
+      toast.error("Şifre sıfırlama e-postası gönderilemedi");
+    }
+  };
+
+  // Handle delete account
+  const handleDeleteAccount = async () => {
+    if (!user) return;
+
+    const confirmText = window.prompt(
+      `Bu kullanıcının hesabını silmek istediğinize emin misiniz?\n\nOnaylamak için kullanıcının e-postasını yazın: ${user.email}`
+    );
+
+    if (confirmText !== user.email) {
+      toast.error("E-posta adresi eşleşmiyor");
+      return;
+    }
+
+    try {
+      await deleteUserAccountCallable({ userId: user.id });
+      toast.success("Kullanıcı hesabı silindi");
+      router.push("/dashboard");
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      toast.error("Hesap silinirken hata oluştu");
+    }
+  };
+
+  // Filtered data
+  const filteredProducts = useMemo(() => {
+    if (!productSearch.trim()) return products;
+    const searchLower = productSearch.toLowerCase();
+    return products.filter((product) =>
+      product.productName.toLowerCase().includes(searchLower)
+    );
+  }, [products, productSearch]);
+
+  const filteredShops = useMemo(() => {
+    if (!shopSearch.trim()) return shops;
+    const searchLower = shopSearch.toLowerCase();
+    return shops.filter((shop) =>
+      shop.name.toLowerCase().includes(searchLower)
+    );
+  }, [shops, shopSearch]);
+
+  const filteredOrders = useMemo(() => {
+    if (!orderSearch.trim()) return orders;
+    const searchLower = orderSearch.toLowerCase();
+    return orders.filter((order) =>
+      order.id.toLowerCase().includes(searchLower)
+    );
+  }, [orders, orderSearch]);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="flex items-center gap-3 text-gray-600">
-          <Loader2 className="w-6 h-6 animate-spin" />
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+        <div className="flex items-center gap-3 text-gray-900">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
           <span>Kullanıcı bilgileri yükleniyor...</span>
         </div>
       </div>
@@ -909,1414 +298,797 @@ function UserDetailsContent() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center text-gray-600">
-          <h2 className="text-xl font-semibold mb-2">Kullanıcı Bulunamadı</h2>
-          <p className="text-gray-500">Aradığınız kullanıcı mevcut değil.</p>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-2 text-gray-900">
+            Kullanıcı Bulunamadı
+          </h2>
+          <p className="text-gray-600">Aradığınız kullanıcı mevcut değil.</p>
         </div>
       </div>
     );
   }
 
-  const EditableField = ({
-    field,
-    label,
-    type = "text",
+  // All Fields Display Component
+  const AllFieldsDisplay = ({
+    user,
+    onFieldSave,
+    savingField,
+    setSavingField,
   }: {
-    field: keyof UserData;
-    label: string;
-    type?: string;
-  }) => {
-    const fieldData = editableFields.find((item) => item.field === field);
-    if (!fieldData) return null;
-
-    return (
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-700">{label}</label>
-        <div className="flex items-center gap-2">
-          {fieldData.isEditing ? (
-            <>
-              {field === "gender" ? (
-                <select
-                  value={fieldData.value}
-                  onChange={(e) => handleFieldChange(field, e.target.value)}
-                  className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={isSaving}
-                >
-                  <option value="">Seçiniz</option>
-                  <option value="Male">Erkek</option>
-                  <option value="Female">Kadın</option>
-                </select>
-              ) : (
-                <input
-                  type={type}
-                  value={fieldData.value}
-                  onChange={(e) => handleFieldChange(field, e.target.value)}
-                  className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
-                  disabled={isSaving}
-                  autoFocus
-                />
-              )}
-              <button
-                onClick={() => handleFieldSave(field)}
-                disabled={isSaving}
-                className="p-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
-              >
-                {isSaving ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Check className="w-4 h-4" />
-                )}
-              </button>
-              <button
-                onClick={() => handleFieldCancel(field)}
-                disabled={isSaving}
-                className="p-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="flex-1 text-gray-900">
-                {fieldData.value || "Belirtilmemiş"}
-              </span>
-              <button
-                onClick={() => handleFieldEdit(field)}
-                className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex-shrink-0"
-              >
-                <Edit className="w-4 h-4" />
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const ProductCard = ({
-    product,
-    viewMode,
-    isLast = false,
-  }: {
-    product: ProductData;
-    viewMode: ViewMode;
-    isLast?: boolean;
-  }) => {
-    const formatPrice = (price: number, currency: string) => {
-      return new Intl.NumberFormat("tr-TR", {
-        style: "currency",
-        currency: currency === "TL" ? "TRY" : currency,
-        minimumFractionDigits: 0,
-      }).format(price);
-    };
-
-    // Add click handler
-    const handleProductClick = () => {
-      router.push(`/productdetails?productId=${product.id}`);
-    };
-
-    if (viewMode === "list") {
-      return (
-        <div
-          ref={isLast ? lastProductElementRef : null}
-          onClick={handleProductClick}
-          className="bg-white border border-gray-200 rounded-xl p-4 transition-all duration-200 hover:shadow-md hover:border-blue-300 cursor-pointer group"
-        >
-          <div className="flex items-center gap-4">
-            <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100">
-              {product.imageUrls?.[0] ? (
-                <Image
-                  src={product.imageUrls[0]}
-                  alt={product.productName || "Product"}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-                  <ImageIcon className="w-6 h-6 text-gray-400" />
-                </div>
-              )}
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-gray-900 truncate group-hover:text-blue-600">
-                {product.productName || "Ürün Adı Yok"}
-              </h3>
-              <p className="text-sm text-gray-500">
-                {product.category || "Kategori Yok"} •{" "}
-                {product.subcategory || "Alt Kategori Yok"}
-              </p>
-              <div className="flex items-center gap-4 mt-1">
-                <span className="text-lg font-bold text-green-600">
-                  {formatPrice(product.price || 0, product.currency || "TRY")}
-                </span>
-                <span className="text-xs text-gray-500">
-                  {product.condition || "Durum Belirtilmemiş"}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-6 text-sm text-gray-500">
-              <div className="flex items-center gap-1">
-                <Eye className="w-4 h-4" />
-                <span>{product.clickCount || 0}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Heart className="w-4 h-4" />
-                <span>{product.favoritesCount || 0}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <ShoppingBag className="w-4 h-4" />
-                <span>{product.purchaseCount || 0}</span>
-              </div>
-            </div>
-
-            {(product.isFeatured || product.isBoosted) && (
-              <div className="flex flex-col gap-1">
-                {product.isFeatured && (
-                  <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded">
-                    ÖNE ÇIKAN
-                  </span>
-                )}
-                {product.isBoosted && (
-                  <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded">
-                    BOOST
-                  </span>
-                )}
-              </div>
-            )}
-
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-              <ArrowRight className="w-5 h-5 text-blue-600" />
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div
-        ref={isLast ? lastProductElementRef : null}
-        onClick={handleProductClick}
-        className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-md hover:border-blue-300 group cursor-pointer"
-      >
-        <div className="relative aspect-square bg-gray-100">
-          {product.imageUrls?.[0] ? (
-            <Image
-              src={product.imageUrls[0]}
-              alt={product.productName || "Product"}
-              fill
-              className="object-cover"
-            />
-          ) : (
-            <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-              <ImageIcon className="w-12 h-12 text-gray-400" />
-            </div>
-          )}
-
-          {(product.isFeatured || product.isBoosted) && (
-            <div className="absolute top-2 left-2 flex flex-col gap-1">
-              {product.isFeatured && (
-                <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded">
-                  ÖNE ÇIKAN
-                </span>
-              )}
-              {product.isBoosted && (
-                <span className="px-2 py-1 bg-purple-600 text-white text-xs rounded">
-                  BOOST
-                </span>
-              )}
-            </div>
-          )}
-
-          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="p-1 bg-blue-600 rounded-full">
-              <ArrowRight className="w-3 h-3 text-white" />
-            </div>
-          </div>
-
-          <div className="absolute bottom-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="flex items-center gap-1 bg-black/50 rounded px-2 py-1">
-              <Eye className="w-3 h-3 text-white" />
-              <span className="text-white text-xs">
-                {product.clickCount || 0}
-              </span>
-            </div>
-            <div className="flex items-center gap-1 bg-black/50 rounded px-2 py-1">
-              <Heart className="w-3 h-3 text-white" />
-              <span className="text-white text-xs">
-                {product.favoritesCount || 0}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-3">
-          <h3 className="font-semibold text-gray-900 mb-1 line-clamp-2 group-hover:text-blue-600 text-sm">
-            {product.productName || "Ürün Adı Yok"}
-          </h3>
-          <p className="text-xs text-gray-500 mb-2">
-            {product.category || "Kategori Yok"}
-          </p>
-          <div className="flex items-center justify-between">
-            <span className="text-base font-bold text-green-600">
-              {formatPrice(product.price || 0, product.currency || "TRY")}
-            </span>
-            <span className="text-xs text-gray-500">
-              {product.condition || "Durum Belirtilmemiş"}
-            </span>
-          </div>
-
-          {product.averageRating > 0 && (
-            <div className="flex items-center gap-1 mt-2">
-              <Star className="w-3 h-3 text-yellow-500 fill-current" />
-              <span className="text-xs text-gray-700">
-                {product.averageRating.toFixed(1)}
-              </span>
-              <span className="text-xs text-gray-500">
-                ({product.reviewCount || 0})
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const OrderCard = ({
-    order,
-    isLast = false,
-  }: {
-    order: OrderData;
-    isLast?: boolean;
-  }) => {
-    const orderItemsForThisOrder = orderItems.filter(
-      (item) => item.orderId === order.id
-    );
-
-    const formatPrice = (price: number) => {
-      return new Intl.NumberFormat("tr-TR", {
-        style: "currency",
-        currency: "TRY",
-        minimumFractionDigits: 0,
-      }).format(price);
-    };
-
-    const formatDate = (timestamp: Timestamp) => {
-      return timestamp.toDate().toLocaleString("tr-TR", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    };
-
-    return (
-      <div
-        ref={isLast ? lastOrderElementRef : null}
-        className="bg-white border border-gray-200 rounded-xl p-4 transition-all duration-200 hover:shadow-md"
-      >
-        {/* Order Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">
-              Sipariş #{order.id.slice(-8)}
-            </h3>
-            <p className="text-sm text-gray-500">
-              {formatDate(order.timestamp)}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-xl font-bold text-green-600">
-              {formatPrice(order.totalPrice)}
-            </p>
-            <div className="flex items-center gap-2">
-              <span
-                className={`px-2 py-1 text-xs rounded-full ${
-                  order.paymentMethod === "PlayPoints"
-                    ? "bg-purple-100 text-purple-800"
-                    : "bg-blue-100 text-blue-800"
-                }`}
-              >
-                {order.paymentMethod === "PlayPoints"
-                  ? "Play Points"
-                  : "Kredi Kartı"}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Order Items */}
-        <div className="space-y-3 mb-4">
-          <h4 className="text-sm font-medium text-gray-700">
-            Ürünler ({orderItemsForThisOrder.length})
-          </h4>
-          <div className="grid gap-3">
-            {orderItemsForThisOrder.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-3 bg-gray-50 rounded-lg p-3"
-              >
-                <div className="relative w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-gray-200">
-                  {item.productImage ? (
-                    <Image
-                      src={item.productImage}
-                      alt={item.productName}
-                      fill
-                      className="object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                      <Package className="w-4 h-4 text-gray-400" />
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <h5 className="font-medium text-gray-900 truncate text-sm">
-                    {item.productName}
-                  </h5>
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <span>Adet: {item.quantity}</span>
-                    {item.selectedColor && <span>• {item.selectedColor}</span>}
-                    {item.selectedSize && <span>• {item.selectedSize}</span>}
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    Satıcı: {item.sellerName}
-                  </p>
-                </div>
-
-                <div className="text-right">
-                  <p className="font-semibold text-gray-900 text-sm">
-                    {formatPrice(item.price * item.quantity)}
-                  </p>
-                  <span
-                    className={`px-2 py-1 text-xs rounded ${
-                      item.shipmentStatus === "Delivered"
-                        ? "bg-green-100 text-green-800"
-                        : item.shipmentStatus === "Shipped"
-                        ? "bg-blue-100 text-blue-800"
-                        : item.shipmentStatus === "Processing"
-                        ? "bg-yellow-100 text-yellow-800"
-                        : "bg-gray-100 text-gray-800"
-                    }`}
-                  >
-                    {item.shipmentStatus}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Order Address */}
-        <div className="border-t border-gray-200 pt-4">
-          <h4 className="text-sm font-medium text-gray-700 mb-2">
-            Teslimat Adresi
-          </h4>
-          <div className="flex items-start gap-2 text-sm text-gray-600">
-            <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            <div>
-              <p>{order.address.addressLine1}</p>
-              {order.address.addressLine2 && (
-                <p>{order.address.addressLine2}</p>
-              )}
-              <p>{order.address.city}</p>
-              <p>{order.address.phoneNumber}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const ShopCard = ({
-    shop,
-    viewMode,
-    isLast = false,
-  }: {
-    shop: ShopData;
-    viewMode: ViewMode;
-    isLast?: boolean;
-  }) => {
-    // Safe access to categories with fallback
-    const categories = shop.categories || [];
-    const categoriesText =
-      categories.length > 0 ? categories.join(", ") : "Kategori Belirtilmemiş";
-
-    // Add click handler
-    const handleShopClick = () => {
-      router.push(`/shopdetails?shopId=${shop.id}`);
-    };
-
-    if (viewMode === "list") {
-      return (
-        <div
-          ref={isLast ? lastShopElementRef : null}
-          onClick={handleShopClick}
-          className="bg-white border border-gray-200 rounded-xl p-4 transition-all duration-200 hover:shadow-md hover:border-blue-300 cursor-pointer group"
-        >
-          <div className="flex items-center gap-4">
-            <div className="relative w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-gray-100">
-              {shop.profileImageUrl ? (
-                <Image
-                  src={shop.profileImageUrl}
-                  alt={shop.name || "Shop"}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-                  <Store className="w-5 h-5 text-gray-400" />
-                </div>
-              )}
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-gray-900 group-hover:text-blue-600">
-                {shop.name || "Mağaza Adı Yok"}
-              </h3>
-              <p className="text-sm text-gray-500">{categoriesText}</p>
-              <p className="text-xs text-gray-500">
-                {shop.address || "Adres Belirtilmemiş"}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-4 text-sm text-gray-500">
-              <div className="flex items-center gap-1">
-                <Users className="w-4 h-4" />
-                <span>{shop.followerCount || 0}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Star className="w-4 h-4" />
-                <span>{(shop.averageRating || 0).toFixed(1)}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Eye className="w-4 h-4" />
-                <span>{shop.clickCount || 0}</span>
-              </div>
-            </div>
-
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-              <ArrowRight className="w-5 h-5 text-blue-600" />
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div
-        ref={isLast ? lastShopElementRef : null}
-        onClick={handleShopClick}
-        className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-md hover:border-blue-300 cursor-pointer group"
-      >
-        <div className="relative h-24 bg-gray-100">
-          {shop.coverImageUrls?.[0] ? (
-            <Image
-              src={shop.coverImageUrls[0]}
-              alt={shop.name || "Shop"}
-              fill
-              className="object-cover"
-            />
-          ) : (
-            <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-              <Store className="w-6 h-6 text-gray-400" />
-            </div>
-          )}
-
-          {shop.isBoosted && (
-            <div className="absolute top-2 left-2">
-              <span className="px-2 py-1 bg-purple-600 text-white text-xs rounded">
-                BOOST
-              </span>
-            </div>
-          )}
-
-          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <ArrowRight className="w-4 h-4 text-blue-600 bg-white/80 rounded p-1" />
-          </div>
-        </div>
-
-        <div className="p-3">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="relative w-10 h-10 rounded-full overflow-hidden bg-gray-100">
-              {shop.profileImageUrl ? (
-                <Image
-                  src={shop.profileImageUrl}
-                  alt={shop.name || "Shop"}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-                  <Store className="w-4 h-4 text-gray-400" />
-                </div>
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-gray-900 truncate group-hover:text-blue-600 text-sm">
-                {shop.name || "Mağaza Adı Yok"}
-              </h3>
-              <p className="text-xs text-gray-500">
-                {shop.address || "Adres Belirtilmemiş"}
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-sm text-gray-600">{categoriesText}</p>
-            <div className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-1 text-yellow-600">
-                <Star className="w-3 h-3 fill-current" />
-                <span>{(shop.averageRating || 0).toFixed(1)}</span>
-                <span className="text-gray-500">({shop.reviewCount || 0})</span>
-              </div>
-              <div className="flex items-center gap-1 text-blue-600">
-                <Users className="w-3 h-3" />
-                <span>{shop.followerCount || 0}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const DatabaseFieldRow = ({
-    fieldName,
-    fieldType,
-    isEditing,
-    displayValue,
-    fieldValues,
-    setEditingField,
-    setFieldValues,
-    allUserFields,
-    handleDatabaseFieldUpdate,
-    getFieldIcon,
-  }: {
-    fieldName: string;
-    value: string | boolean | number | string[] | Timestamp;
-    fieldType: string;
-    isEditing: boolean;
-    displayValue: string;
-    fieldValues: Record<
-      string,
-      string | boolean | number | string[] | Timestamp
-    >;
-    setEditingField: (field: string | null) => void;
-    setFieldValues: React.Dispatch<
-      React.SetStateAction<
-        Record<string, string | boolean | number | string[] | Timestamp>
-      >
-    >;
-    allUserFields: Record<
-      string,
-      string | boolean | number | string[] | Timestamp
-    >;
-    handleDatabaseFieldUpdate: (
-      fieldName: string,
-      value: string | boolean | number | string[] | Timestamp
+    user: UserData;
+    onFieldSave: (
+      field: string,
+      value: string | number | boolean
     ) => Promise<void>;
-    renderFieldInput: (
-      fieldName: string,
-      value: string | boolean | number | string[] | Timestamp,
-      type: string
-    ) => React.ReactNode;
-    getFieldIcon: (
-      fieldName: string,
-      type: string,
-      value: boolean
-    ) => React.ReactNode;
+    savingField: string | null;
+    setSavingField: (field: string | null) => void;
   }) => {
-    const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(
-      null
-    );
+    const [searchTerm, setSearchTerm] = useState("");
+    const [editingField, setEditingField] = useState<string | null>(null);
+    const [editValue, setEditValue] = useState<string>("");
 
-    // Auto-focus when entering edit mode
-    useEffect(() => {
-      if (isEditing && inputRef.current) {
-        const timer = setTimeout(() => {
-          if (inputRef.current) {
-            inputRef.current.focus();
-            // For text inputs, place cursor at the end
-            if (
-              inputRef.current instanceof HTMLInputElement ||
-              inputRef.current instanceof HTMLTextAreaElement
-            ) {
-              const length = inputRef.current.value.length;
-              inputRef.current.setSelectionRange(length, length);
-            }
-          }
-        }, 100);
+    const formatFieldValue = (
+      value: unknown
+    ): { display: string; type: string } => {
+      if (value === null) return { display: "null", type: "null" };
+      if (value === undefined)
+        return { display: "undefined", type: "undefined" };
 
-        return () => clearTimeout(timer);
-      }
-    }, [isEditing]);
-
-    const handleEditClick = (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setEditingField(fieldName);
-    };
-
-    const handleSaveClick = async (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      await handleDatabaseFieldUpdate(fieldName, fieldValues[fieldName]);
-    };
-
-    const handleCancelClick = (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setEditingField(null);
-      setFieldValues((prev) => ({
-        ...prev,
-        [fieldName]: allUserFields[fieldName],
-      }));
-    };
-
-    // Enhanced renderFieldInput with ref support
-    const renderFieldInputWithRef = (
-      fieldName: string,
-      value: string | boolean | number | string[] | Timestamp,
-      type: string
-    ) => {
-      const handleChange = (
-        newValue: string | boolean | number | string[] | Timestamp
-      ) => {
-        setFieldValues((prev) => ({ ...prev, [fieldName]: newValue }));
-      };
-
-      const inputClassName =
-        "w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm";
+      const type = typeof value;
 
       switch (type) {
-        case "boolean":
-          return (
-            <button
-              onClick={() => handleChange(!value)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors w-full justify-center text-sm ${
-                value
-                  ? "bg-green-100 text-green-800 border border-green-300"
-                  : "bg-gray-100 text-gray-600 border border-gray-300"
-              }`}
-            >
-              {value ? (
-                <ToggleRight className="w-4 h-4" />
-              ) : (
-                <ToggleLeft className="w-4 h-4" />
-              )}
-              {value ? "True" : "False"}
-            </button>
-          );
-
+        case "string":
+          return { display: value as string, type: "string" };
         case "number":
-          return (
-            <input
-              ref={inputRef as React.RefObject<HTMLInputElement>}
-              type="number"
-              value={(value as number) || ""}
-              onChange={(e) => handleChange(Number(e.target.value))}
-              className={inputClassName}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleSaveClick(
-                    e as unknown as React.MouseEvent<HTMLButtonElement>
-                  );
-                } else if (e.key === "Escape") {
-                  handleCancelClick(
-                    e as unknown as React.MouseEvent<HTMLButtonElement>
-                  );
-                }
-              }}
-            />
-          );
-
-        case "date":
-          const dateValue =
-            value instanceof Timestamp
-              ? value.toDate().toISOString().slice(0, 16)
-              : "";
-          return (
-            <input
-              ref={inputRef as React.RefObject<HTMLInputElement>}
-              type="datetime-local"
-              value={dateValue}
-              onChange={(e) =>
-                handleChange(
-                  new Timestamp(new Date(e.target.value).getTime(), 0)
-                )
-              }
-              className={inputClassName}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleSaveClick(
-                    e as unknown as React.MouseEvent<HTMLButtonElement>
-                  );
-                } else if (e.key === "Escape") {
-                  handleCancelClick(
-                    e as unknown as React.MouseEvent<HTMLButtonElement>
-                  );
-                }
-              }}
-            />
-          );
-
-        case "array":
-          return (
-            <textarea
-              ref={inputRef as React.RefObject<HTMLTextAreaElement>}
-              value={Array.isArray(value) ? value.join(", ") : ""}
-              onChange={(e) =>
-                handleChange(
-                  e.target.value.split(", ").filter((item) => item.trim())
-                )
-              }
-              className={`${inputClassName} resize-none`}
-              rows={2}
-              placeholder="Virgülle ayırın"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && e.ctrlKey) {
-                  handleSaveClick(
-                    e as unknown as React.MouseEvent<HTMLButtonElement>
-                  );
-                } else if (e.key === "Escape") {
-                  handleCancelClick(
-                    e as unknown as React.MouseEvent<HTMLButtonElement>
-                  );
-                }
-              }}
-            />
-          );
-
+          return { display: value.toString(), type: "number" };
+        case "boolean":
+          return { display: value.toString(), type: "boolean" };
+        case "object":
+          if (value instanceof Date) {
+            return { display: value.toLocaleString("tr-TR"), type: "date" };
+          }
+          if (
+            value &&
+            typeof value === "object" &&
+            "toDate" in value &&
+            typeof (value as { toDate: () => Date }).toDate === "function"
+          ) {
+            return {
+              display: (value as { toDate: () => Date })
+                .toDate()
+                .toLocaleString("tr-TR"),
+              type: "timestamp",
+            };
+          }
+          if (Array.isArray(value)) {
+            return { display: JSON.stringify(value), type: "array" };
+          }
+          if (value && typeof value === "object") {
+            return { display: JSON.stringify(value), type: "object" };
+          }
+          return { display: JSON.stringify(value), type: "object" };
         default:
-          return (
-            <input
-              ref={inputRef as React.RefObject<HTMLInputElement>}
-              type="text"
-              value={(value as string) || ""}
-              onChange={(e) => handleChange(e.target.value)}
-              className={inputClassName}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleSaveClick(
-                    e as unknown as React.MouseEvent<HTMLButtonElement>
-                  );
-                } else if (e.key === "Escape") {
-                  handleCancelClick(
-                    e as unknown as React.MouseEvent<HTMLButtonElement>
-                  );
-                }
-              }}
-            />
-          );
+          return { display: String(value), type: type };
+      }
+    };
+
+    const getTypeColor = (type: string): string => {
+      switch (type) {
+        case "string":
+          return "text-green-600";
+        case "number":
+          return "text-blue-600";
+        case "boolean":
+          return "text-purple-600";
+        case "timestamp":
+          return "text-orange-600";
+        case "date":
+          return "text-orange-600";
+        case "array":
+          return "text-pink-600";
+        case "object":
+          return "text-indigo-600";
+        case "null":
+          return "text-gray-500";
+        case "undefined":
+          return "text-gray-500";
+        default:
+          return "text-gray-900";
+      }
+    };
+
+    const getAllFields = () => {
+      const fields: Array<{
+        key: string;
+        value: unknown;
+        type: string;
+        editable: boolean;
+      }> = [];
+
+      const nonEditableFields = ["id", "createdAt", "updatedAt"];
+
+      const userData = { ...user } as Record<string, unknown>;
+
+      Object.keys(userData).forEach((key) => {
+        const value = userData[key];
+        const { type } = formatFieldValue(value);
+        const editable = !nonEditableFields.includes(key);
+        fields.push({ key, value, type, editable });
+      });
+
+      return fields.sort((a, b) => a.key.localeCompare(b.key));
+    };
+
+    const filteredFields = useMemo(() => {
+      const allFields = getAllFields();
+
+      if (!searchTerm.trim()) {
+        return allFields;
+      }
+
+      const searchLower = searchTerm.toLowerCase();
+      return allFields.filter(
+        (field) =>
+          field.key.toLowerCase().includes(searchLower) ||
+          formatFieldValue(field.value)
+            .display.toLowerCase()
+            .includes(searchLower)
+      );
+    }, [user, searchTerm]);
+
+    const startEditing = (fieldKey: string, currentValue: unknown) => {
+      setEditingField(fieldKey);
+      const { display } = formatFieldValue(currentValue);
+      setEditValue(display);
+    };
+
+    const cancelEditing = () => {
+      setEditingField(null);
+      setEditValue("");
+    };
+
+    const saveField = async (fieldKey: string, type: string) => {
+      try {
+        setSavingField(fieldKey);
+
+        let convertedValue: string | number | boolean = editValue;
+
+        switch (type) {
+          case "number":
+            convertedValue = editValue === "" ? 0 : Number(editValue);
+            if (isNaN(convertedValue)) {
+              toast.error("Geçersiz sayı formatı");
+              return;
+            }
+            break;
+          case "boolean":
+            convertedValue = editValue.toLowerCase() === "true";
+            break;
+          case "array":
+            try {
+              convertedValue = JSON.parse(editValue);
+              if (!Array.isArray(convertedValue)) {
+                convertedValue = [editValue] as unknown as
+                  | string
+                  | number
+                  | boolean;
+              }
+            } catch {
+              toast.error("Geçersiz JSON array formatı");
+              return;
+            }
+            break;
+          case "object":
+            try {
+              convertedValue = JSON.parse(editValue);
+            } catch {
+              toast.error("Geçersiz JSON object formatı");
+              return;
+            }
+            break;
+          default:
+            convertedValue = editValue;
+        }
+
+        await onFieldSave(fieldKey, convertedValue);
+        setEditingField(null);
+        setEditValue("");
+        toast.success(`${fieldKey} başarıyla güncellendi!`);
+      } catch (error) {
+        console.error("Error saving field:", error);
+        toast.error(`${fieldKey} güncellenirken hata oluştu`);
+      } finally {
+        setSavingField(null);
       }
     };
 
     return (
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-        {/* Compact header with responsive layout */}
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <div className="flex-shrink-0 text-gray-600">
-              {getFieldIcon(
-                fieldName,
-                fieldType,
-                fieldValues[fieldName] as boolean
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-medium text-gray-900 text-sm truncate">
-                  {fieldName}
-                </span>
-                <span className="px-1.5 py-0.5 bg-gray-200 text-gray-700 text-xs rounded flex-shrink-0">
-                  {fieldType}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Action buttons - always visible */}
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {isEditing ? (
-              <>
-                <button
-                  onClick={handleSaveClick}
-                  className="p-1.5 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
-                  title="Kaydet (Enter)"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={handleCancelClick}
-                  className="p-1.5 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
-                  title="İptal (Escape)"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={handleEditClick}
-                className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                title="Düzenle"
-              >
-                <Edit className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Field content */}
-        <div className="w-full">
-          {isEditing ? (
-            <div className="w-full">
-              {renderFieldInputWithRef(
-                fieldName,
-                fieldValues[fieldName],
-                fieldType
-              )}
-            </div>
-          ) : (
-            <div className="text-gray-700 bg-white rounded p-2 border border-gray-200 min-h-[2.5rem] flex items-center">
-              <span className="break-words w-full text-sm">
-                {displayValue || (
-                  <span className="text-gray-400 italic">Boş</span>
-                )}
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm h-full flex flex-col">
+        {/* Header with Search */}
+        <div className="p-3 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Database className="w-4 h-4 text-blue-600" />
+              <h3 className="text-sm font-semibold text-gray-900">
+                Tüm Kullanıcı Alanları
+              </h3>
+              <span className="text-xs text-gray-600">
+                ({filteredFields.length})
               </span>
             </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const DatabaseModal = () => {
-    if (!showDatabaseModal) return null;
-
-    return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className="bg-white border border-gray-200 rounded-xl max-w-5xl w-full max-h-[85vh] overflow-hidden flex flex-col shadow-xl">
-          <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
-            <div className="flex items-center gap-3">
-              <Database className="w-6 h-6 text-blue-600" />
-              <h2 className="text-xl font-bold text-gray-900">
-                Veritabanı Alanları
-              </h2>
-            </div>
-            <button
-              onClick={() => setShowDatabaseModal(false)}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5 text-gray-600" />
-            </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="space-y-3">
-              {Object.entries(allUserFields).map(([fieldName, value]) => {
-                const fieldType = getFieldType(value);
-                const isEditing = editingField === fieldName;
-                const displayValue =
-                  fieldType === "date" && value instanceof Timestamp
-                    ? value.toDate().toLocaleString("tr-TR")
-                    : fieldType === "array" && Array.isArray(value)
-                    ? value.join(", ")
-                    : fieldType === "boolean"
-                    ? value
-                      ? "True"
-                      : "False"
-                    : String(value || "");
-
-                return (
-                  <DatabaseFieldRow
-                    key={fieldName}
-                    fieldName={fieldName}
-                    value={value}
-                    fieldType={fieldType}
-                    isEditing={isEditing}
-                    displayValue={displayValue}
-                    fieldValues={fieldValues}
-                    setEditingField={setEditingField}
-                    setFieldValues={setFieldValues}
-                    allUserFields={allUserFields}
-                    handleDatabaseFieldUpdate={handleDatabaseFieldUpdate}
-                    renderFieldInput={renderFieldInput}
-                    getFieldIcon={getFieldIcon}
-                  />
-                );
-              })}
-            </div>
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Alan ara..."
+              className="w-full pl-7 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-900 text-xs placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            />
           </div>
         </div>
+
+        {/* Fields List - Scrollable */}
+        <div
+          ref={allFieldsContainerRef}
+          className="p-2 space-y-1 overflow-y-auto flex-1"
+        >
+          {filteredFields.map((field) => {
+            const { display, type } = formatFieldValue(field.value);
+            const isEditing = editingField === field.key;
+            const isSaving = savingField === field.key;
+            const canEdit = field.editable && type !== "timestamp";
+
+            return (
+              <div
+                key={field.key}
+                className="group bg-gray-50 hover:bg-gray-100 rounded border border-gray-200 p-2 transition-colors"
+              >
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1 mb-0.5">
+                      <span className="font-mono text-[11px] font-semibold text-gray-700 truncate">
+                        {field.key}
+                      </span>
+                      <span
+                        className={`text-[9px] px-1 py-0.5 rounded font-medium ${getTypeColor(
+                          type
+                        )} bg-white`}
+                      >
+                        {type}
+                      </span>
+                    </div>
+
+                    {isEditing ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          className="flex-1 px-2 py-1 text-xs bg-white border border-blue-500 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              saveField(field.key, type);
+                            } else if (e.key === "Escape") {
+                              cancelEditing();
+                            }
+                          }}
+                        />
+                        <button
+                          onClick={() => saveField(field.key, type)}
+                          disabled={isSaving}
+                          className="p-1 bg-green-600 hover:bg-green-700 text-white rounded transition-colors disabled:opacity-50"
+                        >
+                          {isSaving ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Check className="w-3 h-3" />
+                          )}
+                        </button>
+                        <button
+                          onClick={cancelEditing}
+                          className="p-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-700 truncate flex-1">
+                          {type === "array" || type === "object" ? (
+                            <details className="cursor-pointer">
+                              <summary className="text-xs text-gray-600 hover:text-gray-900">
+                                {type === "array"
+                                  ? `[${
+                                      Array.isArray(field.value)
+                                        ? field.value.length
+                                        : 0
+                                    }]`
+                                  : `{${
+                                      field.value &&
+                                      typeof field.value === "object"
+                                        ? Object.keys(field.value).length
+                                        : 0
+                                    }}`}
+                              </summary>
+                              <div className="mt-1 p-2 bg-gray-100 rounded border-l border-gray-300">
+                                <pre className="text-[10px] overflow-x-auto whitespace-pre-wrap text-gray-700">
+                                  {JSON.stringify(field.value, null, 2)}
+                                </pre>
+                              </div>
+                            </details>
+                          ) : (
+                            display
+                          )}
+                        </span>
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {canEdit && (
+                            <button
+                              onClick={() =>
+                                startEditing(field.key, field.value)
+                              }
+                              className="p-0.5 hover:bg-gray-200 rounded transition-colors"
+                              title="Düzenle"
+                            >
+                              <Edit className="w-3 h-3 text-blue-600" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(
+                                type === "array" || type === "object"
+                                  ? JSON.stringify(field.value, null, 2)
+                                  : String(field.value)
+                              );
+                              toast.success("Kopyalandı!");
+                            }}
+                            className="p-0.5 hover:bg-gray-200 rounded transition-colors"
+                            title="Kopyala"
+                          >
+                            <Copy className="w-3 h-3 text-gray-600" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* No Results */}
+        {filteredFields.length === 0 && (
+          <div className="text-center py-6">
+            <Search className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+            <p className="text-gray-600 text-xs">Alan bulunamadı</p>
+          </div>
+        )}
       </div>
     );
   };
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-4 py-3">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      {/* Compact Header */}
+      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+        <div className="max-w-[1800px] mx-auto px-4 py-2">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => router.back()}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-1.5 hover:bg-gray-100 rounded transition-colors"
             >
-              <ArrowLeft className="w-5 h-5 text-gray-600" />
+              <ArrowLeft className="w-4 h-4 text-gray-700" />
             </button>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">
-                Kullanıcı Detayları
+            <div className="flex-1 min-w-0">
+              <h1 className="text-sm font-bold text-gray-900 truncate">
+                {user.displayName}
               </h1>
-              <p className="text-sm text-gray-500">{user.displayName}</p>
+              <p className="text-xs text-gray-600 truncate">{user.email}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleResetPassword}
+                className="px-2 py-1 bg-green-100 hover:bg-green-200 text-green-700 rounded text-xs transition-colors"
+              >
+                Parola Sıfırla
+              </button>
+              <button
+                onClick={handleDeleteAccount}
+                className="px-2 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded text-xs transition-colors"
+              >
+                Hesabı Sil
+              </button>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* User Profile Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {/* Profile Info */}
-          <div className="lg:col-span-2">
-            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <div className="flex items-start gap-6 mb-6">
-                <div className="relative w-20 h-20 rounded-full overflow-hidden flex-shrink-0 bg-gray-100">
-                  {user.profileImage ? (
-                    <Image
-                      src={user.profileImage}
-                      alt={user.displayName}
-                      fill
-                      className="object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-                      <User className="w-8 h-8 text-gray-400" />
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h2 className="text-2xl font-bold text-gray-900">
-                      {user.displayName}
-                    </h2>
+      <main className="max-w-[1800px] mx-auto px-4 py-4 h-screen overflow-hidden">
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-12 gap-4 h-full overflow-hidden">
+          {/* Left Column - User Info */}
+          <div className="col-span-3 space-y-2 overflow-y-auto h-full">
+            {/* Profile Image */}
+            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+              <div className="relative aspect-square">
+                {user.profileImage ? (
+                  <Image
+                    src={user.profileImage}
+                    alt={user.displayName}
+                    fill
+                    className="object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                    <User className="w-12 h-12 text-gray-400" />
                   </div>
-                  <p className="text-gray-600 mb-3">{user.email}</p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        setShowDatabaseModal(true);
-                        fetchAllUserFields();
-                      }}
-                      className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                      title="Tüm Veritabanı Alanlarını Görüntüle"
-                    >
-                      <Database className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={handleResetPassword}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
-                    >
-                      Parola Sıfırla
-                    </button>
-                    <button
-                      onClick={handleDeleteAccount}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
-                    >
-                      Hesabı Sil
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Editable Fields */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <EditableField field="displayName" label="Adı Soyadı" />
-                <EditableField field="email" label="E-posta" type="email" />
-                <EditableField field="phone" label="Telefon" type="tel" />
-                <EditableField field="gender" label="Cinsiyet" />
+                )}
               </div>
             </div>
-          </div>
 
-          {/* Stats */}
-          <div className="space-y-4">
-            <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                İstatistikler
+            {/* User Info Cards */}
+            <div className="bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
+              <h3 className="text-xs font-semibold text-gray-900 mb-2 flex items-center gap-1">
+                <User className="w-3 h-3" />
+                Kişisel Bilgiler
               </h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <Mail className="w-3 h-3 text-gray-500" />
+                  <span className="text-gray-700 truncate">{user.email}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Phone className="w-3 h-3 text-gray-500" />
+                  <span className="text-gray-700 truncate">
+                    {user.phone || "N/A"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <User className="w-3 h-3 text-gray-500" />
+                  <span className="text-gray-700 truncate">
+                    {user.gender || "N/A"}
+                  </span>
+                </div>
+                {user.address && (
                   <div className="flex items-center gap-2">
-                    <Package className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm text-gray-700">Toplam Ürün</span>
+                    <MapPin className="w-3 h-3 text-gray-500" />
+                    <span className="text-gray-700 truncate">
+                      {user.address}
+                    </span>
+                  </div>
+                )}
+                {user.playPoints !== undefined && (
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-3 h-3 text-gray-500" />
+                    <span className="text-gray-700">
+                      {user.playPoints} Puan
+                    </span>
+                  </div>
+                )}
+                {user.createdAt && (
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-3 h-3 text-gray-500" />
+                    <span className="text-gray-700 text-[10px]">
+                      {user.createdAt.toDate().toLocaleDateString("tr-TR")}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Stats */}
+            <div className="bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
+              <h3 className="text-xs font-semibold text-gray-900 mb-2">Özet</h3>
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1">
+                    <Package className="w-3 h-3 text-blue-600" />
+                    <span className="text-gray-700">Ürünler</span>
                   </div>
                   <span className="text-gray-900 font-semibold">
                     {products.length}
                   </span>
                 </div>
-
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Store className="w-4 h-4 text-green-600" />
-                    <span className="text-sm text-gray-700">Mağaza Sayısı</span>
+                  <div className="flex items-center gap-1">
+                    <Store className="w-3 h-3 text-green-600" />
+                    <span className="text-gray-700">Mağazalar</span>
                   </div>
                   <span className="text-gray-900 font-semibold">
                     {shops.length}
                   </span>
                 </div>
-
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-purple-600" />
-                    <span className="text-sm text-gray-700">Satılan Ürün</span>
+                  <div className="flex items-center gap-1">
+                    <ShoppingBag className="w-3 h-3 text-purple-600" />
+                    <span className="text-gray-700">Siparişler</span>
                   </div>
                   <span className="text-gray-900 font-semibold">
-                    {user.totalProductsSold || 0}
+                    {orders.length}
                   </span>
                 </div>
+              </div>
+            </div>
+          </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Star className="w-4 h-4 text-yellow-500" />
-                    <span className="text-sm text-gray-700">Ortalama Puan</span>
-                  </div>
-                  <span className="text-gray-900 font-semibold">
-                    {user.averageRating ? user.averageRating.toFixed(1) : "0.0"}
-                  </span>
-                </div>
+          {/* Middle Column - All Fields */}
+          <div className="col-span-5 h-full overflow-hidden">
+            <AllFieldsDisplay
+              user={user}
+              onFieldSave={saveIndividualField}
+              savingField={savingField}
+              setSavingField={setSavingField}
+            />
+          </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-orange-500" />
-                    <span className="text-sm text-gray-700">Oyun Puanı</span>
+          {/* Right Column - Tabs (Products, Shops, Orders) */}
+          <div className="col-span-4 h-full overflow-hidden">
+            <div className="bg-white border border-gray-200 rounded-lg shadow-sm h-full flex flex-col">
+              {/* Tab Headers */}
+              <div className="flex items-center border-b border-gray-200 flex-shrink-0">
+                <button
+                  onClick={() => setActiveTab("products")}
+                  className={`flex-1 py-2 px-3 text-xs font-medium transition-colors relative ${
+                    activeTab === "products"
+                      ? "text-gray-900 bg-gray-50"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <Package className="w-3 h-3" />
+                    Ürünler ({products.length})
                   </div>
-                  <span className="text-gray-900 font-semibold">
-                    {user.playPoints || 0}
-                  </span>
-                </div>
+                  {activeTab === "products" && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("shops")}
+                  className={`flex-1 py-2 px-3 text-xs font-medium transition-colors relative ${
+                    activeTab === "shops"
+                      ? "text-gray-900 bg-gray-50"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <Store className="w-3 h-3" />
+                    Mağazalar ({shops.length})
+                  </div>
+                  {activeTab === "shops" && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("orders")}
+                  className={`flex-1 py-2 px-3 text-xs font-medium transition-colors relative ${
+                    activeTab === "orders"
+                      ? "text-gray-900 bg-gray-50"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <ShoppingBag className="w-3 h-3" />
+                    Siparişler ({orders.length})
+                  </div>
+                  {activeTab === "orders" && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />
+                  )}
+                </button>
+              </div>
+
+              {/* Content Area - Scrollable */}
+              <div className="p-3 overflow-y-auto flex-1">
+                {/* Products Tab Content */}
+                {activeTab === "products" && (
+                  <div>
+                    {/* Search */}
+                    <div className="relative mb-3">
+                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+                      <input
+                        type="text"
+                        value={productSearch}
+                        onChange={(e) => setProductSearch(e.target.value)}
+                        placeholder="Ürün ara..."
+                        className="w-full pl-7 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-900 text-xs placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+
+                    {/* Products List */}
+                    {filteredProducts.length > 0 ? (
+                      <div className="space-y-2">
+                        {filteredProducts.map((product) => (
+                          <div
+                            key={product.id}
+                            onClick={() =>
+                              router.push(
+                                `/productdetails?productId=${product.id}`
+                              )
+                            }
+                            className="p-2 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 cursor-pointer transition-colors"
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="relative w-10 h-10 rounded overflow-hidden flex-shrink-0">
+                                {product.imageUrls?.[0] ? (
+                                  <Image
+                                    src={product.imageUrls[0]}
+                                    alt={product.productName}
+                                    fill
+                                    className="object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                    <Package className="w-4 h-4 text-gray-400" />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-semibold text-gray-900 text-xs truncate">
+                                  {product.productName}
+                                </h4>
+                                <div className="flex items-center gap-2 text-[10px] text-gray-600">
+                                  <span>
+                                    {product.price} {product.currency}
+                                  </span>
+                                  {product.sold && (
+                                    <span className="px-1 py-0.5 bg-red-100 text-red-700 rounded">
+                                      Satıldı
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6">
+                        <Package className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                        <p className="text-gray-600 text-xs">Ürün bulunamadı</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Shops Tab Content */}
+                {activeTab === "shops" && (
+                  <div>
+                    {/* Search */}
+                    <div className="relative mb-3">
+                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+                      <input
+                        type="text"
+                        value={shopSearch}
+                        onChange={(e) => setShopSearch(e.target.value)}
+                        placeholder="Mağaza ara..."
+                        className="w-full pl-7 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-900 text-xs placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+
+                    {/* Shops List */}
+                    {filteredShops.length > 0 ? (
+                      <div className="space-y-2">
+                        {filteredShops.map((shop) => (
+                          <div
+                            key={shop.id}
+                            onClick={() =>
+                              router.push(`/shopdetails?shopId=${shop.id}`)
+                            }
+                            className="p-2 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 cursor-pointer transition-colors"
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
+                                {shop.profileImageUrl ? (
+                                  <Image
+                                    src={shop.profileImageUrl}
+                                    alt={shop.name}
+                                    fill
+                                    className="object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                    <Store className="w-4 h-4 text-gray-400" />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-semibold text-gray-900 text-xs truncate">
+                                  {shop.name}
+                                </h4>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6">
+                        <Store className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                        <p className="text-gray-600 text-xs">
+                          Mağaza bulunamadı
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Orders Tab Content */}
+                {activeTab === "orders" && (
+                  <div>
+                    {/* Search */}
+                    <div className="relative mb-3">
+                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+                      <input
+                        type="text"
+                        value={orderSearch}
+                        onChange={(e) => setOrderSearch(e.target.value)}
+                        placeholder="Sipariş ara..."
+                        className="w-full pl-7 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-900 text-xs placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+
+                    {/* Orders List */}
+                    {filteredOrders.length > 0 ? (
+                      <div className="space-y-2">
+                        {filteredOrders.map((order) => (
+                          <div
+                            key={order.id}
+                            className="p-2 bg-gray-50 rounded border border-gray-200"
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-mono text-gray-600">
+                                #{order.id.substring(0, 8)}
+                              </span>
+                              <span className="text-xs text-gray-900 font-semibold">
+                                {order.totalPrice} TL
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-gray-600">
+                              <span>
+                                {order.timestamp
+                                  .toDate()
+                                  .toLocaleDateString("tr-TR")}
+                              </span>
+                              <span>{order.itemCount} ürün</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6">
+                        <ShoppingBag className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                        <p className="text-gray-600 text-xs">
+                          Sipariş bulunamadı
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
-
-        {/* Tabs */}
-        <div className="bg-white border border-gray-200 rounded-xl mb-6 shadow-sm">
-          <div className="flex border-b border-gray-200">
-            <button
-              onClick={() => setActiveTab("products")}
-              className={`px-6 py-3 font-medium transition-colors ${
-                activeTab === "products"
-                  ? "text-blue-600 border-b-2 border-blue-600"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Package className="w-4 h-4" />
-                <span>Ürünler ({products.length})</span>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab("shops")}
-              className={`px-6 py-3 font-medium transition-colors ${
-                activeTab === "shops"
-                  ? "text-blue-600 border-b-2 border-blue-600"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Store className="w-4 h-4" />
-                <span>Mağazalar ({shops.length})</span>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab("orders")}
-              className={`px-6 py-3 font-medium transition-colors ${
-                activeTab === "orders"
-                  ? "text-blue-600 border-b-2 border-blue-600"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <ShoppingBag className="w-4 h-4" />
-                <span>Siparişler ({orders.length})</span>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {/* Products Tab */}
-        {activeTab === "products" && (
-          <div className="space-y-4">
-            {/* Product Controls */}
-            <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-                  {/* Search */}
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                      type="text"
-                      value={productSearch}
-                      onChange={(e) => setProductSearch(e.target.value)}
-                      placeholder="Ürün ara..."
-                      className="pl-10 pr-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
-                    />
-                  </div>
-
-                  {/* Filter */}
-                  <select
-                    value={productFilter}
-                    onChange={(e) =>
-                      setProductFilter(e.target.value as FilterStatus)
-                    }
-                    className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="all">Tüm Ürünler</option>
-                    <option value="active">Aktif</option>
-                    <option value="sold">Satılan</option>
-                    <option value="featured">Öne Çıkan</option>
-                  </select>
-
-                  {/* Sort */}
-                  <select
-                    value={productSort}
-                    onChange={(e) => setProductSort(e.target.value as SortBy)}
-                    className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="newest">En Yeni</option>
-                    <option value="oldest">En Eski</option>
-                    <option value="price_high">Fiyat: Yüksek → Düşük</option>
-                    <option value="price_low">Fiyat: Düşük → Yüksek</option>
-                    <option value="popular">En Popüler</option>
-                  </select>
-                </div>
-
-                {/* View Mode Toggle */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setProductViewMode("grid")}
-                    className={`p-2 rounded-lg transition-colors ${
-                      productViewMode === "grid"
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200"
-                    }`}
-                  >
-                    <Grid className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setProductViewMode("list")}
-                    className={`p-2 rounded-lg transition-colors ${
-                      productViewMode === "list"
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200"
-                    }`}
-                  >
-                    <List className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Products Grid/List */}
-            {filteredProducts.length === 0 && !productsLoading ? (
-              <div className="text-center py-12">
-                <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                  Ürün Bulunamadı
-                </h3>
-                <p className="text-gray-500">
-                  {productSearch || productFilter !== "all"
-                    ? "Arama kriterlerinize uygun ürün bulunamadı."
-                    : "Bu kullanıcının henüz ürünü bulunmuyor."}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div
-                  className={`grid gap-4 ${
-                    productViewMode === "grid"
-                      ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-                      : "grid-cols-1"
-                  }`}
-                >
-                  {filteredProducts.map((product, index) => (
-                    <ProductCard
-                      key={product.id}
-                      product={product}
-                      viewMode={productViewMode}
-                      isLast={index === filteredProducts.length - 1}
-                    />
-                  ))}
-                </div>
-
-                {/* Loading indicator for infinite scroll */}
-                {productsLoading && (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="flex items-center gap-3 text-gray-600">
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>Daha fazla ürün yükleniyor...</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Shops Tab */}
-        {activeTab === "shops" && (
-          <div className="space-y-4">
-            {/* Shop Controls */}
-            <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-                  {/* Search */}
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                      type="text"
-                      value={shopSearch}
-                      onChange={(e) => setShopSearch(e.target.value)}
-                      placeholder="Mağaza ara..."
-                      className="pl-10 pr-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
-                    />
-                  </div>
-                </div>
-
-                {/* View Mode Toggle */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setShopViewMode("grid")}
-                    className={`p-2 rounded-lg transition-colors ${
-                      shopViewMode === "grid"
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200"
-                    }`}
-                  >
-                    <Grid className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setShopViewMode("list")}
-                    className={`p-2 rounded-lg transition-colors ${
-                      shopViewMode === "list"
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200"
-                    }`}
-                  >
-                    <List className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Shops Grid/List */}
-            {filteredShops.length === 0 && !shopsLoading ? (
-              <div className="text-center py-12">
-                <Store className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                  Mağaza Bulunamadı
-                </h3>
-                <p className="text-gray-500">
-                  {shopSearch
-                    ? "Arama kriterlerinize uygun mağaza bulunamadı."
-                    : "Bu kullanıcının henüz mağazası bulunmuyor."}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div
-                  className={`grid gap-4 ${
-                    shopViewMode === "grid"
-                      ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-                      : "grid-cols-1"
-                  }`}
-                >
-                  {filteredShops.map((shop, index) => (
-                    <ShopCard
-                      key={shop.id}
-                      shop={shop}
-                      viewMode={shopViewMode}
-                      isLast={index === filteredShops.length - 1}
-                    />
-                  ))}
-                </div>
-
-                {/* Loading indicator for infinite scroll */}
-                {shopsLoading && (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="flex items-center gap-3 text-gray-600">
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>Daha fazla mağaza yükleniyor...</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Orders Tab */}
-        {activeTab === "orders" && (
-          <div className="space-y-4">
-            {/* Orders List */}
-            {orders.length === 0 && !ordersLoading ? (
-              <div className="text-center py-12">
-                <ShoppingBag className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                  Sipariş Bulunamadı
-                </h3>
-                <p className="text-gray-500">
-                  Bu kullanıcının henüz siparişi bulunmuyor.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid gap-4">
-                  {orders.map((order, index) => (
-                    <OrderCard
-                      key={order.id}
-                      order={order}
-                      isLast={index === orders.length - 1}
-                    />
-                  ))}
-                </div>
-
-                {/* Loading indicator for infinite scroll */}
-                {ordersLoading && (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="flex items-center gap-3 text-gray-600">
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>Daha fazla sipariş yükleniyor...</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
       </main>
-      <DatabaseModal />
     </div>
   );
 }
 
-// Main component that wraps the content with Suspense
-export default function UserDetailsPage() {
+// Main export with Suspense wrapper
+export default function UserDetails() {
   return (
     <ProtectedRoute>
       <Suspense
         fallback={
-          <div className="min-h-screen bg-white flex items-center justify-center">
-            <div className="flex items-center gap-3 text-gray-600">
-              <Loader2 className="w-6 h-6 animate-spin" />
-              <span>Sayfa yükleniyor...</span>
+          <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+            <div className="flex items-center gap-3 text-gray-900">
+              <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+              <span>Yükleniyor...</span>
             </div>
           </div>
         }
