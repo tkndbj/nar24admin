@@ -7,6 +7,7 @@ import type { SearchResponse } from "algoliasearch";
 
 export interface AlgoliaShopHit {
   objectID: string;
+  name?: string;
   shopId: string;
   shopName: string;
   ownerName: string;

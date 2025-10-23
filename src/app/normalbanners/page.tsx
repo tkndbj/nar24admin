@@ -11,14 +11,10 @@ import {
   AlertCircle,
   CheckCircle,
   Grid3X3,
-  Search,
   X,
   Store as StoreIcon,
-  Package,
   Link as LinkIcon,
   Calendar,
-  ExternalLink,
-  
   Pause,
   Play,
   Clock,
@@ -37,7 +33,6 @@ import {
   query,
   Timestamp,
   updateDoc,
-  getDocs,
   where,
   limit,
 } from "firebase/firestore";
@@ -46,7 +41,7 @@ import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { compressImage, formatFileSize } from "@/utils/imageCompression";
-
+import SearchModal, { type SearchSelection } from "@/components/SearchModal";
 // ============================================================================
 // TYPE DEFINITIONS
 // ============================================================================
@@ -61,7 +56,8 @@ interface BaseAd {
   createdAt: Timestamp;
   isActive: boolean;
   linkType?: LinkType;
-  linkId?: string;
+  linkedShopId?: string;
+  linkedProductId?: string;
   linkedName?: string;
 }
 
@@ -90,13 +86,6 @@ interface AdSubmission {
 interface MarketBannerAd extends BaseAd {
   submissionId?: string;
   isManual?: boolean;
-}
-
-interface SearchResult {
-  id: string;
-  title: string;
-  type: LinkType;
-  subtitle?: string;
 }
 
 interface ImageModalProps {
@@ -194,38 +183,6 @@ const getStatusLabel = (status: AdStatus | "manual"): string => {
   }
 };
 
-const getTypeIcon = (type: LinkType): React.ReactNode => {
-  switch (type) {
-    case "shop":
-      return <StoreIcon className="w-4 h-4 text-blue-600" />;
-    case "product":
-    case "shop_product":
-      return <Package className="w-4 h-4 text-green-600" />;
-  }
-};
-
-const getTypeBadge = (type: LinkType): React.ReactNode => {
-  const labels: Record<LinkType, string> = {
-    shop: "Mağaza",
-    product: "Ürün",
-    shop_product: "Mağaza Ürünü",
-  };
-
-  const colors: Record<LinkType, string> = {
-    shop: "bg-blue-100 text-blue-700",
-    product: "bg-green-100 text-green-700",
-    shop_product: "bg-purple-100 text-purple-700",
-  };
-
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${colors[type]}`}
-    >
-      {labels[type]}
-    </span>
-  );
-};
-
 // ============================================================================
 // IMAGE MODAL COMPONENT
 // ============================================================================
@@ -306,10 +263,8 @@ export default function MarketBannerPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [editingAdId, setEditingAdId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
+  const [linkingAdId, setLinkingAdId] = useState<string | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [imageModal, setImageModal] = useState({
     isOpen: false,
     imageUrl: "",
@@ -366,83 +321,6 @@ export default function MarketBannerPage() {
     return () => unsubscribe();
   }, []);
 
-  // Search for shops/products
-  useEffect(() => {
-    if (!editingAdId || searchQuery.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      setSearchLoading(true);
-      const results: SearchResult[] = [];
-
-      try {
-        // Search shops
-        const shopsQuery = query(
-          collection(db, "shops"),
-          where("name", ">=", searchQuery),
-          where("name", "<=", searchQuery + "\uf8ff"),
-          limit(5)
-        );
-        const shopsSnapshot = await getDocs(shopsQuery);
-        shopsSnapshot.forEach((doc) => {
-          const data = doc.data();
-          results.push({
-            id: doc.id,
-            title: data.name || "İsimsiz Mağaza",
-            type: "shop",
-            subtitle: "Mağaza",
-          });
-        });
-
-        // Search products
-        const productsQuery = query(
-          collection(db, "products"),
-          where("productName", ">=", searchQuery),
-          where("productName", "<=", searchQuery + "\uf8ff"),
-          limit(5)
-        );
-        const productsSnapshot = await getDocs(productsQuery);
-        productsSnapshot.forEach((doc) => {
-          const data = doc.data();
-          results.push({
-            id: doc.id,
-            title: data.productName || "İsimsiz Ürün",
-            type: "product",
-            subtitle: `${data.price || 0} TL`,
-          });
-        });
-
-        // Search shop products
-        const shopProductsQuery = query(
-          collection(db, "shop_products"),
-          where("productName", ">=", searchQuery),
-          where("productName", "<=", searchQuery + "\uf8ff"),
-          limit(5)
-        );
-        const shopProductsSnapshot = await getDocs(shopProductsQuery);
-        shopProductsSnapshot.forEach((doc) => {
-          const data = doc.data();
-          results.push({
-            id: doc.id,
-            title: data.productName || "İsimsiz Mağaza Ürünü",
-            type: "shop_product",
-            subtitle: `${data.price || 0} TL`,
-          });
-        });
-
-        setSearchResults(results);
-      } catch (error) {
-        console.error("Search error:", error);
-      } finally {
-        setSearchLoading(false);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery, editingAdId]);
-
   // ============================================================================
   // HANDLERS
   // ============================================================================
@@ -469,49 +347,53 @@ export default function MarketBannerPage() {
     try {
       setUploading(true);
       setCompressionInfo("");
-  
+
       let fileToUpload = file;
-      
-      if (file.type.startsWith('image/')) {
+
+      if (file.type.startsWith("image/")) {
         try {
           const result = await compressImage(file, {
-            maxWidth: 800,      // Square format!
+            maxWidth: 800, // Square format!
             maxHeight: 800,
             quality: 0.85,
-            format: 'image/jpeg',
+            format: "image/jpeg",
             maintainAspectRatio: true,
           });
-  
+
           fileToUpload = result.compressedFile;
           setCompressionInfo(
-            `Sıkıştırıldı: ${formatFileSize(result.originalSize)} → ${formatFileSize(result.compressedSize)} (${result.compressionRatio.toFixed(1)}% tasarruf)`
+            `Sıkıştırıldı: ${formatFileSize(
+              result.originalSize
+            )} → ${formatFileSize(
+              result.compressedSize
+            )} (${result.compressionRatio.toFixed(1)}% tasarruf)`
           );
-          
         } catch (compressionError) {
           console.error("Compression failed:", compressionError);
-          setCompressionInfo("Sıkıştırma başarısız, orijinal dosya yükleniyor...");
+          setCompressionInfo(
+            "Sıkıştırma başarısız, orijinal dosya yükleniyor..."
+          );
         }
       }
-  
+
       const storage = getStorage();
       const timestamp = Date.now();
       const storageRef = ref(
         storage,
         `market_banners/${timestamp}_${fileToUpload.name}`
       );
-  
+
       await uploadBytes(storageRef, fileToUpload);
       const downloadUrl = await getDownloadURL(storageRef);
-  
+
       await addDoc(collection(db, ACTIVE_ADS_COLLECTION), {
         imageUrl: downloadUrl,
         isActive: true,
         isManual: true,
         createdAt: serverTimestamp(),
       });
-  
+
       setTimeout(() => setCompressionInfo(""), 5000);
-      
     } catch (error) {
       console.error("Upload error:", error);
       alert("Yükleme başarısız oldu. Lütfen tekrar deneyin.");
@@ -563,10 +445,28 @@ export default function MarketBannerPage() {
     }
   ) => {
     try {
-      await updateDoc(doc(db, ACTIVE_ADS_COLLECTION, adId), linkData);
-      setEditingAdId(null);
-      setSearchQuery("");
-      setSearchResults([]);
+      // Prepare data with the correct field names for Flutter app
+      const updateData: Record<string, string | null> = {
+        linkType: linkData.linkType,
+        linkedName: linkData.linkedName,
+      };
+
+      // Save to the field names that Flutter expects
+      if (linkData.linkType === "shop") {
+        updateData.linkedShopId = linkData.linkId;
+        updateData.linkedProductId = null; // Clear the other field
+      } else if (linkData.linkType === "shop_product") {
+        updateData.linkedProductId = linkData.linkId;
+        updateData.linkedShopId = null; // Clear the other field
+      } else {
+        // Clearing link
+        updateData.linkedShopId = null;
+        updateData.linkedProductId = null;
+      }
+
+      await updateDoc(doc(db, ACTIVE_ADS_COLLECTION, adId), updateData);
+      setLinkingAdId(null);
+      setIsSearchOpen(false);
     } catch (error) {
       console.error("Update link error:", error);
       alert("Bağlantı güncellenemedi.");
@@ -585,7 +485,12 @@ export default function MarketBannerPage() {
         isManual: false,
         submissionId: submission.id,
         linkType: submission.linkType || null,
-        linkId: submission.linkedShopId || submission.linkedProductId || null,
+        linkedShopId:
+          submission.linkType === "shop" ? submission.linkedShopId : null,
+        linkedProductId:
+          submission.linkType === "shop_product"
+            ? submission.linkedProductId
+            : null,
         linkedName: submission.linkedName || null,
         createdAt: serverTimestamp(),
       });
@@ -619,27 +524,33 @@ export default function MarketBannerPage() {
 
   const getFilteredActiveAds = useCallback(() => {
     let filtered = [...activeAds];
-  
+
     if (filters.status === "manual") {
       // Show manual ads that are active
-      filtered = filtered.filter((ad) => ad.isManual === true && ad.isActive === true);
+      filtered = filtered.filter(
+        (ad) => ad.isManual === true && ad.isActive === true
+      );
     } else if (filters.status === "active") {
       // Show ALL active ads (including manual ones)
       filtered = filtered.filter((ad) => ad.isActive === true);
     }
-  
+
     if (filters.hasLink === "linked") {
-      filtered = filtered.filter((ad) => ad.linkId);
+      filtered = filtered.filter((ad) => ad.linkedShopId || ad.linkedProductId);
     } else if (filters.hasLink === "unlinked") {
-      filtered = filtered.filter((ad) => !ad.linkId);
+      filtered = filtered.filter(
+        (ad) => !ad.linkedShopId && !ad.linkedProductId
+      );
     }
     // If hasLink === "all", don't filter (show all ads regardless of link)
-  
+
     return filtered;
   }, [activeAds, filters]);
 
   const getFilteredPausedManualAds = useCallback(() => {
-    return activeAds.filter((ad) => ad.isManual === true && ad.isActive === false);
+    return activeAds.filter(
+      (ad) => ad.isManual === true && ad.isActive === false
+    );
   }, [activeAds]);
 
   const getFilteredSubmissions = useCallback(() => {
@@ -816,7 +727,8 @@ export default function MarketBannerPage() {
               Görseli sürükleyip bırakın veya seçmek için tıklayın
             </p>
             <p className="text-sm text-gray-500">
-              PNG, JPG formatları desteklenmektedir (Kare format önerilir: 800x800px)
+              PNG, JPG formatları desteklenmektedir (Kare format önerilir:
+              800x800px)
             </p>
             <input
               ref={fileInputRef}
@@ -829,239 +741,175 @@ export default function MarketBannerPage() {
 
           {/* Active Ads List - Hide when "Beklemede" or "Süresi Dolan" filter is selected */}
           {filters.status !== "pending" && filters.status !== "expired" && (
-  <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Aktif & Manuel Reklamlar
-                </h2>
-                <span className="text-sm text-gray-600">
-                  {filteredActiveAds.length} reklam
-                </span>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Aktif & Manuel Reklamlar
+                  </h2>
+                  <span className="text-sm text-gray-600">
+                    {filteredActiveAds.length} reklam
+                  </span>
+                </div>
               </div>
-            </div>
-            
 
-            {loading ? (
-              <div className="p-12 text-center">
-                <Loader2 className="w-8 h-8 text-orange-600 animate-spin mx-auto mb-4" />
-                <p className="text-gray-600">Yükleniyor...</p>
-              </div>
-            ) : filteredActiveAds.length === 0 ? (
-              <div className="p-12 text-center">
-                <Grid3X3 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">Henüz aktif reklam yok</p>
-              </div>
-            ) : (
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredActiveAds.map((ad) => (
-                  <div
-                    key={ad.id}
-                    className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
-                  >
-                    {/* Square Banner Image */}
-                    <div className="relative w-full aspect-square bg-gray-100 group">
-                      <Image
-                        src={ad.imageUrl}
-                        alt="Market Banner"
-                        fill
-                        className="object-cover"
-                      />
+              {loading ? (
+                <div className="p-12 text-center">
+                  <Loader2 className="w-8 h-8 text-orange-600 animate-spin mx-auto mb-4" />
+                  <p className="text-gray-600">Yükleniyor...</p>
+                </div>
+              ) : filteredActiveAds.length === 0 ? (
+                <div className="p-12 text-center">
+                  <Grid3X3 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">Henüz aktif reklam yok</p>
+                </div>
+              ) : (
+                <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredActiveAds.map((ad) => (
+                    <div
+                      key={ad.id}
+                      className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
+                    >
+                      {/* Square Banner Image */}
+                      <div className="relative w-full aspect-square bg-gray-100 group">
+                        <Image
+                          src={ad.imageUrl}
+                          alt="Market Banner"
+                          fill
+                          className="object-cover"
+                        />
 
-                      {/* Hover Overlay */}
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                        <button
-                          onClick={() =>
-                            setImageModal({
-                              isOpen: true,
-                              imageUrl: ad.imageUrl,
-                              bannerName: `MarketBanner_${ad.id.slice(-6)}`,
-                            })
-                          }
-                          className="p-2 bg-white/90 hover:bg-white rounded-lg transition-colors"
-                          title="Görseli Görüntüle"
-                        >
-                          <Eye className="w-4 h-4 text-gray-900" />
-                        </button>
-                      </div>
-
-                      {/* Status Badge */}
-                      <div className="absolute top-3 left-3">
-                        {ad.isActive ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200 shadow-lg">
-                            <div className="w-1.5 h-1.5 bg-green-600 rounded-full animate-pulse" />
-                            Yayında
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200 shadow-lg">
-                            Duraklatıldı
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Type Badge */}
-                      <div className="absolute top-3 right-3">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border shadow-lg ${getStatusColor(
-                            ad.isManual ? "manual" : "active"
-                          )}`}
-                        >
-                          {ad.isManual ? "Manuel" : "Kullanıcı"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Banner Info */}
-                    <div className="p-4 space-y-3">
-                      <div className="flex items-center gap-3">
-                        <Grid3X3 className="w-5 h-5 text-orange-600" />
-                        <h3 className="text-lg font-medium text-gray-900">
-                          Market Banner
-                        </h3>
-                      </div>
-
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Calendar className="w-4 h-4" />
-                        <span>{formatDate(ad.createdAt)}</span>
-                      </div>
-
-                      {/* Link Info */}
-                      {ad.linkId ? (
-                        <div className="flex items-center gap-2">
-                          <ExternalLink className="w-4 h-4 text-blue-600" />
-                          <div className="flex items-center gap-2">
-                            {ad.linkType && getTypeBadge(ad.linkType)}
-                            <span className="text-sm text-gray-900 font-medium truncate">
-                              {ad.linkedName || ad.linkId.slice(0, 8)}
-                            </span>
-                          </div>
-                        </div>
-                      ) : editingAdId === ad.id ? (
-                        <div className="space-y-2">
-                          <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <Search className="h-4 w-4 text-gray-400" />
-                            </div>
-                            <input
-                              type="text"
-                              placeholder="Ara..."
-                              value={searchQuery}
-                              autoFocus
-                              onChange={(e) => setSearchQuery(e.target.value)}
-                              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                            />
-                          </div>
-
-                          {searchLoading && (
-                            <div className="flex items-center justify-center py-2">
-                              <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
-                            </div>
-                          )}
-
-                          {searchResults.length > 0 && (
-                            <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg bg-white">
-                              {searchResults.map((result) => (
-                                <button
-                                  key={`${result.type}-${result.id}`}
-                                  onClick={() => {
-                                    updateAdLink(ad.id, {
-                                      linkType: result.type,
-                                      linkId: result.id,
-                                      linkedName: result.title,
-                                    });
-                                  }}
-                                  className="w-full flex items-center gap-2 p-2 hover:bg-gray-50 transition-colors text-left text-sm"
-                                >
-                                  {getTypeIcon(result.type)}
-                                  <div className="flex-1 min-w-0">
-                                    <p className="font-medium truncate">
-                                      {result.title}
-                                    </p>
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-
-                          <button
-                            onClick={() => {
-                              setEditingAdId(null);
-                              setSearchQuery("");
-                              setSearchResults([]);
-                            }}
-                            className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm"
-                          >
-                            İptal
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setEditingAdId(ad.id);
-                            setSearchQuery("");
-                          }}
-                          className="flex items-center gap-2 text-sm text-orange-600 hover:text-orange-700 font-medium"
-                        >
-                          <LinkIcon className="w-4 h-4" />
-                          Bağlantı Ekle
-                        </button>
-                      )}
-
-                      {/* Action Buttons */}
-                      <div className="flex items-center gap-2 pt-2 border-t">
-                        <button
-                          onClick={() => toggleAdStatus(ad.id, ad.isActive)}
-                          className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-lg transition-colors ${
-                            ad.isActive
-                              ? "text-orange-600 hover:bg-orange-50"
-                              : "text-green-600 hover:bg-green-50"
-                          }`}
-                          title={ad.isActive ? "Duraklat" : "Aktif Et"}
-                        >
-                          {ad.isActive ? (
-                            <>
-                              <Pause className="w-4 h-4" />
-                              <span className="text-sm">Duraklat</span>
-                            </>
-                          ) : (
-                            <>
-                              <Play className="w-4 h-4" />
-                              <span className="text-sm">Aktif Et</span>
-                            </>
-                          )}
-                        </button>
-
-                        {ad.linkId && (
+                        {/* Hover Overlay */}
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                           <button
                             onClick={() =>
-                              updateAdLink(ad.id, {
-                                linkType: null,
-                                linkId: null,
-                                linkedName: null,
+                              setImageModal({
+                                isOpen: true,
+                                imageUrl: ad.imageUrl,
+                                bannerName: `MarketBanner_${ad.id.slice(-6)}`,
                               })
                             }
-                            className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                            title="Bağlantıyı Kaldır"
+                            className="p-2 bg-white/90 hover:bg-white rounded-lg transition-colors"
+                            title="Görseli Görüntüle"
                           >
-                            <X className="w-4 h-4" />
+                            <Eye className="w-4 h-4 text-gray-900" />
+                          </button>
+                        </div>
+
+                        {/* Status Badge */}
+                        <div className="absolute top-3 left-3">
+                          {ad.isActive ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200 shadow-lg">
+                              <div className="w-1.5 h-1.5 bg-green-600 rounded-full animate-pulse" />
+                              Yayında
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200 shadow-lg">
+                              Duraklatıldı
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Type Badge */}
+                        <div className="absolute top-3 right-3">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border shadow-lg ${getStatusColor(
+                              ad.isManual ? "manual" : "active"
+                            )}`}
+                          >
+                            {ad.isManual ? "Manuel" : "Kullanıcı"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Banner Info */}
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-center gap-3">
+                          <Grid3X3 className="w-5 h-5 text-orange-600" />
+                          <h3 className="text-lg font-medium text-gray-900">
+                            Market Banner
+                          </h3>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Calendar className="w-4 h-4" />
+                          <span>{formatDate(ad.createdAt)}</span>
+                        </div>
+
+                        {/* Link Info */}
+                        {ad.linkedShopId || ad.linkedProductId ? (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <LinkIcon className="w-4 h-4" />
+                            {ad.linkedName}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setLinkingAdId(ad.id);
+                              setIsSearchOpen(true);
+                            }}
+                            className="flex items-center gap-2 text-sm text-orange-600 hover:text-orange-700 font-medium"
+                          >
+                            <LinkIcon className="w-4 h-4" />
+                            Bağlantı Ekle
                           </button>
                         )}
 
-                        <button
-                          onClick={() => deleteAd(ad.id, ad.submissionId)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Sil"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-2 pt-2 border-t">
+                          <button
+                            onClick={() => toggleAdStatus(ad.id, ad.isActive)}
+                            className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-lg transition-colors ${
+                              ad.isActive
+                                ? "text-orange-600 hover:bg-orange-50"
+                                : "text-green-600 hover:bg-green-50"
+                            }`}
+                            title={ad.isActive ? "Duraklat" : "Aktif Et"}
+                          >
+                            {ad.isActive ? (
+                              <>
+                                <Pause className="w-4 h-4" />
+                                <span className="text-sm">Duraklat</span>
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-4 h-4" />
+                                <span className="text-sm">Aktif Et</span>
+                              </>
+                            )}
+                          </button>
+
+                          {(ad.linkedShopId || ad.linkedProductId) && (
+                            <button
+                              onClick={() =>
+                                updateAdLink(ad.id, {
+                                  linkType: null,
+                                  linkId: null,
+                                  linkedName: null,
+                                })
+                              }
+                              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                              title="Bağlantıyı Kaldır"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => deleteAd(ad.id, ad.submissionId)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Sil"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-)}
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Paused Manual Ads - Show only when "Manuel" filter is selected */}
           {filters.status === "manual" && (
@@ -1080,7 +928,9 @@ export default function MarketBannerPage() {
               {filteredPausedManualAds.length === 0 ? (
                 <div className="p-12 text-center">
                   <Pause className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600">Henüz duraklatılmış manuel reklam yok</p>
+                  <p className="text-gray-600">
+                    Henüz duraklatılmış manuel reklam yok
+                  </p>
                 </div>
               ) : (
                 <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1145,79 +995,16 @@ export default function MarketBannerPage() {
                         </div>
 
                         {/* Link Info */}
-                        {ad.linkId ? (
-                          <div className="flex items-center gap-2">
-                            <ExternalLink className="w-4 h-4 text-blue-600" />
-                            <div className="flex items-center gap-2">
-                              {ad.linkType && getTypeBadge(ad.linkType)}
-                              <span className="text-sm text-gray-900 font-medium truncate">
-                                {ad.linkedName || ad.linkId.slice(0, 8)}
-                              </span>
-                            </div>
-                          </div>
-                        ) : editingAdId === ad.id ? (
-                          <div className="space-y-2">
-                            <div className="relative">
-                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Search className="h-4 w-4 text-gray-400" />
-                              </div>
-                              <input
-                                type="text"
-                                placeholder="Ara..."
-                                value={searchQuery}
-                                autoFocus
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                              />
-                            </div>
-
-                            {searchLoading && (
-                              <div className="flex items-center justify-center py-2">
-                                <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
-                              </div>
-                            )}
-
-                            {searchResults.length > 0 && (
-                              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg bg-white">
-                                {searchResults.map((result) => (
-                                  <button
-                                    key={`${result.type}-${result.id}`}
-                                    onClick={() => {
-                                      updateAdLink(ad.id, {
-                                        linkType: result.type,
-                                        linkId: result.id,
-                                        linkedName: result.title,
-                                      });
-                                    }}
-                                    className="w-full flex items-center gap-2 p-2 hover:bg-gray-50 transition-colors text-left text-sm"
-                                  >
-                                    {getTypeIcon(result.type)}
-                                    <div className="flex-1 min-w-0">
-                                      <p className="font-medium truncate">
-                                        {result.title}
-                                      </p>
-                                    </div>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-
-                            <button
-                              onClick={() => {
-                                setEditingAdId(null);
-                                setSearchQuery("");
-                                setSearchResults([]);
-                              }}
-                              className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm"
-                            >
-                              İptal
-                            </button>
+                        {ad.linkedShopId || ad.linkedProductId ? (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <LinkIcon className="w-4 h-4" />
+                            {ad.linkedName}
                           </div>
                         ) : (
                           <button
                             onClick={() => {
-                              setEditingAdId(ad.id);
-                              setSearchQuery("");
+                              setLinkingAdId(ad.id);
+                              setIsSearchOpen(true);
                             }}
                             className="flex items-center gap-2 text-sm text-orange-600 hover:text-orange-700 font-medium"
                           >
@@ -1237,21 +1024,22 @@ export default function MarketBannerPage() {
                             <span className="text-sm">Aktif Et</span>
                           </button>
 
-                          {ad.linkId && (
-                            <button
-                              onClick={() =>
-                                updateAdLink(ad.id, {
-                                  linkType: null,
-                                  linkId: null,
-                                  linkedName: null,
-                                })
-                              }
-                              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                              title="Bağlantıyı Kaldır"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
+                          {ad.linkedShopId ||
+                            (ad.linkedProductId && (
+                              <button
+                                onClick={() =>
+                                  updateAdLink(ad.id, {
+                                    linkType: null,
+                                    linkId: null,
+                                    linkedName: null,
+                                  })
+                                }
+                                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                title="Bağlantıyı Kaldır"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            ))}
 
                           <button
                             onClick={() => deleteAd(ad.id, ad.submissionId)}
@@ -1271,100 +1059,102 @@ export default function MarketBannerPage() {
 
           {/* Submissions Section - Hide when "Manuel" filter is selected */}
           {filters.status !== "manual" && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Kullanıcı Başvuruları
-                </h2>
-                <span className="text-sm text-gray-600">
-                  {filteredSubmissions.length} başvuru
-                </span>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Kullanıcı Başvuruları
+                  </h2>
+                  <span className="text-sm text-gray-600">
+                    {filteredSubmissions.length} başvuru
+                  </span>
+                </div>
               </div>
-            </div>
 
-            {filteredSubmissions.length === 0 ? (
-              <div className="p-12 text-center">
-                <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">Henüz başvuru yok</p>
-              </div>
-            ) : (
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredSubmissions.map((submission) => (
-                  <div
-                    key={submission.id}
-                    className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
-                  >
-                    <div className="relative w-full aspect-square bg-gray-100">
-                      <Image
-                        src={submission.imageUrl}
-                        alt="Submission"
-                        fill
-                        className="object-cover cursor-pointer"
-                        onClick={() =>
-                          setImageModal({
-                            isOpen: true,
-                            imageUrl: submission.imageUrl,
-                            bannerName: `Submission_${submission.id.slice(-6)}`,
-                          })
-                        }
-                      />
-                      <div className="absolute top-3 right-3">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border shadow-lg ${getStatusColor(
-                            submission.status
-                          )}`}
-                        >
-                          {getStatusLabel(submission.status)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="p-4 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <StoreIcon className="w-4 h-4 text-gray-600" />
-                        <span className="font-medium text-gray-900 truncate">
-                          {submission.shopName}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm">
-                        <span className="text-gray-600">
-                          {getDurationLabel(submission.duration)}
-                        </span>
-                        <span className="font-semibold text-gray-900">
-                          {formatPrice(submission.price)}
-                        </span>
-                      </div>
-                      {submission.expiresAt && (
-                        <div className="text-xs text-gray-600">
-                          Bitiş: {formatDate(submission.expiresAt)}
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-2 pt-2 border-t">
-                        {submission.status === "pending" && (
-                          <button
-                            onClick={() => activateSubmission(submission)}
-                            className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
+              {filteredSubmissions.length === 0 ? (
+                <div className="p-12 text-center">
+                  <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">Henüz başvuru yok</p>
+                </div>
+              ) : (
+                <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredSubmissions.map((submission) => (
+                    <div
+                      key={submission.id}
+                      className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
+                    >
+                      <div className="relative w-full aspect-square bg-gray-100">
+                        <Image
+                          src={submission.imageUrl}
+                          alt="Submission"
+                          fill
+                          className="object-cover cursor-pointer"
+                          onClick={() =>
+                            setImageModal({
+                              isOpen: true,
+                              imageUrl: submission.imageUrl,
+                              bannerName: `Submission_${submission.id.slice(
+                                -6
+                              )}`,
+                            })
+                          }
+                        />
+                        <div className="absolute top-3 right-3">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border shadow-lg ${getStatusColor(
+                              submission.status
+                            )}`}
                           >
-                            Aktif Et
-                          </button>
+                            {getStatusLabel(submission.status)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <StoreIcon className="w-4 h-4 text-gray-600" />
+                          <span className="font-medium text-gray-900 truncate">
+                            {submission.shopName}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm">
+                          <span className="text-gray-600">
+                            {getDurationLabel(submission.duration)}
+                          </span>
+                          <span className="font-semibold text-gray-900">
+                            {formatPrice(submission.price)}
+                          </span>
+                        </div>
+                        {submission.expiresAt && (
+                          <div className="text-xs text-gray-600">
+                            Bitiş: {formatDate(submission.expiresAt)}
+                          </div>
                         )}
-                        <button
-                          onClick={() => deleteSubmission(submission.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Sil"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+
+                        <div className="flex items-center gap-2 pt-2 border-t">
+                          {submission.status === "pending" && (
+                            <button
+                              onClick={() => activateSubmission(submission)}
+                              className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
+                            >
+                              Aktif Et
+                            </button>
+                          )}
+                          <button
+                            onClick={() => deleteSubmission(submission.id)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Sil"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-)}
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </main>
 
         {/* Image Modal */}
@@ -1390,6 +1180,27 @@ export default function MarketBannerPage() {
           </div>
         )}
       </div>
+      <SearchModal
+        isOpen={isSearchOpen}
+        onClose={() => {
+          setIsSearchOpen(false);
+          setLinkingAdId(null);
+        }}
+        searchType="both"
+        title="Bağlantı Ekle"
+        placeholder="Mağaza veya mağaza ürünü ara..."
+        onSelect={(selection: SearchSelection) => {
+          if (!linkingAdId) return;
+          // SearchModal’dan gelen seçimi kaydet
+          updateAdLink(linkingAdId, {
+            linkType: selection.type === "shop" ? "shop" : "shop_product",
+            linkId: selection.id,
+            linkedName: selection.name,
+          });
+          setIsSearchOpen(false);
+          setLinkingAdId(null);
+        }}
+      />
     </ProtectedRoute>
   );
 }

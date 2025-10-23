@@ -9,7 +9,6 @@ import {
   Loader2,
   AlertCircle,
   Check,
-  
   Tag,
   MapPin,
   Star,
@@ -79,18 +78,24 @@ export default function SearchModal({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
+  useEffect(() => {
+    if (searchType === "shops") setActiveTab("shops");
+    else if (searchType === "shop_products") setActiveTab("shop_products");
+    else setActiveTab("shop_products"); // both için varsayılan ürünler
+  }, [searchType]);
+
   // Tab configuration
   const tabs: TabConfig[] = [
     {
-      id: "shop_products",
+      id: "shop_products" as SearchType,
       label: "Ürünler",
-      icon: <Package className="w-4 h-4" />,
+      icon: <Package className="w-4 h-4" key="products-icon" />,
       description: "Mağaza ürünlerini ara",
     },
     {
-      id: "shops",
+      id: "shops" as SearchType,
       label: "Mağazalar",
-      icon: <Store className="w-4 h-4" />,
+      icon: <Store className="w-4 h-4" key="shops-icon" />,
       description: "Mağazaları ara",
     },
   ];
@@ -116,20 +121,49 @@ export default function SearchModal({
       setError(null);
 
       try {
+        let nextShops: AlgoliaShopHit[] = [];
+        let nextShopProducts: AlgoliaShopProductHit[] = [];
+
+        // Search without status filter (FIXED)
         if (searchType === "both" || searchType === "shops") {
-          const shopsResult = await dashboardSearchService.searchShops(searchQuery, {
-            hitsPerPage: maxResults,
-            filters: { status: "active" },
-          });
-          setShops(shopsResult.hits);
+          const shopsResult = await dashboardSearchService.searchShops(
+            searchQuery,
+            {
+              hitsPerPage: maxResults,
+              // No status filter - this was causing the issue
+            }
+          );
+
+          nextShops = shopsResult.hits;
+          setShops(nextShops);
         }
 
         if (searchType === "both" || searchType === "shop_products") {
-          const productsResult = await dashboardSearchService.searchShopProducts(searchQuery, {
-            hitsPerPage: maxResults,
-            filters: { status: "active" },
-          });
-          setShopProducts(productsResult.hits);
+          const productsResult =
+            await dashboardSearchService.searchShopProducts(searchQuery, {
+              hitsPerPage: maxResults,
+              // No status filter - this was causing the issue
+            });
+
+          nextShopProducts = productsResult.hits;
+          setShopProducts(nextShopProducts);
+        }
+
+        // Otomatik sekme geçişi: aktif sekmede sonuç yoksa, diğerinde varsa oraya geç
+        if (searchType === "both") {
+          if (
+            activeTab === "shop_products" &&
+            nextShopProducts.length === 0 &&
+            nextShops.length > 0
+          ) {
+            setActiveTab("shops");
+          } else if (
+            activeTab === "shops" &&
+            nextShops.length === 0 &&
+            nextShopProducts.length > 0
+          ) {
+            setActiveTab("shop_products");
+          }
         }
       } catch (err) {
         console.error("Search error:", err);
@@ -138,7 +172,7 @@ export default function SearchModal({
         setLoading(false);
       }
     },
-    [searchType, maxResults]
+    [searchType, maxResults, activeTab]
   );
 
   // Debounced search
@@ -162,185 +196,218 @@ export default function SearchModal({
     debouncedSearch(value);
   };
 
-  // Handle selection
-  const handleSelect = (item: AlgoliaShopHit | AlgoliaShopProductHit, type: SelectionType) => {
+  // FIXED VERSION:
+  const handleSelect = (
+    item: AlgoliaShopHit | AlgoliaShopProductHit,
+    type: SelectionType
+  ) => {
+    // Extract Firestore ID from Algolia objectID
+    let firestoreId: string;
+
+    if (type === "shop") {
+      // objectID format: "shops_FIRESTORE_ID"
+      firestoreId = (item as AlgoliaShopHit).objectID.replace("shops_", "");
+    } else {
+      // objectID format: "shop_products_FIRESTORE_ID"
+      firestoreId = (item as AlgoliaShopProductHit).objectID.replace(
+        "shop_products_",
+        ""
+      );
+    }
+
     const selection: SearchSelection = {
-      id: type === "shop" ? (item as AlgoliaShopHit).shopId : (item as AlgoliaShopProductHit).shopProductId,
-      name: type === "shop" ? (item as AlgoliaShopHit).shopName : (item as AlgoliaShopProductHit).productName,
+      id: firestoreId, // Use extracted Firestore ID
+      name:
+        type === "shop"
+          ? (item as AlgoliaShopHit).name || (item as AlgoliaShopHit).shopName
+          : (item as AlgoliaShopProductHit).productName,
       type,
       data: item,
     };
 
-    setSelected(selection.id);
+    setSelected(firestoreId);
     onSelect(selection);
-    
-    // Close modal after selection
-    setTimeout(() => {
-      onClose();
-    }, 200);
   };
 
-  // Reset state when modal closes
+  // Focus input when modal opens
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 100);
+    } else {
+      // Reset state when modal closes
       setQuery("");
       setShops([]);
       setShopProducts([]);
       setError(null);
       setSelected(selectedId);
-    } else {
-      // Focus search input when modal opens
-      setTimeout(() => {
-        searchInputRef.current?.focus();
-      }, 100);
     }
   }, [isOpen, selectedId]);
 
-  // Cleanup debounce timer
+  // Handle ESC key - FIXED: Removed onClose from dependencies
   useEffect(() => {
-    return () => {
-      if (debounceTimer.current) {
-        clearTimeout(debounceTimer.current);
+    if (!isOpen) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
       }
     };
-  }, []);
+
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [isOpen]); // Only depend on isOpen
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0"
         onClick={onClose}
+        aria-label="Close modal"
       />
 
-      {/* Modal */}
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
-              <p className="text-sm text-gray-600 mt-1">
-                Arama yaparak mağaza veya ürün seçin
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5 text-gray-500" />
-            </button>
+      <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Aramak istediğiniz mağaza veya ürünü bulun
+            </p>
           </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-6 h-6 text-gray-500" />
+          </button>
+        </div>
 
-          {/* Search Bar */}
-          <div className="p-6 border-b border-gray-100">
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={query}
-                onChange={handleQueryChange}
-                placeholder={placeholder}
-                className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
-              />
-              {loading && (
-                <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                  <Loader2 className="w-5 h-5 text-orange-600 animate-spin" />
-                </div>
-              )}
-            </div>
+        {/* Search Input */}
+        <div className="p-6 border-b border-gray-200">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={query}
+              onChange={handleQueryChange}
+              placeholder={placeholder}
+              className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
+            />
           </div>
+        </div>
 
-          {/* Tabs - Only show if searchType is "both" */}
-          {searchType === "both" && availableTabs.length > 1 && (
-            <div className="flex gap-1 p-2 bg-gray-50 border-b border-gray-200">
+        {/* Tabs - Only show if searchType is "both" */}
+        {searchType === "both" && availableTabs.length > 1 && (
+          <div className="px-6 pt-4 border-b border-gray-200">
+            <div className="flex gap-2">
               {availableTabs.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id as "shops" | "shop_products")}
+                  onClick={() =>
+                    setActiveTab(tab.id as "shops" | "shop_products")
+                  }
                   className={`
-                    flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium text-sm transition-all
+                    flex items-center gap-2 px-4 py-2.5 rounded-t-lg font-medium transition-all
                     ${
                       activeTab === tab.id
-                        ? "bg-white text-orange-600 shadow-sm border border-gray-200"
-                        : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                        ? "bg-orange-50 text-orange-600 border-b-2 border-orange-500"
+                        : "text-gray-600 hover:bg-gray-50"
                     }
                   `}
                 >
                   {tab.icon}
                   <span>{tab.label}</span>
-                  {activeTab === tab.id && (
-                    <span className="ml-1 px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs">
-                      {tab.id === "shops" ? shops.length : shopProducts.length}
+                  {tab.id === "shop_products" && shopProducts.length > 0 && (
+                    <span className="ml-1 px-2 py-0.5 bg-orange-100 text-orange-600 rounded-full text-xs font-semibold">
+                      {shopProducts.length}
+                    </span>
+                  )}
+                  {tab.id === "shops" && shops.length > 0 && (
+                    <span className="ml-1 px-2 py-0.5 bg-orange-100 text-orange-600 rounded-full text-xs font-semibold">
+                      {shops.length}
                     </span>
                   )}
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+              <p className="text-red-800">{error}</p>
+            </div>
           )}
 
-          {/* Results */}
-          <div className="flex-1 overflow-y-auto p-6">
-            {error && (
-              <div className="flex items-center gap-3 p-4 bg-red-50 text-red-700 rounded-lg mb-4">
-                <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <p className="text-sm">{error}</p>
-              </div>
-            )}
-
-            {!query && !loading && (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                  <Search className="w-8 h-8 text-gray-400" />
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Aramaya Başlayın
-                </h3>
-                <p className="text-sm text-gray-600 max-w-sm">
-                  Bağlamak istediğiniz mağaza veya ürünü bulmak için yukarıdaki arama kutusunu kullanın
-                </p>
-              </div>
-            )}
-
-            {query && !loading && !error && (
-              <>
-                {/* Shop Products Results */}
-                {(searchType === "shop_products" || (searchType === "both" && activeTab === "shop_products")) && (
-                  <div className="space-y-2">
-                    {shopProducts.length === 0 ? (
-                      <div className="text-center py-12">
-                        <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                        <p className="text-gray-600">
-                          &quot;{query}&quot; ile eşleşen ürün bulunamadı
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="grid gap-3">
-                        {shopProducts.map((product) => (
+          {!query ? (
+            <div className="text-center py-12">
+              <Search className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-600 text-lg">
+                Aramaya başlamak için bir anahtar kelime girin
+              </p>
+            </div>
+          ) : loading ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Loader2 className="w-12 h-12 text-orange-600 animate-spin mb-4" />
+              <p className="text-gray-600">Aranıyor...</p>
+            </div>
+          ) : (
+            <>
+              {/* Shop Products Results */}
+              {(searchType === "shop_products" ||
+                (searchType === "both" && activeTab === "shop_products")) && (
+                <div className="space-y-2">
+                  {shopProducts.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                      <p className="text-gray-600">
+                        &quot;{query}&quot; ile eşleşen ürün bulunamadı
+                      </p>
+                      <p className="text-gray-500 text-sm mt-2">
+                        Farklı anahtar kelimeler deneyin veya mağazalar
+                        sekmesine bakın
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-3">
+                      {shopProducts.map((product) => {
+                        const productFirestoreId = product.objectID.replace(
+                          "shop_products_",
+                          ""
+                        );
+                        return (
                           <button
-                            key={product.shopProductId}
-                            onClick={() => handleSelect(product, "shop_product")}
+                            key={product.objectID}
+                            onClick={() =>
+                              handleSelect(product, "shop_product")
+                            }
                             className={`
-                              w-full text-left p-4 rounded-xl border transition-all
-                              ${
-                                selected === product.shopProductId
-                                  ? "border-orange-500 bg-orange-50 shadow-md"
-                                  : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                              }
-                            `}
+                            w-full text-left p-4 rounded-xl border transition-all
+                            ${
+                              selected === productFirestoreId
+                                ? "border-orange-500 bg-orange-50 shadow-md"
+                                : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                            }
+                          `}
                           >
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-2">
-                                  <Package className="w-4 h-4 text-green-600 flex-shrink-0" />
+                                  <Package className="w-4 h-4 text-orange-600 flex-shrink-0" />
                                   <h4 className="font-semibold text-gray-900 line-clamp-1">
                                     {product.productName}
                                   </h4>
                                 </div>
-                                
+
                                 <div className="flex flex-wrap items-center gap-4 text-sm">
                                   {product.brandModel && (
                                     <span className="text-gray-600">
@@ -376,7 +443,7 @@ export default function SearchModal({
                                 )}
                               </div>
 
-                              {selected === product.shopProductId && (
+                              {selected === productFirestoreId && (
                                 <div className="ml-4 flex-shrink-0">
                                   <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
                                     <Check className="w-5 h-5 text-white" />
@@ -385,36 +452,47 @@ export default function SearchModal({
                               )}
                             </div>
                           </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
-                {/* Shops Results */}
-                {(searchType === "shops" || (searchType === "both" && activeTab === "shops")) && (
-                  <div className="space-y-2">
-                    {shops.length === 0 ? (
-                      <div className="text-center py-12">
-                        <Store className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                        <p className="text-gray-600">
-                          &quot;{query}&quot; ile eşleşen mağaza bulunamadı
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="grid gap-3">
-                        {shops.map((shop) => (
+              {/* Shops Results */}
+              {(searchType === "shops" ||
+                (searchType === "both" && activeTab === "shops")) && (
+                <div className="space-y-2">
+                  {shops.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Store className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                      <p className="text-gray-600">
+                        &quot;{query}&quot; ile eşleşen mağaza bulunamadı
+                      </p>
+                      <p className="text-gray-500 text-sm mt-2">
+                        Farklı anahtar kelimeler deneyin veya ürünler sekmesine
+                        bakın
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-3">
+                      {shops.map((shop) => {
+                        const shopFirestoreId = shop.objectID.replace(
+                          "shops_",
+                          ""
+                        );
+                        return (
                           <button
-                            key={shop.shopId}
+                            key={shop.objectID}
                             onClick={() => handleSelect(shop, "shop")}
                             className={`
-                              w-full text-left p-4 rounded-xl border transition-all
-                              ${
-                                selected === shop.shopId
-                                  ? "border-orange-500 bg-orange-50 shadow-md"
-                                  : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                              }
-                            `}
+                            w-full text-left p-4 rounded-xl border transition-all
+                            ${
+                              selected === shopFirestoreId
+                                ? "border-orange-500 bg-orange-50 shadow-md"
+                                : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                            }
+                          `}
                           >
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
@@ -469,7 +547,7 @@ export default function SearchModal({
                                 </div>
                               </div>
 
-                              {selected === shop.shopId && (
+                              {selected === shopFirestoreId && (
                                 <div className="ml-4 flex-shrink-0">
                                   <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
                                     <Check className="w-5 h-5 text-white" />
@@ -478,38 +556,38 @@ export default function SearchModal({
                               )}
                             </div>
                           </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-between p-6 border-t border-gray-200">
-            <p className="text-sm text-gray-600">
-              {query && (
-                <span>
-                  {searchType === "both" && activeTab === "shops"
-                    ? `${shops.length} mağaza bulundu`
-                    : searchType === "both" && activeTab === "shop_products"
-                    ? `${shopProducts.length} ürün bulundu`
-                    : searchType === "shops"
-                    ? `${shops.length} mağaza bulundu`
-                    : `${shopProducts.length} ürün bulundu`}
-                </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               )}
-            </p>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors font-medium"
-              >
-                İptal
-              </button>
-            </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between p-6 border-t border-gray-200">
+          <p className="text-sm text-gray-600">
+            {query && (
+              <span>
+                {searchType === "both" && activeTab === "shops"
+                  ? `${shops.length} mağaza bulundu`
+                  : searchType === "both" && activeTab === "shop_products"
+                  ? `${shopProducts.length} ürün bulundu`
+                  : searchType === "shops"
+                  ? `${shops.length} mağaza bulundu`
+                  : `${shopProducts.length} ürün bulundu`}
+              </span>
+            )}
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors font-medium"
+            >
+              İptal
+            </button>
           </div>
         </div>
       </div>
