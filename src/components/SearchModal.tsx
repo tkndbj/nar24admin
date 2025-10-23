@@ -314,7 +314,7 @@ export default function SearchModal({
                       <div className="text-center py-12">
                         <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                         <p className="text-gray-600">
-                          "{query}" ile eşleşen ürün bulunamadı
+                          &quot;{query}&quot; ile eşleşen ürün bulunamadı
                         </p>
                       </div>
                     ) : (
@@ -398,7 +398,7 @@ export default function SearchModal({
                       <div className="text-center py-12">
                         <Store className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                         <p className="text-gray-600">
-                          "{query}" ile eşleşen mağaza bulunamadı
+                          &quot;{query}&quot; ile eşleşen mağaza bulunamadı
                         </p>
                       </div>
                     ) : (
