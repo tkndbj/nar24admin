@@ -468,7 +468,7 @@ export default function TopBannerPage() {
       const timestamp = Date.now();
       const storageRef = ref(
         storage,
-        `market_top_ads_banners/manual/${timestamp}_${file.name}`  // ✅ CORRECT
+        `market_top_ads_banners/${timestamp}_${file.name}`  // ✅ CORRECT
       );
   
       await uploadBytes(storageRef, fileToUpload);

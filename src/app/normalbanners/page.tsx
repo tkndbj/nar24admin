@@ -496,7 +496,7 @@ export default function MarketBannersPage() {
       const timestamp = Date.now();
       const storageRef = ref(
         storage,
-        `market_banners/manual/${timestamp}_${fileToUpload.name}`
+        `market_banners/${timestamp}_${fileToUpload.name}`
       );
   
       await uploadBytes(storageRef, fileToUpload);

@@ -496,7 +496,7 @@ export default function ThinBannerPage() {
       const timestamp = Date.now();
       const storageRef = ref(
         storage,
-        `market_thin_banners/manual/${timestamp}_${file.name}`  // ✅ CORRECT
+        `market_thin_banners/${timestamp}_${file.name}`  // ✅ CORRECT
       );
       await uploadBytes(storageRef, fileToUpload);
       const downloadUrl = await getDownloadURL(storageRef);
