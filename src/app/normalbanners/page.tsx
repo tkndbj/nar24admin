@@ -117,7 +117,7 @@ interface FilterState {
 const PAGE_SIZE = 20;
 const ACTIVE_ADS_COLLECTION = "market_banners";
 const SUBMISSIONS_COLLECTION = "ad_submissions";
-const [compressionInfo, setCompressionInfo] = useState<string>("");
+
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
@@ -298,7 +298,7 @@ const ImageModal: React.FC<ImageModalProps> = ({
 export default function MarketBannersPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  const [, setCompressionInfo] = useState<string>("");
   // State
   const [activeAds, setActiveAds] = useState<MarketBannerAd[]>([]);
   const [submissions, setSubmissions] = useState<AdSubmission[]>([]);
