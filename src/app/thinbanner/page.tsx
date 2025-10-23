@@ -616,19 +616,21 @@ export default function ThinBannerPage() {
 
   const getFilteredActiveAds = useCallback(() => {
     let filtered = [...activeAds];
-
+  
     if (filters.status === "manual") {
-      filtered = filtered.filter((ad) => ad.isManual === true);
+      // Show manual ads that are active
+      filtered = filtered.filter((ad) => ad.isManual === true && ad.isActive === true);
     } else if (filters.status === "active") {
+      // Show ALL active ads (including manual ones)
       filtered = filtered.filter((ad) => ad.isActive === true);
     }
-
+  
     if (filters.hasLink === "linked") {
       filtered = filtered.filter((ad) => ad.linkId);
     } else if (filters.hasLink === "unlinked") {
       filtered = filtered.filter((ad) => !ad.linkId);
     }
-
+  
     return filtered;
   }, [activeAds, filters]);
 
