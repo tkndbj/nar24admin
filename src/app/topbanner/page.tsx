@@ -44,7 +44,7 @@ import { ref, uploadBytes, getDownloadURL, getStorage } from "firebase/storage";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
 import { compressImage, formatFileSize } from "@/utils/imageCompression";
-
+import { getFunctions, httpsCallable } from "firebase/functions";
 // ============================================================================
 // TYPE DEFINITIONS
 // ============================================================================
@@ -468,18 +468,41 @@ export default function TopBannerPage() {
       const timestamp = Date.now();
       const storageRef = ref(
         storage,
-        `market_top_ads_banners/${timestamp}_${file.name}`  // ✅ CORRECT
+        `market_top_ads_banners/manual/${timestamp}_${fileToUpload.name}`
       );
   
       await uploadBytes(storageRef, fileToUpload);
       const downloadUrl = await getDownloadURL(storageRef);
   
-      await addDoc(collection(db, ACTIVE_ADS_COLLECTION), {
+      // ✅ NEW: Create document with color extraction fields
+      const docRef = await addDoc(collection(db, ACTIVE_ADS_COLLECTION), {
         imageUrl: downloadUrl,
         isActive: true,
         isManual: true,
         createdAt: serverTimestamp(),
+        dominantColor: null,  // ✅ Will be filled by cloud function
+        colorExtractionQueued: true,  // ✅ Signals extraction needed
       });
+  
+      // ✅ NEW: Trigger dominant color extraction
+      try {
+        const functions = getFunctions();
+        const triggerColorExtraction = httpsCallable(
+          functions, 
+          'triggerManualAdColorExtraction'
+        );
+        
+        await triggerColorExtraction({
+          adId: docRef.id,
+          imageUrl: downloadUrl,
+          adType: 'topBanner'
+        });
+        
+        console.log('✅ Color extraction triggered for manual ad');
+      } catch (colorError) {
+        console.error('❌ Failed to trigger color extraction:', colorError);
+        // Don't fail the upload if color extraction fails
+      }
   
       setTimeout(() => setCompressionInfo(""), 5000);
       
