@@ -46,7 +46,7 @@ import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { compressImage, formatFileSize } from "@/utils/imageCompression";
-import SearchModal from "@/components/SearchModal";
+
 // ============================================================================
 // TYPE DEFINITIONS
 // ============================================================================
