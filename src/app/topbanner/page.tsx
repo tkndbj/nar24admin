@@ -288,7 +288,7 @@ export default function TopBannerPage() {
   const [, setLastVisible] =
     useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [, setHasMore] = useState(true);
-  const [compressionInfo, setCompressionInfo] = useState<string>("");
+  const [, setCompressionInfo] = useState<string>("");
   // ============================================================================
   // DATA FETCHING
   // ============================================================================

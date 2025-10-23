@@ -116,7 +116,7 @@ interface FilterState {
 const PAGE_SIZE = 20;
 const ACTIVE_ADS_COLLECTION = "market_thin_banners";
 const SUBMISSIONS_COLLECTION = "ad_submissions";
-const [compressionInfo, setCompressionInfo] = useState<string>("");
+
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
@@ -297,7 +297,7 @@ const ImageModal: React.FC<ImageModalProps> = ({
 export default function ThinBannerPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  const [, setCompressionInfo] = useState<string>("");
   // State
   const [activeAds, setActiveAds] = useState<ThinBannerAd[]>([]);
   const [submissions, setSubmissions] = useState<AdSubmission[]>([]);
