@@ -494,7 +494,10 @@ export default function ThinBannerPage() {
       // Now upload the compressed file
       const storage = getStorage();
       const timestamp = Date.now();
-      const storageRef = ref(storage, `thin_banners/manual/${timestamp}_${fileToUpload.name}`);
+      const storageRef = ref(
+        storage,
+        `market_thin_banners/manual/${timestamp}_${file.name}`  // ✅ CORRECT
+      );
       await uploadBytes(storageRef, fileToUpload);
       const downloadUrl = await getDownloadURL(storageRef);
       
