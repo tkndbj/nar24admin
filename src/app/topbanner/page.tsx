@@ -43,6 +43,7 @@ import {
 import { ref, uploadBytes, getDownloadURL, getStorage } from "firebase/storage";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
+import { compressImage, formatFileSize } from "@/utils/imageCompression";
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -287,7 +288,7 @@ export default function TopBannerPage() {
   const [, setLastVisible] =
     useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [, setHasMore] = useState(true);
-
+  const [compressionInfo, setCompressionInfo] = useState<string>("");
   // ============================================================================
   // DATA FETCHING
   // ============================================================================
@@ -433,25 +434,55 @@ export default function TopBannerPage() {
   const uploadBanner = async (file: File) => {
     try {
       setUploading(true);
-
-      // Upload to storage
+      setCompressionInfo("");
+  
+      let fileToUpload = file;
+      
+      // Compress image before uploading
+      if (file.type.startsWith('image/')) {
+        try {
+          console.log(`Original: ${formatFileSize(file.size)}`);
+          
+          const result = await compressImage(file, {
+            maxWidth: 1920,
+            maxHeight: 1920,
+            quality: 0.85,
+            format: 'image/jpeg',
+            maintainAspectRatio: true,
+          });
+  
+          fileToUpload = result.compressedFile;
+          
+          const compressionMsg = `Sıkıştırıldı: ${formatFileSize(result.originalSize)} → ${formatFileSize(result.compressedSize)} (${result.compressionRatio.toFixed(1)}% tasarruf)`;
+          setCompressionInfo(compressionMsg);
+          console.log(compressionMsg);
+          
+        } catch (compressionError) {
+          console.error("Compression failed:", compressionError);
+          setCompressionInfo("Sıkıştırma başarısız, orijinal dosya yükleniyor...");
+        }
+      }
+  
+      // Upload compressed file
       const storage = getStorage();
       const timestamp = Date.now();
       const storageRef = ref(
         storage,
-        `top_banners/manual/${timestamp}_${file.name}`
+        `top_banners/manual/${timestamp}_${fileToUpload.name}`
       );
-
-      await uploadBytes(storageRef, file);
+  
+      await uploadBytes(storageRef, fileToUpload);
       const downloadUrl = await getDownloadURL(storageRef);
-
-      // Add to active ads collection
+  
       await addDoc(collection(db, ACTIVE_ADS_COLLECTION), {
         imageUrl: downloadUrl,
         isActive: true,
         isManual: true,
         createdAt: serverTimestamp(),
       });
+  
+      setTimeout(() => setCompressionInfo(""), 5000);
+      
     } catch (error) {
       console.error("Upload error:", error);
       alert("Yükleme başarısız oldu. Lütfen tekrar deneyin.");

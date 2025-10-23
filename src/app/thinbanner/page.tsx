@@ -44,7 +44,7 @@ import { ref, uploadBytes, getDownloadURL, getStorage } from "firebase/storage";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-
+import { compressImage, formatFileSize } from "@/utils/imageCompression";
 // ============================================================================
 // TYPE DEFINITIONS
 // ============================================================================
@@ -116,7 +116,7 @@ interface FilterState {
 const PAGE_SIZE = 20;
 const ACTIVE_ADS_COLLECTION = "market_thin_banners";
 const SUBMISSIONS_COLLECTION = "ad_submissions";
-
+const [compressionInfo, setCompressionInfo] = useState<string>("");
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
@@ -466,25 +466,46 @@ export default function ThinBannerPage() {
   const uploadBanner = async (file: File) => {
     try {
       setUploading(true);
-
-      // Upload to storage
+      setCompressionInfo("");
+      
+      let fileToUpload = file;
+      
+      // ✨ COMPRESS BEFORE UPLOAD
+      if (file.type.startsWith('image/')) {
+        try {
+          const result = await compressImage(file, {
+            maxWidth: 1920,
+            maxHeight: 1920,
+            quality: 0.85,
+            format: 'image/jpeg',
+            maintainAspectRatio: true,
+          });
+          
+          fileToUpload = result.compressedFile;
+          setCompressionInfo(
+            `Sıkıştırıldı: ${formatFileSize(result.originalSize)} → ${formatFileSize(result.compressedSize)} (${result.compressionRatio.toFixed(1)}% tasarruf)`
+          );
+        } catch (compressionError) {
+          console.error("Compression failed:", compressionError);
+          setCompressionInfo("Sıkıştırma başarısız, orijinal dosya yükleniyor...");
+        }
+      }
+      
+      // Now upload the compressed file
       const storage = getStorage();
       const timestamp = Date.now();
-      const storageRef = ref(
-        storage,
-        `thin_banners/manual/${timestamp}_${file.name}`
-      );
-
-      await uploadBytes(storageRef, file);
+      const storageRef = ref(storage, `thin_banners/manual/${timestamp}_${fileToUpload.name}`);
+      await uploadBytes(storageRef, fileToUpload);
       const downloadUrl = await getDownloadURL(storageRef);
-
-      // Add to active ads collection
+      
       await addDoc(collection(db, ACTIVE_ADS_COLLECTION), {
         imageUrl: downloadUrl,
         isActive: true,
         isManual: true,
         createdAt: serverTimestamp(),
       });
+      
+      setTimeout(() => setCompressionInfo(""), 5000);
     } catch (error) {
       console.error("Upload error:", error);
       alert("Yükleme başarısız oldu. Lütfen tekrar deneyin.");
