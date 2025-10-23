@@ -477,6 +477,7 @@ export default function TopBannerPage() {
       setUploading(true);
       setCompressionInfo("");
   
+      // Step 1: Compress image if needed
       let fileToUpload = file;
   
       if (file.type.startsWith("image/")) {
@@ -501,6 +502,7 @@ export default function TopBannerPage() {
         }
       }
   
+      // Step 2: Upload to Firebase Storage
       const storage = getStorage();
       const timestamp = Date.now();
       const storageRef = ref(
@@ -510,36 +512,45 @@ export default function TopBannerPage() {
   
       await uploadBytes(storageRef, fileToUpload);
       const downloadUrl = await getDownloadURL(storageRef);
+      
+      console.log("✅ Image uploaded to storage");
   
-      // Create the ad document - THIS IS THE CRITICAL PART
+      // Step 3: Extract color BEFORE creating any document
+      let dominantColor = 0xFF9E9E9E; // Default gray color
+      
+      try {
+        const functions = getFunctions();
+        const extractColor = httpsCallable(functions, "extractColorOnly");
+        
+        console.log("🎨 Extracting dominant color...");
+        const result = await extractColor({ imageUrl: downloadUrl });
+        
+        if ((result.data as { success: boolean }).success) {
+          dominantColor = (result.data as { dominantColor: number }).dominantColor;
+          console.log(`✅ Color extracted: 0x${dominantColor.toString(16).toUpperCase()}`);
+        } else {
+          console.log("⚠️ Color extraction failed, using default gray");
+        }
+      } catch (colorError) {
+        console.error("Color extraction error:", colorError);
+        // Continue with default color
+      }
+  
+      // Step 4: Create ONE document with color already included
       const adDocRef = await addDoc(collection(db, ACTIVE_ADS_COLLECTION), {
         imageUrl: downloadUrl,
         isActive: true,
         isManual: true,
         createdAt: serverTimestamp(),
-        dominantColor: null,  // ← ADD THIS to mark as pending
-        colorExtractionQueued: false,  // ← ADD THIS flag
+        dominantColor: dominantColor, // ← Color is already here!
       });
-
-      // Trigger color extraction for manual uploads
-      try {
-        const functions = getFunctions();
-        const triggerColorExtraction = httpsCallable(
-          functions,
-          "triggerManualAdColorExtraction"
-        );
-
-        await triggerColorExtraction({
-          adId: adDocRef.id,
-          imageUrl: downloadUrl,
-          adType: "topBanner",
-        });
-
-        console.log("Color extraction triggered successfully");
-      } catch (colorError) {
-        console.error("Color extraction failed:", colorError);
-      }
-
+  
+      console.log(`✅ Created single ad document: ${adDocRef.id}`);
+      console.log(`   With color: 0x${dominantColor.toString(16).toUpperCase()}`);
+  
+      // DO NOT call triggerManualAdColorExtraction anymore!
+      // We already have the color and created the document with it
+  
       setTimeout(() => setCompressionInfo(""), 5000);
     } catch (error) {
       console.error("Upload error:", error);
