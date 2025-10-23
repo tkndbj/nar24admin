@@ -106,7 +106,7 @@ interface ImageModalProps {
 
 interface FilterState {
   status: "manual" | "pending" | "active" | "expired";
-  hasLink: "linked" | "unlinked";
+  hasLink: "all" | "linked" | "unlinked";
 }
 
 // ============================================================================
@@ -315,7 +315,7 @@ export default function ThinBannerPage() {
   });
   const [filters, setFilters] = useState<FilterState>({
     status: "active",
-    hasLink: "linked",
+    hasLink: "all",
   });
 
   // ============================================================================
@@ -633,6 +633,11 @@ export default function ThinBannerPage() {
   
     return filtered;
   }, [activeAds, filters]);
+  
+  // NEW: Add function for paused manual ads
+  const getFilteredPausedManualAds = useCallback(() => {
+    return activeAds.filter((ad) => ad.isManual === true && ad.isActive === false);
+  }, [activeAds]);
 
   const getFilteredSubmissions = useCallback(() => {
     let filtered = [...submissions];
@@ -650,6 +655,7 @@ export default function ThinBannerPage() {
 
   const filteredActiveAds = getFilteredActiveAds();
   const filteredSubmissions = getFilteredSubmissions();
+  const filteredPausedManualAds = getFilteredPausedManualAds(); 
 
   // ============================================================================
   // RENDER
@@ -822,7 +828,8 @@ export default function ThinBannerPage() {
           </div>
 
           {/* Active Ads List */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          {filters.status !== "pending" && filters.status !== "expired" && (
+  <div className="bg-white rounded-xl shadow-sm border border-gray-100">
             <div className="p-6 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-gray-900">
@@ -833,6 +840,7 @@ export default function ThinBannerPage() {
                 </span>
               </div>
             </div>
+            
 
             {loading ? (
               <div className="p-12 text-center">
@@ -1053,9 +1061,218 @@ export default function ThinBannerPage() {
               </div>
             )}
           </div>
+)}
+{/* Paused Manual Ads - Show only when "Manuel" filter is selected */}
+{filters.status === "manual" && (
+  <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+    <div className="p-6 border-b border-gray-200">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-gray-900">
+          Manuel & Beklemede
+        </h2>
+        <span className="text-sm text-gray-600">
+          {filteredPausedManualAds.length} reklam
+        </span>
+      </div>
+    </div>
 
+    {filteredPausedManualAds.length === 0 ? (
+      <div className="p-12 text-center">
+        <Pause className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+        <p className="text-gray-600">Henüz duraklatılmış manuel reklam yok</p>
+      </div>
+    ) : (
+      <div className="p-6 space-y-4">
+        {filteredPausedManualAds.map((ad) => (
+          <div
+            key={ad.id}
+            className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
+          >
+            <div className="flex flex-col lg:flex-row">
+              {/* Thin Banner Image */}
+              <div className="relative w-full lg:w-96 h-32 bg-gray-100 flex-shrink-0 group">
+                <Image
+                  src={ad.imageUrl}
+                  alt="Thin Banner"
+                  fill
+                  className="object-cover"
+                />
+
+                {/* Hover Overlay */}
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <button
+                    onClick={() =>
+                      setImageModal({
+                        isOpen: true,
+                        imageUrl: ad.imageUrl,
+                        bannerName: `ThinBanner_${ad.id.slice(-6)}`,
+                      })
+                    }
+                    className="p-2 bg-white/90 hover:bg-white rounded-lg transition-colors"
+                    title="Görseli Görüntüle"
+                  >
+                    <Eye className="w-4 h-4 text-gray-900" />
+                  </button>
+                </div>
+
+                {/* Status Badge - Paused */}
+                <div className="absolute top-3 left-3">
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200 shadow-lg">
+                    Duraklatıldı
+                  </span>
+                </div>
+
+                {/* Type Badge */}
+                <div className="absolute top-3 right-3">
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border shadow-lg bg-purple-100 text-purple-800 border-purple-200">
+                    Manuel
+                  </span>
+                </div>
+              </div>
+
+              {/* Banner Info */}
+              <div className="flex-1 p-4 flex items-center justify-between">
+                <div className="flex-1 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Maximize2 className="w-5 h-5 text-orange-600" />
+                    <h3 className="text-lg font-medium text-gray-900">
+                      İnce Banner
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <Calendar className="w-4 h-4" />
+                    <span>{formatDate(ad.createdAt)}</span>
+                  </div>
+
+                  {/* Link Info */}
+                  {ad.linkId ? (
+                    <div className="flex items-center gap-2">
+                      <ExternalLink className="w-4 h-4 text-blue-600" />
+                      <div className="flex items-center gap-2">
+                        {ad.linkType && getTypeBadge(ad.linkType)}
+                        <span className="text-sm text-gray-900 font-medium">
+                          {ad.linkedName || ad.linkId.slice(0, 8)}
+                        </span>
+                      </div>
+                    </div>
+                  ) : editingAdId === ad.id ? (
+                    <div className="space-y-2 max-w-md">
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Search className="h-4 w-4 text-gray-400" />
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Ara..."
+                          value={searchQuery}
+                          autoFocus
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        />
+                      </div>
+
+                      {searchLoading && (
+                        <div className="flex items-center justify-center py-2">
+                          <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
+                        </div>
+                      )}
+
+                      {searchResults.length > 0 && (
+                        <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg bg-white">
+                          {searchResults.map((result) => (
+                            <button
+                              key={`${result.type}-${result.id}`}
+                              onClick={() => {
+                                updateAdLink(ad.id, {
+                                  linkType: result.type,
+                                  linkId: result.id,
+                                  linkedName: result.title,
+                                });
+                              }}
+                              className="w-full flex items-center gap-2 p-2 hover:bg-gray-50 transition-colors text-left text-sm"
+                            >
+                              {getTypeIcon(result.type)}
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium truncate">
+                                  {result.title}
+                                </p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => {
+                          setEditingAdId(null);
+                          setSearchQuery("");
+                          setSearchResults([]);
+                        }}
+                        className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm"
+                      >
+                        İptal
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setEditingAdId(ad.id);
+                        setSearchQuery("");
+                      }}
+                      className="flex items-center gap-2 text-sm text-orange-600 hover:text-orange-700 font-medium"
+                    >
+                      <LinkIcon className="w-4 h-4" />
+                      Bağlantı Ekle
+                    </button>
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2 ml-4">
+                  <button
+                    onClick={() => toggleAdStatus(ad.id, ad.isActive)}
+                    className="p-2 rounded-lg transition-colors text-green-600 hover:bg-green-50"
+                    title="Aktif Et"
+                  >
+                    <Play className="w-5 h-5" />
+                  </button>
+
+                  {ad.linkId && (
+                    <button
+                      onClick={() =>
+                        updateAdLink(ad.id, {
+                          linkType: null,
+                          linkId: null,
+                          linkedName: null,
+                        })
+                      }
+                      className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                      title="Bağlantıyı Kaldır"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => deleteAd(ad.id, ad.submissionId)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Sil"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
           {/* Submissions Section */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          {filters.status !== "manual" && (
+  <div className="bg-white rounded-xl shadow-sm border border-gray-100">
             <div className="p-6 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-gray-900">
@@ -1154,6 +1371,7 @@ export default function ThinBannerPage() {
               </div>
             )}
           </div>
+          )}
         </main>
 
         {/* Image Modal */}
