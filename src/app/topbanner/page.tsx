@@ -18,13 +18,9 @@ import {
   Play,
   Clock,
   Store as StoreIcon,
-  Package,
   AlertCircle,
   Filter,
-  
   Calendar,
-  ExternalLink,
-  Search,
 } from "lucide-react";
 import {
   collection,
@@ -36,7 +32,6 @@ import {
   Timestamp,
   where,
   limit,
-  getDocs,
   updateDoc,
   addDoc,
   serverTimestamp,
@@ -49,6 +44,7 @@ import { useRouter } from "next/navigation";
 import { compressImage, formatFileSize } from "@/utils/imageCompression";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import Image from "next/image";
+import SearchModal, { type SearchSelection } from "@/components/SearchModal";
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -64,7 +60,8 @@ interface BaseAd {
   createdAt: Timestamp;
   isActive: boolean;
   linkType?: LinkType;
-  linkId?: string;
+  linkedShopId?: string;
+  linkedProductId?: string;
   linkedName?: string;
   dominantColor?: number;
 }
@@ -94,12 +91,6 @@ interface AdSubmission {
 interface TopBannerAd extends BaseAd {
   submissionId?: string;
   isManual?: boolean;
-}
-
-interface SearchResult {
-  type: LinkType;
-  id: string;
-  name: string;
 }
 
 interface ImageModalProps {
@@ -197,38 +188,6 @@ const getStatusLabel = (status: AdStatus | "manual"): string => {
   }
 };
 
-const getTypeIcon = (type: LinkType): React.ReactNode => {
-  switch (type) {
-    case "shop":
-      return <StoreIcon className="w-4 h-4 text-blue-600" />;
-    case "product":
-    case "shop_product":
-      return <Package className="w-4 h-4 text-green-600" />;
-  }
-};
-
-const getTypeBadge = (type: LinkType): React.ReactNode => {
-  const labels: Record<LinkType, string> = {
-    shop: "Mağaza",
-    product: "Ürün",
-    shop_product: "Mağaza Ürünü",
-  };
-
-  const colors: Record<LinkType, string> = {
-    shop: "bg-blue-100 text-blue-700",
-    product: "bg-green-100 text-green-700",
-    shop_product: "bg-purple-100 text-purple-700",
-  };
-
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${colors[type]}`}
-    >
-      {labels[type]}
-    </span>
-  );
-};
-
 const formatColorHex = (color: number | undefined): string => {
   if (!color) return "#9E9E9E";
   return `#${color.toString(16).padStart(8, "0").slice(2).toUpperCase()}`;
@@ -313,9 +272,8 @@ export default function TopBannerPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [editingAdId, setEditingAdId] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [linkingAdId, setLinkingAdId] = useState<string | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [imageModal, setImageModal] = useState({
     isOpen: false,
     imageUrl: "",
@@ -329,7 +287,7 @@ export default function TopBannerPage() {
     useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [, setHasMore] = useState(true);
   const [, setCompressionInfo] = useState<string>("");
-  
+
   // ============================================================================
   // DATA FETCHING
   // ============================================================================
@@ -378,78 +336,6 @@ export default function TopBannerPage() {
     return () => unsubscribe();
   }, []);
 
-  // Search for shops/products
-  useEffect(() => {
-    if (!editingAdId || searchTerm.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-
-    const searchDatabase = async () => {
-      const results: SearchResult[] = [];
-
-      try {
-        // Search shops
-        const shopsQuery = query(
-          collection(db, "shops"),
-          where("name", ">=", searchTerm),
-          where("name", "<=", searchTerm + "\uf8ff"),
-          limit(5)
-        );
-        const shopsSnapshot = await getDocs(shopsQuery);
-        shopsSnapshot.forEach((doc) => {
-          const data = doc.data();
-          results.push({
-            id: doc.id,
-            name: data.name || "İsimsiz Mağaza",
-            type: "shop",
-          });
-        });
-
-        // Search products
-        const productsQuery = query(
-          collection(db, "products"),
-          where("productName", ">=", searchTerm),
-          where("productName", "<=", searchTerm + "\uf8ff"),
-          limit(5)
-        );
-        const productsSnapshot = await getDocs(productsQuery);
-        productsSnapshot.forEach((doc) => {
-          const data = doc.data();
-          results.push({
-            id: doc.id,
-            name: data.productName || "İsimsiz Ürün",
-            type: "product",
-          });
-        });
-
-        // Search shop products
-        const shopProductsQuery = query(
-          collection(db, "shop_products"),
-          where("productName", ">=", searchTerm),
-          where("productName", "<=", searchTerm + "\uf8ff"),
-          limit(5)
-        );
-        const shopProductsSnapshot = await getDocs(shopProductsQuery);
-        shopProductsSnapshot.forEach((doc) => {
-          const data = doc.data();
-          results.push({
-            id: doc.id,
-            name: data.productName || "İsimsiz Ürün",
-            type: "shop_product",
-          });
-        });
-
-        setSearchResults(results);
-      } catch (error) {
-        console.error("Search error:", error);
-      }
-    };
-
-    const timer = setTimeout(searchDatabase, 300);
-    return () => clearTimeout(timer);
-  }, [searchTerm, editingAdId]);
-
   // ============================================================================
   // HANDLERS
   // ============================================================================
@@ -476,10 +362,10 @@ export default function TopBannerPage() {
     try {
       setUploading(true);
       setCompressionInfo("");
-  
+
       // Step 1: Compress image if needed
       let fileToUpload = file;
-  
+
       if (file.type.startsWith("image/")) {
         try {
           const result = await compressImage(file, {
@@ -489,10 +375,14 @@ export default function TopBannerPage() {
             format: "image/jpeg",
             maintainAspectRatio: true,
           });
-  
+
           fileToUpload = result.compressedFile;
           setCompressionInfo(
-            `Sıkıştırıldı: ${formatFileSize(result.originalSize)} → ${formatFileSize(result.compressedSize)} (${result.compressionRatio.toFixed(1)}% tasarruf)`
+            `Sıkıştırıldı: ${formatFileSize(
+              result.originalSize
+            )} → ${formatFileSize(
+              result.compressedSize
+            )} (${result.compressionRatio.toFixed(1)}% tasarruf)`
           );
         } catch (compressionError) {
           console.error("Compression failed:", compressionError);
@@ -501,7 +391,7 @@ export default function TopBannerPage() {
           );
         }
       }
-  
+
       // Step 2: Upload to Firebase Storage
       const storage = getStorage();
       const timestamp = Date.now();
@@ -509,25 +399,28 @@ export default function TopBannerPage() {
         storage,
         `market_top_ads_banners/${timestamp}_${fileToUpload.name}`
       );
-  
+
       await uploadBytes(storageRef, fileToUpload);
       const downloadUrl = await getDownloadURL(storageRef);
-      
+
       console.log("✅ Image uploaded to storage");
-  
+
       // Step 3: Extract color BEFORE creating any document
-      let dominantColor = 0xFF9E9E9E; // Default gray color
-      
+      let dominantColor = 0xff9e9e9e; // Default gray color
+
       try {
         const functions = getFunctions();
         const extractColor = httpsCallable(functions, "extractColorOnly");
-        
+
         console.log("🎨 Extracting dominant color...");
         const result = await extractColor({ imageUrl: downloadUrl });
-        
+
         if ((result.data as { success: boolean }).success) {
-          dominantColor = (result.data as { dominantColor: number }).dominantColor;
-          console.log(`✅ Color extracted: 0x${dominantColor.toString(16).toUpperCase()}`);
+          dominantColor = (result.data as { dominantColor: number })
+            .dominantColor;
+          console.log(
+            `✅ Color extracted: 0x${dominantColor.toString(16).toUpperCase()}`
+          );
         } else {
           console.log("⚠️ Color extraction failed, using default gray");
         }
@@ -535,7 +428,7 @@ export default function TopBannerPage() {
         console.error("Color extraction error:", colorError);
         // Continue with default color
       }
-  
+
       // Step 4: Create ONE document with color already included
       const adDocRef = await addDoc(collection(db, ACTIVE_ADS_COLLECTION), {
         imageUrl: downloadUrl,
@@ -544,13 +437,15 @@ export default function TopBannerPage() {
         createdAt: serverTimestamp(),
         dominantColor: dominantColor, // ← Color is already here!
       });
-  
+
       console.log(`✅ Created single ad document: ${adDocRef.id}`);
-      console.log(`   With color: 0x${dominantColor.toString(16).toUpperCase()}`);
-  
+      console.log(
+        `   With color: 0x${dominantColor.toString(16).toUpperCase()}`
+      );
+
       // DO NOT call triggerManualAdColorExtraction anymore!
       // We already have the color and created the document with it
-  
+
       setTimeout(() => setCompressionInfo(""), 5000);
     } catch (error) {
       console.error("Upload error:", error);
@@ -601,10 +496,28 @@ export default function TopBannerPage() {
     }
   ) => {
     try {
-      await updateDoc(doc(db, ACTIVE_ADS_COLLECTION, adId), linkData);
-      setEditingAdId(null);
-      setSearchTerm("");
-      setSearchResults([]);
+      // Prepare data with the correct field names for Flutter app
+      const updateData: Record<string, string | null> = {
+        linkType: linkData.linkType,
+        linkedName: linkData.linkedName,
+      };
+
+      // Save to the field names that Flutter expects
+      if (linkData.linkType === "shop") {
+        updateData.linkedShopId = linkData.linkId;
+        updateData.linkedProductId = null;
+      } else if (linkData.linkType === "shop_product") {
+        updateData.linkedProductId = linkData.linkId;
+        updateData.linkedShopId = null;
+      } else {
+        // Clearing link
+        updateData.linkedShopId = null;
+        updateData.linkedProductId = null;
+      }
+
+      await updateDoc(doc(db, ACTIVE_ADS_COLLECTION, adId), updateData);
+      setLinkingAdId(null);
+      setIsSearchOpen(false);
     } catch (error) {
       console.error("Update link error:", error);
       alert("Bağlantı güncellenemedi.");
@@ -622,7 +535,12 @@ export default function TopBannerPage() {
         isManual: false,
         submissionId: submission.id,
         linkType: submission.linkType || null,
-        linkId: submission.linkedShopId || submission.linkedProductId || null,
+        linkedShopId:
+          submission.linkType === "shop" ? submission.linkedShopId : null,
+        linkedProductId:
+          submission.linkType === "shop_product"
+            ? submission.linkedProductId
+            : null,
         linkedName: submission.linkedName || null,
         createdAt: serverTimestamp(),
       });
@@ -655,7 +573,7 @@ export default function TopBannerPage() {
 
   const getFilteredActiveAds = useCallback(() => {
     let filtered = [...activeAds];
-  
+
     if (filters.status === "manual") {
       // Show manual ads that are active
       filtered = filtered.filter(
@@ -665,14 +583,16 @@ export default function TopBannerPage() {
       // Show ALL active ads (including manual ones)
       filtered = filtered.filter((ad) => ad.isActive === true);
     }
-  
+
     if (filters.hasLink === "linked") {
-      filtered = filtered.filter((ad) => ad.linkId);
+      filtered = filtered.filter((ad) => ad.linkedShopId || ad.linkedProductId);
     } else if (filters.hasLink === "unlinked") {
-      filtered = filtered.filter((ad) => !ad.linkId);
+      filtered = filtered.filter(
+        (ad) => !ad.linkedShopId && !ad.linkedProductId
+      );
     }
     // If hasLink === "all", don't filter (show all ads regardless of link)
-  
+
     return filtered;
   }, [activeAds, filters]);
 
@@ -856,7 +776,8 @@ export default function TopBannerPage() {
               Görseli sürükleyip bırakın veya seçmek için tıklayın
             </p>
             <p className="text-sm text-gray-500">
-              PNG, JPG formatları desteklenmektedir (Önerilen boyut: 1920x1080px veya 16:9 oran)
+              PNG, JPG formatları desteklenmektedir (Önerilen boyut: 1920x1080px
+              veya 16:9 oran)
             </p>
             <input
               ref={fileInputRef}
@@ -960,7 +881,9 @@ export default function TopBannerPage() {
                                     ad.dominantColor
                                   ),
                                 }}
-                                title={`Dominant Color: ${formatColorHex(ad.dominantColor)}`}
+                                title={`Dominant Color: ${formatColorHex(
+                                  ad.dominantColor
+                                )}`}
                               />
                             </div>
                           )}
@@ -982,77 +905,18 @@ export default function TopBannerPage() {
                             </div>
 
                             {/* Link Info */}
-                            {ad.linkId ? (
-                              <div className="flex items-center gap-2">
-                                <ExternalLink className="w-4 h-4 text-blue-600" />
-                                <div className="flex items-center gap-2">
-                                  {ad.linkType && getTypeBadge(ad.linkType)}
-                                  <span className="text-sm text-gray-900 font-medium">
-                                    {ad.linkedName || ad.linkId.slice(0, 8)}
-                                  </span>
-                                </div>
-                              </div>
-                            ) : editingAdId === ad.id ? (
-                              <div className="space-y-2 max-w-md">
-                                <div className="relative">
-                                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <Search className="h-4 w-4 text-gray-400" />
-                                  </div>
-                                  <input
-                                    type="text"
-                                    placeholder="Ara..."
-                                    value={searchTerm}
-                                    autoFocus
-                                    onChange={(e) =>
-                                      setSearchTerm(e.target.value)
-                                    }
-                                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                  />
-                                </div>
-
-                                {searchResults.length > 0 && (
-                                  <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg bg-white">
-                                    {searchResults.map((result) => (
-                                      <button
-                                        key={`${result.type}-${result.id}`}
-                                        onClick={() => {
-                                          updateAdLink(ad.id, {
-                                            linkType: result.type,
-                                            linkId: result.id,
-                                            linkedName: result.name,
-                                          });
-                                        }}
-                                        className="w-full flex items-center gap-2 p-2 hover:bg-gray-50 transition-colors text-left text-sm"
-                                      >
-                                        {getTypeIcon(result.type)}
-                                        <div className="flex-1 min-w-0">
-                                          <p className="font-medium truncate">
-                                            {result.name}
-                                          </p>
-                                        </div>
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-
-                                <button
-                                  onClick={() => {
-                                    setEditingAdId(null);
-                                    setSearchTerm("");
-                                    setSearchResults([]);
-                                  }}
-                                  className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm"
-                                >
-                                  İptal
-                                </button>
+                            {ad.linkedShopId || ad.linkedProductId ? (
+                              <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <LinkIcon className="w-4 h-4" />
+                                {ad.linkedName}
                               </div>
                             ) : (
                               <button
                                 onClick={() => {
-                                  setEditingAdId(ad.id);
-                                  setSearchTerm("");
+                                  setLinkingAdId(ad.id);
+                                  setIsSearchOpen(true);
                                 }}
-                                className="flex items-center gap-2 text-sm text-purple-600 hover:text-purple-700 font-medium"
+                                className="flex items-center gap-2 text-sm text-orange-600 hover:text-orange-700 font-medium"
                               >
                                 <LinkIcon className="w-4 h-4" />
                                 Bağlantı Ekle
@@ -1078,7 +942,7 @@ export default function TopBannerPage() {
                               )}
                             </button>
 
-                            {ad.linkId && (
+                            {(ad.linkedShopId || ad.linkedProductId) && (
                               <button
                                 onClick={() =>
                                   updateAdLink(ad.id, {
@@ -1190,7 +1054,9 @@ export default function TopBannerPage() {
                                     ad.dominantColor
                                   ),
                                 }}
-                                title={`Dominant Color: ${formatColorHex(ad.dominantColor)}`}
+                                title={`Dominant Color: ${formatColorHex(
+                                  ad.dominantColor
+                                )}`}
                               />
                             </div>
                           )}
@@ -1212,77 +1078,18 @@ export default function TopBannerPage() {
                             </div>
 
                             {/* Link Info */}
-                            {ad.linkId ? (
-                              <div className="flex items-center gap-2">
-                                <ExternalLink className="w-4 h-4 text-blue-600" />
-                                <div className="flex items-center gap-2">
-                                  {ad.linkType && getTypeBadge(ad.linkType)}
-                                  <span className="text-sm text-gray-900 font-medium">
-                                    {ad.linkedName || ad.linkId.slice(0, 8)}
-                                  </span>
-                                </div>
-                              </div>
-                            ) : editingAdId === ad.id ? (
-                              <div className="space-y-2 max-w-md">
-                                <div className="relative">
-                                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <Search className="h-4 w-4 text-gray-400" />
-                                  </div>
-                                  <input
-                                    type="text"
-                                    placeholder="Ara..."
-                                    value={searchTerm}
-                                    autoFocus
-                                    onChange={(e) =>
-                                      setSearchTerm(e.target.value)
-                                    }
-                                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                  />
-                                </div>
-
-                                {searchResults.length > 0 && (
-                                  <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg bg-white">
-                                    {searchResults.map((result) => (
-                                      <button
-                                        key={`${result.type}-${result.id}`}
-                                        onClick={() => {
-                                          updateAdLink(ad.id, {
-                                            linkType: result.type,
-                                            linkId: result.id,
-                                            linkedName: result.name,
-                                          });
-                                        }}
-                                        className="w-full flex items-center gap-2 p-2 hover:bg-gray-50 transition-colors text-left text-sm"
-                                      >
-                                        {getTypeIcon(result.type)}
-                                        <div className="flex-1 min-w-0">
-                                          <p className="font-medium truncate">
-                                            {result.name}
-                                          </p>
-                                        </div>
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-
-                                <button
-                                  onClick={() => {
-                                    setEditingAdId(null);
-                                    setSearchTerm("");
-                                    setSearchResults([]);
-                                  }}
-                                  className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm"
-                                >
-                                  İptal
-                                </button>
+                            {ad.linkedShopId || ad.linkedProductId ? (
+                              <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <LinkIcon className="w-4 h-4" />
+                                {ad.linkedName}
                               </div>
                             ) : (
                               <button
                                 onClick={() => {
-                                  setEditingAdId(ad.id);
-                                  setSearchTerm("");
+                                  setLinkingAdId(ad.id);
+                                  setIsSearchOpen(true);
                                 }}
-                                className="flex items-center gap-2 text-sm text-purple-600 hover:text-purple-700 font-medium"
+                                className="flex items-center gap-2 text-sm text-orange-600 hover:text-orange-700 font-medium"
                               >
                                 <LinkIcon className="w-4 h-4" />
                                 Bağlantı Ekle
@@ -1294,13 +1101,21 @@ export default function TopBannerPage() {
                           <div className="flex items-center gap-2 ml-4">
                             <button
                               onClick={() => toggleAdStatus(ad.id, ad.isActive)}
-                              className="p-2 rounded-lg transition-colors text-green-600 hover:bg-green-50"
-                              title="Aktif Et"
+                              className={`p-2 rounded-lg transition-colors ${
+                                ad.isActive
+                                  ? "text-orange-600 hover:bg-orange-50"
+                                  : "text-green-600 hover:bg-green-50"
+                              }`}
+                              title={ad.isActive ? "Duraklat" : "Aktif Et"}
                             >
-                              <Play className="w-5 h-5" />
+                              {ad.isActive ? (
+                                <Pause className="w-5 h-5" />
+                              ) : (
+                                <Play className="w-5 h-5" />
+                              )}
                             </button>
 
-                            {ad.linkId && (
+                            {(ad.linkedShopId || ad.linkedProductId) && (
                               <button
                                 onClick={() =>
                                   updateAdLink(ad.id, {
@@ -1413,9 +1228,7 @@ export default function TopBannerPage() {
                           <div className="flex items-center gap-2">
                             {submission.status === "pending" && (
                               <button
-                                onClick={() =>
-                                  activateSubmission(submission)
-                                }
+                                onClick={() => activateSubmission(submission)}
                                 className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
                               >
                                 Aktif Et
@@ -1462,6 +1275,26 @@ export default function TopBannerPage() {
           </div>
         )}
       </div>
+      <SearchModal
+        isOpen={isSearchOpen}
+        onClose={() => {
+          setIsSearchOpen(false);
+          setLinkingAdId(null);
+        }}
+        searchType="both"
+        title="Bağlantı Ekle"
+        placeholder="Mağaza veya mağaza ürünü ara..."
+        onSelect={(selection: SearchSelection) => {
+          if (!linkingAdId) return;
+          updateAdLink(linkingAdId, {
+            linkType: selection.type === "shop" ? "shop" : "shop_product",
+            linkId: selection.id,
+            linkedName: selection.name,
+          });
+          setIsSearchOpen(false);
+          setLinkingAdId(null);
+        }}
+      />
     </ProtectedRoute>
   );
 }
