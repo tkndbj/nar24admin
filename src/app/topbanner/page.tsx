@@ -515,8 +515,10 @@ export default function TopBannerPage() {
       const adDocRef = await addDoc(collection(db, ACTIVE_ADS_COLLECTION), {
         imageUrl: downloadUrl,
         isActive: true,
-        isManual: true,  // ← MAKE SURE THIS IS HERE
+        isManual: true,
         createdAt: serverTimestamp(),
+        dominantColor: null,  // ← ADD THIS to mark as pending
+        colorExtractionQueued: false,  // ← ADD THIS flag
       });
 
       // Trigger color extraction for manual uploads
