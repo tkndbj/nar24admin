@@ -391,6 +391,7 @@ export const subSubcategoriesMap: Record<string, Record<string, string[]>> = {
       "Robes",
       "Socks",
       "Tights",
+      "Fantasy",
     ],
     Swimwear: [
       "Bikinis",

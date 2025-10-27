@@ -52,4 +52,9 @@ export const flutterScreens = [
     label: "Beyaz Eşya",
     route: "/list_white_goods",
   },
+  {
+    id: "list_fantasy_wear",
+    label: "Fantasy",
+    route: "/list_fantasy_wear",
+  },
 ];
