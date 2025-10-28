@@ -57,4 +57,9 @@ export const flutterScreens = [
     label: "Fantasy",
     route: "/list_fantasy_wear",
   },
+  {
+    id: "list_curtain_dimensions",
+    label: "Perde Boyutu",
+    route: "/list_curtain_dimensions",
+  },
 ];
