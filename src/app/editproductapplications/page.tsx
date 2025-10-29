@@ -59,6 +59,7 @@ interface OriginalProductData {
   shopId?: string;
   createdAt?: Timestamp;
   modifiedAt?: Timestamp;
+  gender?: string;
 }
 
 interface EditApplication {
@@ -74,6 +75,7 @@ interface EditApplication {
   price: number;
   condition: string;
   brandModel: string;
+  gender?: string;
   imageUrls: string[];
   category: string;
   subcategory: string;
@@ -499,6 +501,7 @@ export default function EditProductApplicationsPage() {
         colorImages: application.colorImages,
         colorQuantities: application.colorQuantities,
         attributes: application.attributes,
+        gender: application.gender || undefined,
         modifiedAt: Timestamp.now(),
       };
 
@@ -638,6 +641,13 @@ export default function EditProductApplicationsPage() {
     );
   };
 
+  const ensureArray = (value: unknown): string[] => {
+    if (Array.isArray(value)) return value;
+    if (typeof value === "string") return [value];
+    if (value === null || value === undefined) return [];
+    return [];
+  };
+
   const ImageComparison = ({
     label,
     oldImages,
@@ -647,8 +657,17 @@ export default function EditProductApplicationsPage() {
     oldImages: string[];
     newImages: string[];
   }) => {
-    const hasChanged = JSON.stringify(oldImages) !== JSON.stringify(newImages);
+    // Add runtime guard
+    if (!Array.isArray(oldImages)) {
+      console.warn("oldImages is not an array:", oldImages);
+      oldImages = [];
+    }
+    if (!Array.isArray(newImages)) {
+      console.warn("newImages is not an array:", newImages);
+      newImages = [];
+    }
 
+    const hasChanged = JSON.stringify(oldImages) !== JSON.stringify(newImages);
     if (!hasChanged) return null;
 
     return (
@@ -911,6 +930,13 @@ export default function EditProductApplicationsPage() {
                         newValue={selectedApplication.brandModel}
                       />
                       <CompactComparisonField
+                        label="Cinsiyet"
+                        oldValue={
+                          selectedApplication.originalProductData?.gender
+                        }
+                        newValue={selectedApplication.gender}
+                      />
+                      <CompactComparisonField
                         label="Kategori"
                         oldValue={
                           selectedApplication.originalProductData?.category
@@ -968,11 +994,10 @@ export default function EditProductApplicationsPage() {
                     <div className="mt-6">
                       <ImageComparison
                         label="Ürün Resimleri"
-                        oldImages={
-                          selectedApplication.originalProductData?.imageUrls ||
-                          []
-                        }
-                        newImages={selectedApplication.imageUrls}
+                        oldImages={ensureArray(
+                          selectedApplication.originalProductData?.imageUrls
+                        )}
+                        newImages={ensureArray(selectedApplication.imageUrls)}
                       />
 
                       {/* Color Images */}
@@ -983,13 +1008,13 @@ export default function EditProductApplicationsPage() {
                         <ImageComparison
                           key={color}
                           label={`${color} Resimleri`}
-                          oldImages={
+                          oldImages={ensureArray(
                             selectedApplication.originalProductData
-                              ?.colorImages?.[color] || []
-                          }
-                          newImages={
-                            selectedApplication.colorImages?.[color] || []
-                          }
+                              ?.colorImages?.[color]
+                          )}
+                          newImages={ensureArray(
+                            selectedApplication.colorImages?.[color]
+                          )}
                         />
                       ))}
 
