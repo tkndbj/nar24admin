@@ -51,7 +51,7 @@ interface OriginalProductData {
   subsubcategory?: string;
   quantity?: number;
   deliveryOption?: string;
-  videoUrl?: string;
+  videoUrl?: string | null;
   colorImages?: Record<string, string[]>;
   colorQuantities?: Record<string, number>;
   attributes?: ProductAttributes;
@@ -59,7 +59,7 @@ interface OriginalProductData {
   shopId?: string;
   createdAt?: Timestamp;
   modifiedAt?: Timestamp;
-  gender?: string;
+  gender?: string | null;
 }
 
 interface EditApplication {
@@ -75,7 +75,7 @@ interface EditApplication {
   price: number;
   condition: string;
   brandModel: string;
-  gender?: string;
+  gender?: string | null;
   imageUrls: string[];
   category: string;
   subcategory: string;
@@ -475,7 +475,15 @@ export default function EditProductApplicationsPage() {
             const cleanedValue = cleanUpdateData(
               (obj as Record<string, unknown>)[key]
             );
-            if (cleanedValue !== null && cleanedValue !== undefined) {
+
+            // ✅ FIXED: Always preserve colorImages, colorQuantities, and gender even if empty/null
+            if (
+              key === "colorImages" ||
+              key === "colorQuantities" ||
+              key === "gender"
+            ) {
+              cleaned[key] = cleanedValue;
+            } else if (cleanedValue !== null && cleanedValue !== undefined) {
               cleaned[key] = cleanedValue;
             }
           });
@@ -498,15 +506,17 @@ export default function EditProductApplicationsPage() {
         subsubcategory: application.subsubcategory,
         quantity: application.quantity,
         deliveryOption: application.deliveryOption,
-        colorImages: application.colorImages,
-        colorQuantities: application.colorQuantities,
+        // ✅ FIXED: Ensure colorImages and colorQuantities are included
+        colorImages: application.colorImages || {},
+        colorQuantities: application.colorQuantities || {},
         attributes: application.attributes,
-        gender: application.gender || undefined,
+        gender: application.gender !== undefined ? application.gender : null,
         modifiedAt: Timestamp.now(),
       };
 
-      if (application.videoUrl) {
-        rawUpdateData.videoUrl = application.videoUrl;
+      // ✅ FIXED: Handle videoUrl properly (set to null if removed)
+      if (application.videoUrl !== undefined) {
+        rawUpdateData.videoUrl = application.videoUrl || null;
       }
 
       // Clean the update data
@@ -932,7 +942,9 @@ export default function EditProductApplicationsPage() {
                       <CompactComparisonField
                         label="Cinsiyet"
                         oldValue={
-                          selectedApplication.originalProductData?.gender
+                          selectedApplication.originalProductData?.gender ??
+                          selectedApplication.originalProductData?.attributes
+                            ?.gender
                         }
                         newValue={selectedApplication.gender}
                       />
