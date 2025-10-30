@@ -510,7 +510,25 @@ export default function EditProductApplicationsPage() {
         colorImages: application.colorImages || {},
         colorQuantities: application.colorQuantities || {},
         attributes: application.attributes,
-        gender: application.gender !== undefined ? application.gender : null,
+        gender: (() => {
+          // Priority 1: Root level from application
+          if (application.gender) return application.gender;
+          
+          // Priority 2: Root level from original
+          if (application.originalProductData?.gender) {
+            console.log("⚠️ Preserving gender from original root level");
+            return application.originalProductData.gender;
+          }
+          
+          // Priority 3: Attributes from original (Flutter products)
+          if (application.originalProductData?.attributes?.gender &&
+              typeof application.originalProductData.attributes.gender === "string") {
+            console.log("⚠️ Preserving gender from original attributes");
+            return application.originalProductData.attributes.gender;
+          }
+          
+          return null;
+        })(),
         modifiedAt: Timestamp.now(),
       };
 
@@ -940,14 +958,30 @@ export default function EditProductApplicationsPage() {
                         newValue={selectedApplication.brandModel}
                       />
                       <CompactComparisonField
-                        label="Cinsiyet"
-                        oldValue={
-                          selectedApplication.originalProductData?.gender ??
-                          selectedApplication.originalProductData?.attributes
-                            ?.gender
-                        }
-                        newValue={selectedApplication.gender}
-                      />
+  label="Cinsiyet"
+  oldValue={(() => {
+    // For Flutter products: check attributes first, then root
+    const orig = selectedApplication.originalProductData;
+    if (orig?.attributes?.gender) return orig.attributes.gender;
+    return orig?.gender;
+  })()}
+  newValue={(() => {
+    // For edited products: ALWAYS check root level (web app moves it there)
+    const app = selectedApplication;
+    if (app.gender) return app.gender;
+    
+    // Fallback: if somehow still in attributes (shouldn't happen after web edit)
+    if (app.attributes?.gender) return app.attributes.gender;
+    
+    // Last resort: check original to preserve it
+    const orig = app.originalProductData;
+    if (orig?.gender) return orig.gender;
+    if (orig?.attributes?.gender) return orig.attributes.gender;
+    
+    return null;
+  })()}
+/>
+
                       <CompactComparisonField
                         label="Kategori"
                         oldValue={
@@ -985,21 +1019,26 @@ export default function EditProductApplicationsPage() {
                         </div>
                       )}
 
-                      {/* Dynamic Attributes */}
-                      {Object.keys({
-                        ...selectedApplication.originalProductData?.attributes,
-                        ...selectedApplication.attributes,
-                      }).map((key) => (
-                        <CompactComparisonField
-                          key={key}
-                          label={key}
-                          oldValue={
-                            selectedApplication.originalProductData
-                              ?.attributes?.[key]
-                          }
-                          newValue={selectedApplication.attributes?.[key]}
-                        />
-                      ))}
+                     {/* Dynamic Attributes */}
+{Object.keys({
+  ...selectedApplication.originalProductData?.attributes,
+  ...selectedApplication.attributes,
+}).map((key) => {
+  // ✅ SKIP gender - it's already shown in its own field above
+  if (key === 'gender') return null;
+  
+  return (
+    <CompactComparisonField
+      key={key}
+      label={key}
+      oldValue={
+        selectedApplication.originalProductData
+          ?.attributes?.[key]
+      }
+      newValue={selectedApplication.attributes?.[key]}
+    />
+  );
+})}
                     </div>
 
                     {/* Images */}
