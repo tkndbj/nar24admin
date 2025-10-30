@@ -52,6 +52,7 @@ interface OriginalProductData {
   quantity?: number;
   deliveryOption?: string;
   videoUrl?: string | null;
+  availableColors?: string[]; 
   colorImages?: Record<string, string[]>;
   colorQuantities?: Record<string, number>;
   attributes?: ProductAttributes;
@@ -83,6 +84,7 @@ interface EditApplication {
   quantity: number;
   deliveryOption: string;
   videoUrl?: string;
+  availableColors: string[];
   colorImages: Record<string, string[]>;
   colorQuantities: Record<string, number>;
   attributes: ProductAttributes;
@@ -427,14 +429,14 @@ export default function EditProductApplicationsPage() {
         "Shop ID:",
         application.shopId || application.originalProductData?.shopId || "None"
       );
-
+  
       // Determine the correct collection based on shopId
       const isShopProduct =
         application.shopId || application.originalProductData?.shopId;
       const collection_name = isShopProduct ? "shop_products" : "products";
-
+  
       console.log(`Using collection: ${collection_name}`);
-
+  
       // Check if the original product exists
       const productRef = doc(
         db,
@@ -442,7 +444,7 @@ export default function EditProductApplicationsPage() {
         application.originalProductId
       );
       const productSnapshot = await getDoc(productRef);
-
+  
       if (!productSnapshot.exists()) {
         console.error(
           `Original product not found in ${collection_name}:`,
@@ -453,46 +455,61 @@ export default function EditProductApplicationsPage() {
         );
         return;
       }
-
+  
       console.log("Original product found, proceeding with update...");
-
+  
       // CLEAN THE UPDATE DATA - Remove undefined, null values and empty arrays/objects
       const cleanUpdateData = (obj: unknown): unknown => {
         if (obj === null || obj === undefined) {
           return null;
         }
-
+  
         if (Array.isArray(obj)) {
           const cleaned = obj
             .map((item) => cleanUpdateData(item))
             .filter((item) => item !== null && item !== undefined);
           return cleaned.length > 0 ? cleaned : null;
         }
-
+  
         if (typeof obj === "object") {
           const cleaned: Record<string, unknown> = {};
           Object.keys(obj).forEach((key) => {
             const cleanedValue = cleanUpdateData(
               (obj as Record<string, unknown>)[key]
             );
-
-            // ✅ FIXED: Always preserve colorImages, colorQuantities, and gender even if empty/null
-            if (
-              key === "colorImages" ||
-              key === "colorQuantities" ||
-              key === "gender"
-            ) {
-              cleaned[key] = cleanedValue;
-            } else if (cleanedValue !== null && cleanedValue !== undefined) {
+  
+            if (cleanedValue !== null && cleanedValue !== undefined) {
               cleaned[key] = cleanedValue;
             }
           });
           return Object.keys(cleaned).length > 0 ? cleaned : null;
         }
-
+  
         return obj;
       };
-
+  
+      // ✅ FIX: Check if colors were completely removed
+      const hasColors = 
+        application.availableColors && 
+        application.availableColors.length > 0;
+      
+      const hasColorQuantities = 
+        application.colorQuantities && 
+        Object.keys(application.colorQuantities).length > 0;
+      
+      const hasColorImages = 
+        application.colorImages && 
+        Object.keys(application.colorImages).length > 0;
+  
+      console.log("Color data status:", {
+        hasColors,
+        hasColorQuantities,
+        hasColorImages,
+        availableColors: application.availableColors,
+        colorQuantities: application.colorQuantities,
+        colorImages: application.colorImages
+      });
+  
       // Build update data with cleaning
       const rawUpdateData: Partial<OriginalProductData> = {
         productName: application.productName,
@@ -506,9 +523,11 @@ export default function EditProductApplicationsPage() {
         subsubcategory: application.subsubcategory,
         quantity: application.quantity,
         deliveryOption: application.deliveryOption,
-        // ✅ FIXED: Ensure colorImages and colorQuantities are included
-        colorImages: application.colorImages || {},
-        colorQuantities: application.colorQuantities || {},
+        availableColors: hasColors && application.availableColors 
+        ? application.availableColors 
+        : [],
+        colorImages: hasColors && hasColorImages ? application.colorImages : {},
+        colorQuantities: hasColors && hasColorQuantities ? application.colorQuantities : {},
         attributes: application.attributes,
         gender: (() => {
           // Priority 1: Root level from application
@@ -531,12 +550,12 @@ export default function EditProductApplicationsPage() {
         })(),
         modifiedAt: Timestamp.now(),
       };
-
+  
       // ✅ FIXED: Handle videoUrl properly (set to null if removed)
       if (application.videoUrl !== undefined) {
         rawUpdateData.videoUrl = application.videoUrl || null;
       }
-
+  
       // Clean the update data
       const updateData: Record<string, unknown> = {};
       Object.keys(rawUpdateData).forEach((key) => {
@@ -547,29 +566,41 @@ export default function EditProductApplicationsPage() {
           updateData[key] = cleanedValue;
         }
       });
-
+  
+      // ✅ FIX: Explicitly set colorImages and colorQuantities to empty objects if no colors
+      if (!hasColors) {
+        updateData.availableColors = []; 
+        updateData.colorImages = {};
+        updateData.colorQuantities = {};
+      } else {
+        // ✅ ADD THIS: Ensure availableColors is explicitly set when colors exist
+        if (application.availableColors && application.availableColors.length > 0) {
+          updateData.availableColors = application.availableColors;
+        }
+      }
+  
       // Always include modifiedAt
       updateData.modifiedAt = Timestamp.now();
-
-      console.log("Cleaned update data:", updateData);
-
+  
+      
+  
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await updateDoc(productRef, updateData as any);
-      console.log("Product updated successfully");
-
+      
+  
       // Delete the edit application
       await deleteDoc(doc(db, "product_edit_applications", application.id));
-      console.log("Edit application deleted");
-
+      
+  
       // Send notifications based on product type
       await sendNotifications(application, "approved");
       console.log("Notifications sent successfully");
-
+  
       setSelectedApplication(null);
       alert("Başvuru başarıyla onaylandı!");
     } catch (error) {
       console.error("Error approving application:", error);
-
+  
       // More specific error handling
       if (isFirebaseError(error)) {
         if (error.code === "not-found") {
