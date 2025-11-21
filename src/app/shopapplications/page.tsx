@@ -26,8 +26,9 @@ import {
   serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { db, functions } from "../lib/firebase";
 import { useRouter } from "next/navigation";
+import { httpsCallable } from "firebase/functions";
 
 interface ShopApplication {
   id: string;
@@ -43,6 +44,7 @@ interface ShopApplication {
   createdAt: Timestamp;
   latitude: number;
   longitude: number;
+  email: string;
 }
 
 interface RejectionModalProps {
@@ -375,14 +377,14 @@ export default function ShopApplicationsPage() {
         .split(",")
         .map((url) => url.trim())
         .filter((url) => url.length > 0);
-
+  
       const shopRef = await addDoc(collection(db, "shops"), {
         ownerId: application.ownerId,
         name: application.name,
         contactNo: application.contactNo,
         address: application.address,
         categories: application.categories,
-        latitude: application.latitude, // ADD THIS LINE
+        latitude: application.latitude,
         longitude: application.longitude,
         coverImageUrls: coverImageUrls,
         profileImageUrl: application.profileImageUrl,
@@ -396,16 +398,16 @@ export default function ShopApplicationsPage() {
         clickCount: 0,
         followerCount: 0,
       });
-
+  
       await updateDoc(doc(db, "shopApplications", application.id), {
         status: "approved",
       });
-
+  
       await updateDoc(doc(db, "users", application.ownerId), {
         [`memberOfShops.${shopRef.id}`]: "owner",
         verified: true,
       });
-
+  
       await addDoc(
         collection(db, "users", application.ownerId, "notifications"),
         {
@@ -419,7 +421,25 @@ export default function ShopApplicationsPage() {
           message_ru: "Нажмите, чтобы посетить свой магазин.",
         }
       );
-
+  
+      // ✨ ADD THIS SECTION - Send welcome email
+      try {
+        const shopWelcomeEmailFunction = httpsCallable(
+          functions,
+          "shopWelcomeEmail"
+        );
+        
+        await shopWelcomeEmailFunction({
+          shopId: shopRef.id,
+          email: application.email, // This comes from the application data
+        });
+        
+        console.log("Welcome email sent successfully");
+      } catch (emailError) {
+        console.error("Error sending welcome email:", emailError);
+        // Don't fail the whole approval if email fails
+      }
+  
       alert("Başvuru başarıyla onaylandı!");
     } catch (error) {
       console.error("Error approving application:", error);
