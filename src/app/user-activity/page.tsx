@@ -412,21 +412,6 @@ export default function UserActivityPage() {
   const [hasMoreActivities, setHasMoreActivities] = useState(true);
   const [activitiesError, setActivitiesError] = useState<string | null>(null);
 
-  // Debounced search
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      setSearchError(null);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      searchUsers(searchQuery.trim());
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery, searchUsers]);
-
   // Search users by displayName
   const searchUsers = useCallback(async (queryStr: string) => {
     if (queryStr.length < 2) {
@@ -448,7 +433,7 @@ export default function UserActivityPage() {
       );
 
       const snapshot = await getDocs(q);
-      
+
       const results: SearchResult[] = snapshot.docs.map((doc) => ({
         id: doc.id,
         displayName: doc.data().displayName || "İsimsiz",
@@ -462,6 +447,88 @@ export default function UserActivityPage() {
       setSearchResults([]);
     } finally {
       setIsSearching(false);
+    }
+  }, []);
+
+  // Debounced search
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setSearchError(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      searchUsers(searchQuery.trim());
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, searchUsers]);
+
+  // Load activities with pagination
+  const loadActivities = useCallback(async (
+    userId: string,
+    lastDoc: DocumentSnapshot | null
+  ) => {
+    setIsLoadingActivities(true);
+    setActivitiesError(null);
+
+    try {
+      // Get today's date shard (most recent first)
+      const today = new Date().toISOString().split("T")[0];
+
+      // Query activity events for this user
+      // Note: This queries the date-sharded collection
+      const eventsRef = collection(db, "activity_events", today, "events");
+
+      let q = query(
+        eventsRef,
+        where("userId", "==", userId),
+        orderBy("timestamp", "desc"),
+        limit(PAGE_SIZE + 1)
+      );
+
+      if (lastDoc) {
+        q = query(
+          eventsRef,
+          where("userId", "==", userId),
+          orderBy("timestamp", "desc"),
+          startAfter(lastDoc),
+          limit(PAGE_SIZE + 1)
+        );
+      }
+
+      const snapshot = await getDocs(q);
+
+      const newActivities: ActivityEvent[] = [];
+      let hasMore = false;
+      let lastVisible: DocumentSnapshot | null = null;
+
+      snapshot.docs.forEach((doc, index) => {
+        if (index < PAGE_SIZE) {
+          newActivities.push({
+            id: doc.id,
+            ...doc.data(),
+          } as ActivityEvent);
+          lastVisible = doc;
+        } else {
+          hasMore = true;
+        }
+      });
+
+      if (lastDoc) {
+        setActivities((prev) => [...prev, ...newActivities]);
+      } else {
+        setActivities(newActivities);
+      }
+
+      setLastActivityDoc(lastVisible);
+      setHasMoreActivities(hasMore);
+    } catch (error) {
+      console.error("Error loading activities:", error);
+      setActivitiesError("Aktiviteler yüklenirken bir hata oluştu");
+    } finally {
+      setIsLoadingActivities(false);
     }
   }, []);
 
@@ -496,73 +563,6 @@ export default function UserActivityPage() {
     // Load initial activities
     await loadActivities(userId, null);
   }, [loadActivities]);
-
-  // Load activities with pagination
-  const loadActivities = useCallback(async (
-    userId: string, 
-    lastDoc: DocumentSnapshot | null
-  ) => {
-    setIsLoadingActivities(true);
-    setActivitiesError(null);
-
-    try {
-      // Get today's date shard (most recent first)
-      const today = new Date().toISOString().split("T")[0];
-      
-      // Query activity events for this user
-      // Note: This queries the date-sharded collection
-      const eventsRef = collection(db, "activity_events", today, "events");
-      
-      let q = query(
-        eventsRef,
-        where("userId", "==", userId),
-        orderBy("timestamp", "desc"),
-        limit(PAGE_SIZE + 1)
-      );
-
-      if (lastDoc) {
-        q = query(
-          eventsRef,
-          where("userId", "==", userId),
-          orderBy("timestamp", "desc"),
-          startAfter(lastDoc),
-          limit(PAGE_SIZE + 1)
-        );
-      }
-
-      const snapshot = await getDocs(q);
-      
-      const newActivities: ActivityEvent[] = [];
-      let hasMore = false;
-      let lastVisible: DocumentSnapshot | null = null;
-
-      snapshot.docs.forEach((doc, index) => {
-        if (index < PAGE_SIZE) {
-          newActivities.push({
-            id: doc.id,
-            ...doc.data(),
-          } as ActivityEvent);
-          lastVisible = doc;
-        } else {
-          hasMore = true;
-        }
-      });
-
-      if (lastDoc) {
-        setActivities((prev) => [...prev, ...newActivities]);
-      } else {
-        setActivities(newActivities);
-      }
-
-      setLastActivityDoc(lastVisible);
-      setHasMoreActivities(hasMore);
-    } catch (error) {
-      console.error("Error loading activities:", error);
-      setActivitiesError("Aktiviteler yüklenirken bir hata oluştu");
-    } finally {
-      setIsLoadingActivities(false);
-    }
-  }, []);
 
   // Load more activities
   const loadMore = useCallback(() => {
