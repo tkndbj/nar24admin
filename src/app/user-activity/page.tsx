@@ -64,6 +64,7 @@ interface ActivityEvent {
   userId: string;
   type: string;
   productId?: string;
+  productName?: string;
   shopId?: string;
   category?: string;
   subcategory?: string;
@@ -239,14 +240,18 @@ function ActivityCard({ event }: { event: ActivityEvent }) {
         </div>
         
         <div className="space-y-1">
-          {event.productId && (
-            <p className="text-sm text-gray-700">
-              <span className="text-gray-500">Ürün:</span>{" "}
-              <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">
-                {event.productId.substring(0, 12)}...
-              </span>
-            </p>
-          )}
+        {event.productId && (
+  <p className="text-sm text-gray-700">
+    <span className="text-gray-500">Ürün:</span>{" "}
+    {event.productName ? (
+      <span className="font-medium text-gray-900">{event.productName}</span>
+    ) : (
+      <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">
+        {event.productId.substring(0, 12)}...
+      </span>
+    )}
+  </p>
+)}
           
           {event.searchQuery && (
             <p className="text-sm text-gray-700">
