@@ -251,7 +251,7 @@ function ActivityCard({ event }: { event: ActivityEvent }) {
           {event.searchQuery && (
             <p className="text-sm text-gray-700">
               <span className="text-gray-500">Arama:</span>{" "}
-              <span className="font-medium">"{event.searchQuery}"</span>
+              <span className="font-medium">&quot;{event.searchQuery}&quot;</span>
             </p>
           )}
           
@@ -425,7 +425,7 @@ export default function UserActivityPage() {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, searchUsers]);
 
   // Search users by displayName
   const searchUsers = useCallback(async (queryStr: string) => {
@@ -480,7 +480,7 @@ export default function UserActivityPage() {
       const profileRef = collection(db, "user_profiles");
       const profileQuery = query(profileRef, where("__name__", "==", userId));
       const profileSnapshot = await getDocs(profileQuery);
-      
+
       if (!profileSnapshot.empty) {
         const profileData = profileSnapshot.docs[0].data();
         setSelectedUser({
@@ -495,7 +495,7 @@ export default function UserActivityPage() {
 
     // Load initial activities
     await loadActivities(userId, null);
-  }, []);
+  }, [loadActivities]);
 
   // Load activities with pagination
   const loadActivities = useCallback(async (
@@ -666,7 +666,7 @@ export default function UserActivityPage() {
               
               {searchQuery.length >= 2 && !isSearching && searchResults.length === 0 && (
                 <p className="text-sm text-gray-500 mt-2">
-                  "{searchQuery}" için sonuç bulunamadı
+                  &quot;{searchQuery}&quot; için sonuç bulunamadı
                 </p>
               )}
             </div>
