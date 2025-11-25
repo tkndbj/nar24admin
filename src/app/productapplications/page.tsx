@@ -55,6 +55,7 @@ export default function ProductApplications() {
     useState<ProductApplication | null>(null);
   const [showImageModal, setShowImageModal] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [shopNames, setShopNames] = useState<Record<string, string>>({});
 
   // Real-time listener for product applications
   useEffect(() => {
@@ -186,6 +187,38 @@ export default function ProductApplications() {
 
     return () => unsubscribe();
   }, []);
+
+  // Fetch shop names for applications with shopId
+  useEffect(() => {
+    const fetchShopNames = async () => {
+      const shopIds = applications
+        .filter((app) => app.shopId && app.shopId.trim() !== "")
+        .map((app) => app.shopId!)
+        .filter((id, index, self) => self.indexOf(id) === index);
+
+      const newShopNames: Record<string, string> = {};
+      for (const shopId of shopIds) {
+        if (!shopNames[shopId]) {
+          try {
+            const shopDoc = await getDoc(doc(db, "shops", shopId));
+            if (shopDoc.exists()) {
+              newShopNames[shopId] = shopDoc.data().name || "Unknown Shop";
+            }
+          } catch (error) {
+            console.error(`Error fetching shop ${shopId}:`, error);
+          }
+        }
+      }
+
+      if (Object.keys(newShopNames).length > 0) {
+        setShopNames((prev) => ({ ...prev, ...newShopNames }));
+      }
+    };
+
+    if (applications.length > 0) {
+      fetchShopNames();
+    }
+  }, [applications]);
 
   async function updateCategoryShopsIndex(
     shopId: string | null | undefined,
@@ -537,9 +570,16 @@ export default function ProductApplications() {
                           {application.shopId ? (
                             <>
                               <Store className="w-4 h-4 text-blue-600" />
-                              <span className="text-sm text-blue-600 font-medium">
-                                Mağaza
-                              </span>
+                              <div>
+                                <span className="text-sm text-blue-600 font-medium">
+                                  Mağaza
+                                </span>
+                                {shopNames[application.shopId] && (
+                                  <div className="text-xs text-gray-500 truncate max-w-[80px]">
+                                    {shopNames[application.shopId]}
+                                  </div>
+                                )}
+                              </div>
                             </>
                           ) : (
                             <>
