@@ -391,6 +391,7 @@ export default function ShopApplicationsPage() {
         taxPlateCertificateUrl: application.taxPlateCertificateUrl,
         createdAt: serverTimestamp(),
         isBoosted: false,
+        isActive: true,
         stockBadgeAcknowledged: true,
         transactionsBadgeAcknowledged: true,
         averageRating: 0.0,
