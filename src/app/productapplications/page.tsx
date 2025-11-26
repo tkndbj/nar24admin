@@ -13,6 +13,7 @@ import {
   getDoc,
   writeBatch,
   arrayUnion,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
@@ -363,7 +364,10 @@ export default function ProductApplications() {
       }
 
       // ✅ STEP 3: Delete the application
-      await deleteDoc(doc(db, "product_applications", id));
+      await updateDoc(doc(db, "product_applications", id), {
+        status: "approved",
+        reviewedAt: Timestamp.now(),
+      });
 
       showNotification("Ürün başarıyla onaylandı!");
     } catch (error) {
@@ -380,11 +384,16 @@ export default function ProductApplications() {
 
   const rejectApplication = async (application: ProductApplication) => {
     if (processingIds.has(application.id)) return;
-
+  
     setProcessingIds((prev) => new Set(prev).add(application.id));
-
+  
     try {
-      await deleteDoc(doc(db, "product_applications", application.id));
+      // ✅ Update status instead of deleting
+      await updateDoc(doc(db, "product_applications", application.id), {
+        status: "rejected",
+        reviewedAt: Timestamp.now(),
+        rejectionReason: "Başvuru reddedildi", // You may want to add a modal for custom reason
+      });
       showNotification("Ürün başvurusu reddedildi");
     } catch (error) {
       console.error("Reddetme hatası:", error);

@@ -589,7 +589,10 @@ export default function EditProductApplicationsPage() {
       
   
       // Delete the edit application
-      await deleteDoc(doc(db, "product_edit_applications", application.id));
+      await updateDoc(doc(db, "product_edit_applications", application.id), {
+        status: "approved",
+        reviewedAt: Timestamp.now(),
+      });
       
   
       // Send notifications based on product type
@@ -641,7 +644,11 @@ export default function EditProductApplicationsPage() {
       );
 
       // Delete the edit application
-      await deleteDoc(doc(db, "product_edit_applications", application.id));
+      await updateDoc(doc(db, "product_edit_applications", application.id), {
+        status: "rejected",
+        reviewedAt: Timestamp.now(),
+        rejectionReason: rejectionReason,
+      });
       console.log("Edit application deleted");
 
       // Send notifications with rejection reason
