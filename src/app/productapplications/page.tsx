@@ -6,7 +6,7 @@ import {
   collection,
   onSnapshot,
   doc,
-  setDoc,  
+  setDoc,
   Timestamp,
   arrayRemove,
   getDoc,
@@ -27,14 +27,88 @@ import {
   Loader2,
   CheckCircle,
   XCircle,
+  ChevronLeft,
+  ChevronRight,
+  Play,
+  Tag,
+  Truck,
+  Palette,
+  Phone,
+  MapPin,
+  CreditCard,
+  Hash,
+  Info,
+  Layers,
+  Eye,
+  DollarSign,
+  Box,
+  Star,
+  ShoppingCart,
+  Heart,
+  MousePointer,
+  Zap,
+  TrendingUp,
+  Pause,
+  Video,
 } from "lucide-react";
-import { Product, ProductUtils } from "../../models/Product";
+import { ProductUtils } from "../../models/Product";
 
 // Extended interface for product applications (includes fields not in final Product)
-interface ProductApplication extends Omit<Product, "id" | "createdAt"> {
+interface ProductApplication {
   id: string;
   ilan_no: string;
+  ilanNo: string;
+  productName: string;
+  description: string;
+  price: number;
+  currency: string;
+  condition: string;
+  brandModel?: string;
+  imageUrls: string[];
+  averageRating: number;
+  reviewCount: number;
+  gender?: string;
+  bundleIds: string[];
+  bundlePrice?: number;
+  originalPrice?: number;
+  discountPercentage?: number;
+  colorQuantities: Record<string, number>;
+  boostClickCountAtStart: number;
+  availableColors: string[];
+  userId: string;
+  discountThreshold?: number;
+  rankingScore: number;
+  promotionScore: number;
+  ownerId: string;
+  shopId?: string;
+  searchIndex: string[];
   createdAt: Timestamp;
+  sellerName: string;
+  category: string;
+  subcategory: string;
+  subsubcategory: string;
+  quantity: number;
+  bestSellerRank?: number;
+  sold: boolean;
+  clickCount: number;
+  clickCountAtStart: number;
+  favoritesCount: number;
+  cartCount: number;
+  purchaseCount: number;
+  deliveryOption: string;
+  boostedImpressionCount: number;
+  boostImpressionCountAtStart: number;
+  isFeatured: boolean;
+  isTrending: boolean;
+  isBoosted: boolean;
+  boostStartTime?: Date;
+  boostEndTime?: Date;
+  dailyClickCount: number;
+  lastClickDate?: Date;
+  paused: boolean;
+  colorImages: Record<string, string[]>;
+  videoUrl?: string;
+  attributes: Record<string, unknown>;
   phone?: string;
   region?: string;
   address?: string;
@@ -44,6 +118,683 @@ interface ProductApplication extends Omit<Product, "id" | "createdAt"> {
   needsSync?: boolean;
   updatedAt?: Timestamp;
   relatedProductIds?: string[];
+  maxQuantity?: number;
+  bulkDiscountPercentage?: number;
+  campaign?: string;
+  campaignName?: string;
+}
+
+// Detail Modal Component
+function ProductDetailModal({
+  application,
+  shopName,
+  onClose,
+  onApprove,
+  onReject,
+  isProcessing,
+}: {
+  application: ProductApplication;
+  shopName?: string;
+  onClose: () => void;
+  onApprove: () => void;
+  onReject: () => void;
+  isProcessing: boolean;
+}) {
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [activeTab, setActiveTab] = useState<"images" | "colors" | "video">("images");
+  const [selectedColorForPreview, setSelectedColorForPreview] = useState<string | null>(null);
+
+  const allImages = application.imageUrls || [];
+  const hasColorImages = Object.keys(application.colorImages || {}).length > 0;
+  const hasVideo = !!application.videoUrl;
+
+  const formatDate = (timestamp: Timestamp | Date | undefined) => {
+    if (!timestamp) return null;
+    try {
+      const date = timestamp instanceof Timestamp ? timestamp.toDate() : timestamp;
+      return date.toLocaleDateString("tr-TR", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  const formatPrice = (price: number, currency: string = "TL") => {
+    return `${price?.toLocaleString("tr-TR")} ${currency}`;
+  };
+
+  // Section Component
+  const Section = ({
+    title,
+    icon: Icon,
+    children,
+    className = "",
+  }: {
+    title: string;
+    icon: React.ElementType;
+    children: React.ReactNode;
+    className?: string;
+  }) => (
+    <div className={`bg-white rounded-lg border border-gray-200 overflow-hidden ${className}`}>
+      <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center gap-1.5">
+        <Icon className="w-3.5 h-3.5 text-gray-600" />
+        <h3 className="font-semibold text-gray-800 text-xs">{title}</h3>
+      </div>
+      <div className="p-3">{children}</div>
+    </div>
+  );
+
+  // Detail Row Component
+  const DetailRow = ({
+    label,
+    value,
+    icon: Icon,
+    valueClassName = "",
+  }: {
+    label: string;
+    value: React.ReactNode;
+    icon?: React.ElementType;
+    valueClassName?: string;
+  }) => {
+    if (value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)) {
+      return null;
+    }
+    return (
+      <div className="flex items-start justify-between py-1 border-b border-gray-100 last:border-b-0">
+        <div className="flex items-center gap-1.5 text-gray-600 text-xs">
+          {Icon && <Icon className="w-3.5 h-3.5" />}
+          <span>{label}</span>
+        </div>
+        <div className={`text-xs font-medium text-gray-900 text-right max-w-[60%] ${valueClassName}`}>
+          {value}
+        </div>
+      </div>
+    );
+  };
+
+  // Badge Component
+  const Badge = ({
+    children,
+    variant = "default",
+  }: {
+    children: React.ReactNode;
+    variant?: "default" | "success" | "warning" | "error" | "info";
+  }) => {
+    const variants = {
+      default: "bg-gray-100 text-gray-700",
+      success: "bg-green-100 text-green-700",
+      warning: "bg-yellow-100 text-yellow-700",
+      error: "bg-red-100 text-red-700",
+      info: "bg-blue-100 text-blue-700",
+    };
+    return (
+      <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${variants[variant]}`}>
+        {children}
+      </span>
+    );
+  };
+
+  // Get attribute display name
+  const getAttributeDisplayName = (key: string): string => {
+    const attributeNames: Record<string, string> = {
+      gender: "Cinsiyet",
+      clothingSizes: "Beden",
+      clothingSize: "Beden",
+      clothingFit: "Kalıp",
+      clothingType: "Giysi Tipi",
+      footwearSizes: "Ayakkabı Numarası",
+      footwearGender: "Cinsiyet",
+      pantSizes: "Pantolon Bedeni",
+      jewelryType: "Takı Tipi",
+      jewelryMaterial: "Malzeme",
+      jewelryMaterials: "Malzemeler",
+      computerComponent: "Bilgisayar Parçası",
+      consoleBrand: "Konsol Markası",
+      consoleVariant: "Konsol Varyantı",
+      kitchenAppliance: "Mutfak Aleti",
+      whiteGood: "Beyaz Eşya",
+      fantasyWearType: "Fantezi Giyim Tipi",
+      selectedFantasyWearType: "Fantezi Giyim Tipi",
+    };
+    return attributeNames[key] || key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, " $1");
+  };
+
+  // Format attribute value
+  const formatAttributeValue = (value: unknown): string => {
+    if (Array.isArray(value)) {
+      return value.join(", ");
+    }
+    if (typeof value === "boolean") {
+      return value ? "Evet" : "Hayır";
+    }
+    return String(value);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-2 overflow-y-auto">
+      <div className="relative w-full max-w-5xl bg-gray-50 rounded-xl shadow-2xl max-h-[95vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+              <Package className="w-4 h-4 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-gray-900 line-clamp-1">{application.productName}</h2>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-gray-500">ID: {application.ilan_no || application.id}</span>
+                {application.shopId ? (
+                  <Badge variant="info">
+                    <Store className="w-2.5 h-2.5 mr-0.5" />
+                    Mağaza
+                  </Badge>
+                ) : (
+                  <Badge variant="default">
+                    <User className="w-2.5 h-2.5 mr-0.5" />
+                    Bireysel
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="w-4 h-4 text-gray-500" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-3">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {/* Left Column - Media */}
+            <div className="space-y-3">
+              {/* Media Tabs */}
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <div className="flex border-b border-gray-200">
+                  <button
+                    onClick={() => setActiveTab("images")}
+                    className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
+                      activeTab === "images"
+                        ? "bg-blue-50 text-blue-700 border-b-2 border-blue-600"
+                        : "text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    <ImageIcon className="w-3.5 h-3.5 inline mr-1" />
+                    Görseller ({allImages.length})
+                  </button>
+                  {hasColorImages && (
+                    <button
+                      onClick={() => setActiveTab("colors")}
+                      className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
+                        activeTab === "colors"
+                          ? "bg-blue-50 text-blue-700 border-b-2 border-blue-600"
+                          : "text-gray-600 hover:bg-gray-50"
+                      }`}
+                    >
+                      <Palette className="w-3.5 h-3.5 inline mr-1" />
+                      Renkler
+                    </button>
+                  )}
+                  {hasVideo && (
+                    <button
+                      onClick={() => setActiveTab("video")}
+                      className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
+                        activeTab === "video"
+                          ? "bg-blue-50 text-blue-700 border-b-2 border-blue-600"
+                          : "text-gray-600 hover:bg-gray-50"
+                      }`}
+                    >
+                      <Video className="w-3.5 h-3.5 inline mr-1" />
+                      Video
+                    </button>
+                  )}
+                </div>
+
+                <div className="p-2">
+                  {/* Main Images Tab */}
+                  {activeTab === "images" && (
+                    <>
+                      {allImages.length > 0 ? (
+                        <>
+                          <div className="relative aspect-[4/3] bg-gray-100 rounded-lg overflow-hidden mb-2">
+                            <img
+                              src={allImages[activeImageIndex]}
+                              alt={`Ürün görseli ${activeImageIndex + 1}`}
+                              className="w-full h-full object-contain"
+                            />
+                            {allImages.length > 1 && (
+                              <>
+                                <button
+                                  onClick={() =>
+                                    setActiveImageIndex((prev) =>
+                                      prev === 0 ? allImages.length - 1 : prev - 1
+                                    )
+                                  }
+                                  className="absolute left-1.5 top-1/2 -translate-y-1/2 p-1.5 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
+                                >
+                                  <ChevronLeft className="w-4 h-4 text-gray-700" />
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setActiveImageIndex((prev) =>
+                                      prev === allImages.length - 1 ? 0 : prev + 1
+                                    )
+                                  }
+                                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
+                                >
+                                  <ChevronRight className="w-4 h-4 text-gray-700" />
+                                </button>
+                                <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                                  {activeImageIndex + 1} / {allImages.length}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          {allImages.length > 1 && (
+                            <div className="flex gap-1.5 overflow-x-auto pb-1">
+                              {allImages.map((url, index) => (
+                                <button
+                                  key={index}
+                                  onClick={() => setActiveImageIndex(index)}
+                                  className={`flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all ${
+                                    index === activeImageIndex
+                                      ? "border-blue-500 ring-1 ring-blue-200"
+                                      : "border-gray-200 hover:border-gray-300"
+                                  }`}
+                                >
+                                  <img
+                                    src={url}
+                                    alt={`Thumbnail ${index + 1}`}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="aspect-[4/3] bg-gray-100 rounded-lg flex items-center justify-center">
+                          <div className="text-center text-gray-400">
+                            <ImageIcon className="w-8 h-8 mx-auto mb-1" />
+                            <p className="text-xs">Görsel yok</p>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* Color Images Tab */}
+                  {activeTab === "colors" && hasColorImages && (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.keys(application.colorImages).map((color) => (
+                          <button
+                            key={color}
+                            onClick={() =>
+                              setSelectedColorForPreview(
+                                selectedColorForPreview === color ? null : color
+                              )
+                            }
+                            className={`px-2 py-1 rounded text-xs font-medium transition-all ${
+                              selectedColorForPreview === color
+                                ? "bg-blue-600 text-white"
+                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            }`}
+                          >
+                            {color}
+                            {application.colorQuantities?.[color] && (
+                              <span className="ml-0.5 opacity-70">
+                                ({application.colorQuantities[color]})
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                      {selectedColorForPreview && application.colorImages[selectedColorForPreview] && (
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {application.colorImages[selectedColorForPreview].map((url, idx) => (
+                            <div
+                              key={idx}
+                              className="aspect-square bg-gray-100 rounded overflow-hidden"
+                            >
+                              <img
+                                src={url}
+                                alt={`${selectedColorForPreview} - ${idx + 1}`}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {!selectedColorForPreview && (
+                        <p className="text-xs text-gray-500 text-center py-2">
+                          Görüntülemek için bir renk seçin
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Video Tab */}
+                  {activeTab === "video" && hasVideo && (
+                    <div className="aspect-video bg-black rounded-lg overflow-hidden">
+                      <video
+                        src={application.videoUrl}
+                        controls
+                        className="w-full h-full"
+                        poster={allImages[0]}
+                      >
+                        Tarayıcınız video etiketini desteklemiyor.
+                      </video>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Description */}
+              {application.description && (
+                <Section title="Açıklama" icon={Info}>
+                  <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed max-h-24 overflow-y-auto">
+                    {application.description}
+                  </p>
+                </Section>
+              )}
+            </div>
+
+            {/* Right Column - Details */}
+            <div className="space-y-2">
+              {/* Price & Basic Info */}
+              <Section title="Fiyat ve Stok" icon={DollarSign}>
+                <div className="space-y-0.5">
+                  <DetailRow
+                    label="Fiyat"
+                    value={formatPrice(application.price, application.currency)}
+                    icon={Tag}
+                    valueClassName="text-green-600 text-sm font-bold"
+                  />
+                  {application.originalPrice && application.originalPrice > application.price && (
+                    <DetailRow
+                      label="Orijinal Fiyat"
+                      value={
+                        <span className="line-through text-gray-400">
+                          {formatPrice(application.originalPrice, application.currency)}
+                        </span>
+                      }
+                    />
+                  )}
+                  {application.discountPercentage && application.discountPercentage > 0 && (
+                    <DetailRow
+                      label="İndirim"
+                      value={<Badge variant="error">%{application.discountPercentage}</Badge>}
+                    />
+                  )}
+                  <DetailRow label="Stok Miktarı" value={application.quantity} icon={Box} />
+                  {application.maxQuantity && (
+                    <DetailRow label="Maksimum Miktar" value={application.maxQuantity} />
+                  )}
+                  <DetailRow label="Durum" value={application.condition} icon={Star} />
+                  {application.bulkDiscountPercentage && application.bulkDiscountPercentage > 0 && (
+                    <DetailRow
+                      label="Toplu İndirim"
+                      value={`%${application.bulkDiscountPercentage}`}
+                    />
+                  )}
+                  {application.discountThreshold && application.discountThreshold > 0 && (
+                    <DetailRow
+                      label="İndirim Eşiği"
+                      value={`${application.discountThreshold} adet`}
+                    />
+                  )}
+                </div>
+              </Section>
+
+              {/* Category */}
+              <Section title="Kategori" icon={Layers}>
+                <div className="space-y-1">
+                  <DetailRow label="Ana Kategori" value={application.category} />
+                  {application.subcategory && (
+                    <DetailRow label="Alt Kategori" value={application.subcategory} />
+                  )}
+                  {application.subsubcategory && (
+                    <DetailRow label="Alt Alt Kategori" value={application.subsubcategory} />
+                  )}
+                  {application.brandModel && (
+                    <DetailRow label="Marka / Model" value={application.brandModel} />
+                  )}
+                </div>
+              </Section>
+
+              {/* Gender & Attributes */}
+              {(application.gender || (application.attributes && Object.keys(application.attributes).length > 0)) && (
+                <Section title="Ürün Özellikleri" icon={Tag}>
+                  <div className="space-y-1">
+                    {application.gender && (
+                      <DetailRow label="Cinsiyet" value={application.gender} />
+                    )}
+                    {application.attributes &&
+                      Object.entries(application.attributes).map(([key, value]) => {
+                        if (key === "gender" || !value) return null;
+                        const displayValue = formatAttributeValue(value);
+                        if (!displayValue || displayValue === "") return null;
+                        return (
+                          <DetailRow
+                            key={key}
+                            label={getAttributeDisplayName(key)}
+                            value={displayValue}
+                          />
+                        );
+                      })}
+                  </div>
+                </Section>
+              )}
+
+              {/* Colors */}
+              {application.availableColors && application.availableColors.length > 0 && (
+                <Section title="Renkler ve Stok" icon={Palette}>
+                  <div className="space-y-1">
+                    {application.availableColors.map((color) => (
+                      <div
+                        key={color}
+                        className="flex items-center justify-between py-1 px-2 bg-gray-50 rounded"
+                      >
+                        <span className="text-xs font-medium text-gray-700">{color}</span>
+                        {application.colorQuantities?.[color] !== undefined && (
+                          <Badge variant="info">{application.colorQuantities[color]} adet</Badge>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </Section>
+              )}
+
+              {/* Delivery */}
+              <Section title="Teslimat" icon={Truck}>
+                <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                  <div
+                    className={`w-7 h-7 rounded flex items-center justify-center ${
+                      application.deliveryOption === "Fast Delivery"
+                        ? "bg-yellow-100"
+                        : "bg-blue-100"
+                    }`}
+                  >
+                    {application.deliveryOption === "Fast Delivery" ? (
+                      <Zap className="w-3.5 h-3.5 text-yellow-600" />
+                    ) : (
+                      <Truck className="w-3.5 h-3.5 text-blue-600" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900 text-xs">{application.deliveryOption}</p>
+                    <p className="text-[10px] text-gray-500">
+                      {application.deliveryOption === "Fast Delivery"
+                        ? "Hızlı teslimat"
+                        : "Satıcı gönderimi"}
+                    </p>
+                  </div>
+                </div>
+              </Section>
+
+              {/* Seller Info */}
+              {(application.shopId ||
+                application.phone ||
+                application.region ||
+                application.address ||
+                application.iban) && (
+                <Section title="Satıcı Bilgileri" icon={User}>
+                  <div className="space-y-1">
+                    {application.shopId && shopName && (
+                      <DetailRow label="Mağaza" value={shopName} icon={Store} />
+                    )}
+                    <DetailRow label="Satıcı Adı" value={application.sellerName} />
+                    {application.ibanOwnerName && application.ibanOwnerSurname && (
+                      <DetailRow
+                        label="Hesap Sahibi"
+                        value={`${application.ibanOwnerName} ${application.ibanOwnerSurname}`}
+                      />
+                    )}
+                    {application.phone && (
+                      <DetailRow label="Telefon" value={application.phone} icon={Phone} />
+                    )}
+                    {application.region && (
+                      <DetailRow label="Bölge" value={application.region} icon={MapPin} />
+                    )}
+                    {application.address && (
+                      <DetailRow label="Adres" value={application.address} icon={MapPin} />
+                    )}
+                    {application.iban && (
+                      <DetailRow label="IBAN" value={application.iban} icon={CreditCard} />
+                    )}
+                  </div>
+                </Section>
+              )}
+
+              {/* Stats (if any exist) */}
+              {(application.clickCount > 0 ||
+                application.favoritesCount > 0 ||
+                application.cartCount > 0 ||
+                application.purchaseCount > 0 ||
+                application.averageRating > 0) && (
+                <Section title="İstatistikler" icon={TrendingUp}>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {application.clickCount > 0 && (
+                      <div className="bg-gray-50 rounded p-1.5 text-center">
+                        <MousePointer className="w-3.5 h-3.5 text-gray-400 mx-auto" />
+                        <p className="text-sm font-bold text-gray-900">{application.clickCount}</p>
+                        <p className="text-[10px] text-gray-500">Tıklama</p>
+                      </div>
+                    )}
+                    {application.favoritesCount > 0 && (
+                      <div className="bg-gray-50 rounded p-1.5 text-center">
+                        <Heart className="w-3.5 h-3.5 text-red-400 mx-auto" />
+                        <p className="text-sm font-bold text-gray-900">
+                          {application.favoritesCount}
+                        </p>
+                        <p className="text-[10px] text-gray-500">Favori</p>
+                      </div>
+                    )}
+                    {application.cartCount > 0 && (
+                      <div className="bg-gray-50 rounded p-1.5 text-center">
+                        <ShoppingCart className="w-3.5 h-3.5 text-blue-400 mx-auto" />
+                        <p className="text-sm font-bold text-gray-900">{application.cartCount}</p>
+                        <p className="text-[10px] text-gray-500">Sepet</p>
+                      </div>
+                    )}
+                    {application.purchaseCount > 0 && (
+                      <div className="bg-gray-50 rounded p-1.5 text-center">
+                        <CheckCircle className="w-3.5 h-3.5 text-green-400 mx-auto" />
+                        <p className="text-sm font-bold text-gray-900">
+                          {application.purchaseCount}
+                        </p>
+                        <p className="text-[10px] text-gray-500">Satış</p>
+                      </div>
+                    )}
+                  </div>
+                  {application.averageRating > 0 && (
+                    <div className="mt-1.5 flex items-center justify-center gap-1.5 bg-yellow-50 rounded p-1.5">
+                      <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
+                      <span className="text-sm font-bold text-gray-900">
+                        {application.averageRating.toFixed(1)}
+                      </span>
+                      <span className="text-[10px] text-gray-500">
+                        ({application.reviewCount} değerlendirme)
+                      </span>
+                    </div>
+                  )}
+                </Section>
+              )}
+
+              {/* Flags */}
+              {(application.isFeatured ||
+                application.isTrending ||
+                application.isBoosted ||
+                application.paused) && (
+                <Section title="Durum Etiketleri" icon={Tag}>
+                  <div className="flex flex-wrap gap-2">
+                    {application.isFeatured && <Badge variant="warning">⭐ Öne Çıkan</Badge>}
+                    {application.isTrending && <Badge variant="info">📈 Trend</Badge>}
+                    {application.isBoosted && <Badge variant="success">🚀 Boost Edilmiş</Badge>}
+                    {application.paused && <Badge variant="error">⏸️ Duraklatılmış</Badge>}
+                  </div>
+                </Section>
+              )}
+
+              {/* Timestamps */}
+              <Section title="Tarihler" icon={Calendar}>
+                <div className="space-y-1">
+                  <DetailRow label="Başvuru Tarihi" value={formatDate(application.createdAt)} />
+                  {application.updatedAt && (
+                    <DetailRow label="Güncelleme Tarihi" value={formatDate(application.updatedAt)} />
+                  )}
+                </div>
+              </Section>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Actions */}
+        <div className="bg-white border-t border-gray-200 px-4 py-2.5 flex items-center justify-between flex-shrink-0">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors font-medium text-sm"
+          >
+            Kapat
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onReject}
+              disabled={isProcessing}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed text-sm"
+            >
+              {isProcessing ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <XCircle className="w-3.5 h-3.5" />
+              )}
+              <span>Reddet</span>
+            </button>
+            <button
+              onClick={onApprove}
+              disabled={isProcessing}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed text-sm"
+            >
+              {isProcessing ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <CheckCircle className="w-3.5 h-3.5" />
+              )}
+              <span>Onayla</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function ProductApplications() {
@@ -53,6 +804,7 @@ export default function ProductApplications() {
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [selectedApplication, setSelectedApplication] =
     useState<ProductApplication | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [shopNames, setShopNames] = useState<Record<string, string>>({});
@@ -165,6 +917,16 @@ export default function ProductApplications() {
             relatedProductIds: ProductUtils.safeStringArray(
               data.relatedProductIds
             ),
+            maxQuantity:
+              data.maxQuantity != null
+                ? ProductUtils.safeInt(data.maxQuantity)
+                : undefined,
+            bulkDiscountPercentage:
+              data.bulkDiscountPercentage != null
+                ? ProductUtils.safeInt(data.bulkDiscountPercentage)
+                : undefined,
+            campaign: ProductUtils.safeStringNullable(data.campaign),
+            campaignName: ProductUtils.safeStringNullable(data.campaignName),
           } as ProductApplication;
         }) as ProductApplication[];
 
@@ -369,6 +1131,8 @@ export default function ProductApplications() {
       });
 
       showNotification("Ürün başarıyla onaylandı!");
+      setShowDetailModal(false);
+      setSelectedApplication(null);
     } catch (error) {
       console.error("Onaylama hatası:", error);
       showNotification("Ürün onaylanırken hata oluştu");
@@ -383,9 +1147,9 @@ export default function ProductApplications() {
 
   const rejectApplication = async (application: ProductApplication) => {
     if (processingIds.has(application.id)) return;
-  
+
     setProcessingIds((prev) => new Set(prev).add(application.id));
-  
+
     try {
       // ✅ Update status instead of deleting
       await updateDoc(doc(db, "product_applications", application.id), {
@@ -394,6 +1158,8 @@ export default function ProductApplications() {
         rejectionReason: "Başvuru reddedildi", // You may want to add a modal for custom reason
       });
       showNotification("Ürün başvurusu reddedildi");
+      setShowDetailModal(false);
+      setSelectedApplication(null);
     } catch (error) {
       console.error("Reddetme hatası:", error);
       showNotification("Ürün reddedilirken hata oluştu");
@@ -429,34 +1195,39 @@ export default function ProductApplications() {
     return `${price?.toLocaleString("tr-TR")} ${currency || "TL"}`;
   };
 
+  const openDetailModal = (application: ProductApplication) => {
+    setSelectedApplication(application);
+    setShowDetailModal(true);
+  };
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <header className="bg-white border-b border-gray-200 shadow-sm">
-          <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="max-w-7xl mx-auto px-4 py-2">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => router.back()}
-                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-100"
+                  className="flex items-center gap-1.5 text-gray-600 hover:text-gray-900 transition-colors px-2 py-1 rounded-lg hover:bg-gray-100 text-sm"
                 >
-                  <ArrowLeft className="w-4 h-4" />
+                  <ArrowLeft className="w-3.5 h-3.5" />
                   <span className="font-medium">Geri</span>
                 </button>
 
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-8 h-8 bg-blue-600 rounded-lg">
-                    <Package className="w-4 h-4 text-white" />
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-7 h-7 bg-blue-600 rounded-lg">
+                    <Package className="w-3.5 h-3.5 text-white" />
                   </div>
-                  <h1 className="text-xl font-semibold text-gray-900">
+                  <h1 className="text-base font-semibold text-gray-900">
                     Ürün Başvuruları
                   </h1>
                 </div>
               </div>
 
-              <div className="bg-blue-50 px-4 py-2 rounded-lg border border-blue-200">
-                <span className="text-sm text-blue-700 font-medium">
+              <div className="bg-blue-50 px-3 py-1 rounded-lg border border-blue-200">
+                <span className="text-xs text-blue-700 font-medium">
                   {loading ? "Yükleniyor..." : `${applications.length} Başvuru`}
                 </span>
               </div>
@@ -465,12 +1236,12 @@ export default function ProductApplications() {
         </header>
 
         {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-6 py-6">
+        <main className="max-w-7xl mx-auto px-4 py-3">
           {/* Loading State */}
           {loading && (
-            <div className="flex items-center justify-center py-12">
-              <div className="flex items-center gap-3 text-gray-600">
-                <Loader2 className="w-5 h-5 animate-spin" />
+            <div className="flex items-center justify-center py-8">
+              <div className="flex items-center gap-2 text-gray-600 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin" />
                 <span>Başvurular yükleniyor...</span>
               </div>
             </div>
@@ -478,14 +1249,14 @@ export default function ProductApplications() {
 
           {/* No Applications */}
           {!loading && applications.length === 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-              <div className="inline-flex items-center justify-center w-12 h-12 bg-gray-100 rounded-lg mb-4">
-                <Package className="w-6 h-6 text-gray-400" />
+            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+              <div className="inline-flex items-center justify-center w-10 h-10 bg-gray-100 rounded-lg mb-3">
+                <Package className="w-5 h-5 text-gray-400" />
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
+              <h3 className="text-sm font-medium text-gray-900 mb-1">
                 Başvuru bulunamadı
               </h3>
-              <p className="text-gray-500">
+              <p className="text-gray-500 text-xs">
                 Henüz onay bekleyen ürün başvurusu bulunmamaktadır.
               </p>
             </div>
@@ -495,8 +1266,8 @@ export default function ProductApplications() {
           {!loading && applications.length > 0 && (
             <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
               {/* Table Header */}
-              <div className="bg-gray-50 border-b border-gray-200 px-6 py-3">
-                <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-700 uppercase tracking-wide">
+              <div className="bg-gray-50 border-b border-gray-200 px-4 py-2">
+                <div className="grid grid-cols-12 gap-3 text-[10px] font-medium text-gray-700 uppercase tracking-wide">
                   <div className="col-span-1">Görsel</div>
                   <div className="col-span-3">Ürün Bilgileri</div>
                   <div className="col-span-2">Kategori</div>
@@ -512,9 +1283,10 @@ export default function ProductApplications() {
                 {applications.map((application) => (
                   <div
                     key={application.id}
-                    className="px-6 py-4 hover:bg-gray-50 transition-colors"
+                    className="px-4 py-2 hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => openDetailModal(application)}
                   >
-                    <div className="grid grid-cols-12 gap-4 items-center">
+                    <div className="grid grid-cols-12 gap-3 items-center">
                       {/* Image */}
                       <div className="col-span-1">
                         {application.imageUrls &&
@@ -523,43 +1295,48 @@ export default function ProductApplications() {
                             <img
                               src={application.imageUrls[0]}
                               alt="Ürün"
-                              className="w-12 h-12 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
-                              onClick={() => {
-                                setSelectedApplication(application);
-                                setSelectedImageIndex(0);
-                                setShowImageModal(true);
-                              }}
+                              className="w-10 h-10 object-cover rounded border border-gray-200 hover:opacity-80 transition-opacity"
                             />
                             {application.imageUrls.length > 1 && (
-                              <div className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium">
+                              <div className="absolute -top-1 -right-1 bg-blue-600 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-medium">
                                 {application.imageUrls.length}
+                              </div>
+                            )}
+                            {application.videoUrl && (
+                              <div className="absolute -bottom-1 -right-1 bg-purple-600 text-white rounded-full w-4 h-4 flex items-center justify-center">
+                                <Play className="w-2.5 h-2.5" />
                               </div>
                             )}
                           </div>
                         ) : (
-                          <div className="w-12 h-12 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
-                            <ImageIcon className="w-5 h-5 text-gray-400" />
+                          <div className="w-10 h-10 bg-gray-100 rounded border border-gray-200 flex items-center justify-center">
+                            <ImageIcon className="w-4 h-4 text-gray-400" />
                           </div>
                         )}
                       </div>
 
                       {/* Product Info */}
                       <div className="col-span-3">
-                        <h3 className="font-medium text-gray-900 line-clamp-1 mb-1">
+                        <h3 className="font-medium text-gray-900 line-clamp-1 text-xs">
                           {application.productName}
                         </h3>
-                        <p className="text-sm text-gray-600 line-clamp-2">
+                        <p className="text-[11px] text-gray-600 line-clamp-1">
                           {application.description}
                         </p>
+                        {application.brandModel && (
+                          <p className="text-[10px] text-gray-500">
+                            {application.brandModel}
+                          </p>
+                        )}
                       </div>
 
                       {/* Category */}
                       <div className="col-span-2">
-                        <div className="text-sm text-gray-900 font-medium">
+                        <div className="text-xs text-gray-900 font-medium">
                           {application.category}
                         </div>
                         {application.subcategory && (
-                          <div className="text-xs text-gray-500">
+                          <div className="text-[10px] text-gray-500">
                             {application.subcategory}
                           </div>
                         )}
@@ -567,23 +1344,32 @@ export default function ProductApplications() {
 
                       {/* Price */}
                       <div className="col-span-1">
-                        <span className="text-sm font-semibold text-green-600">
+                        <span className="text-xs font-semibold text-green-600">
                           {formatPrice(application.price, application.currency)}
                         </span>
+                        {application.originalPrice &&
+                          application.originalPrice > application.price && (
+                            <div className="text-[10px] text-gray-400 line-through">
+                              {formatPrice(
+                                application.originalPrice,
+                                application.currency
+                              )}
+                            </div>
+                          )}
                       </div>
 
                       {/* Type */}
                       <div className="col-span-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
                           {application.shopId ? (
                             <>
-                              <Store className="w-4 h-4 text-blue-600" />
+                              <Store className="w-3.5 h-3.5 text-blue-600" />
                               <div>
-                                <span className="text-sm text-blue-600 font-medium">
+                                <span className="text-xs text-blue-600 font-medium">
                                   Mağaza
                                 </span>
                                 {shopNames[application.shopId] && (
-                                  <div className="text-xs text-gray-500 truncate max-w-[80px]">
+                                  <div className="text-[10px] text-gray-500 truncate max-w-[60px]">
                                     {shopNames[application.shopId]}
                                   </div>
                                 )}
@@ -591,8 +1377,8 @@ export default function ProductApplications() {
                             </>
                           ) : (
                             <>
-                              <User className="w-4 h-4 text-gray-600" />
-                              <span className="text-sm text-gray-600 font-medium">
+                              <User className="w-3.5 h-3.5 text-gray-600" />
+                              <span className="text-xs text-gray-600 font-medium">
                                 Bireysel
                               </span>
                             </>
@@ -602,39 +1388,57 @@ export default function ProductApplications() {
 
                       {/* Date */}
                       <div className="col-span-2">
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Calendar className="w-4 h-4" />
+                        <div className="flex items-center gap-1 text-xs text-gray-600">
+                          <Calendar className="w-3.5 h-3.5" />
                           <span>{formatDate(application.createdAt)}</span>
                         </div>
                       </div>
 
                       {/* Actions */}
                       <div className="col-span-2">
-                        <div className="flex items-center justify-center gap-2">
+                        <div
+                          className="flex items-center justify-center gap-1.5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <button
-                            onClick={() => approveApplication(application)}
-                            disabled={processingIds.has(application.id)}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDetailModal(application);
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded transition-colors"
                           >
-                            {processingIds.has(application.id) ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <CheckCircle className="w-4 h-4" />
-                            )}
-                            <span>Onayla</span>
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Detay</span>
                           </button>
 
                           <button
-                            onClick={() => rejectApplication(application)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              approveApplication(application);
+                            }}
                             disabled={processingIds.has(application.id)}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                            className="flex items-center gap-1 px-2 py-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white text-xs font-medium rounded transition-colors disabled:cursor-not-allowed"
                           >
                             {processingIds.has(application.id) ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
                             ) : (
-                              <XCircle className="w-4 h-4" />
+                              <CheckCircle className="w-3.5 h-3.5" />
                             )}
-                            <span>Reddet</span>
+                          </button>
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              rejectApplication(application);
+                            }}
+                            disabled={processingIds.has(application.id)}
+                            className="flex items-center gap-1 px-2 py-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white text-xs font-medium rounded transition-colors disabled:cursor-not-allowed"
+                          >
+                            {processingIds.has(application.id) ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <XCircle className="w-3.5 h-3.5" />
+                            )}
                           </button>
                         </div>
                       </div>
@@ -646,38 +1450,57 @@ export default function ProductApplications() {
           )}
         </main>
 
-        {/* Image Modal */}
+        {/* Detail Modal */}
+        {showDetailModal && selectedApplication && (
+          <ProductDetailModal
+            application={selectedApplication}
+            shopName={
+              selectedApplication.shopId
+                ? shopNames[selectedApplication.shopId]
+                : undefined
+            }
+            onClose={() => {
+              setShowDetailModal(false);
+              setSelectedApplication(null);
+            }}
+            onApprove={() => approveApplication(selectedApplication)}
+            onReject={() => rejectApplication(selectedApplication)}
+            isProcessing={processingIds.has(selectedApplication.id)}
+          />
+        )}
+
+        {/* Legacy Image Modal (kept for backwards compatibility) */}
         {showImageModal && selectedApplication && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="relative max-w-4xl max-h-full bg-white rounded-xl overflow-hidden shadow-2xl">
-              <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-2">
+            <div className="relative max-w-3xl max-h-full bg-white rounded-lg overflow-hidden shadow-2xl">
+              <div className="flex items-center justify-between p-3 border-b border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-900">
                   {selectedApplication.productName} - Görseller
                 </h3>
                 <button
                   onClick={() => setShowImageModal(false)}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <X className="w-5 h-5 text-gray-500" />
+                  <X className="w-4 h-4 text-gray-500" />
                 </button>
               </div>
 
-              <div className="p-6">
-                <div className="mb-4">
+              <div className="p-4">
+                <div className="mb-3">
                   <img
                     src={selectedApplication.imageUrls[selectedImageIndex]}
                     alt={`Ürün görseli ${selectedImageIndex + 1}`}
-                    className="w-full max-h-96 object-contain rounded-lg border border-gray-200"
+                    className="w-full max-h-80 object-contain rounded border border-gray-200"
                   />
                 </div>
 
                 {selectedApplication.imageUrls.length > 1 && (
-                  <div className="flex gap-2 overflow-x-auto">
+                  <div className="flex gap-1.5 overflow-x-auto">
                     {selectedApplication.imageUrls.map((url, index) => (
                       <button
                         key={index}
                         onClick={() => setSelectedImageIndex(index)}
-                        className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+                        className={`flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all ${
                           index === selectedImageIndex
                             ? "border-blue-500"
                             : "border-gray-200 hover:border-gray-300"
