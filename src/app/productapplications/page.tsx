@@ -36,7 +36,7 @@ import {
   Phone,
   MapPin,
   CreditCard,
-  Hash,
+  
   Info,
   Layers,
   Eye,
@@ -48,7 +48,7 @@ import {
   MousePointer,
   Zap,
   TrendingUp,
-  Pause,
+  
   Video,
 } from "lucide-react";
 import { ProductUtils } from "../../models/Product";
