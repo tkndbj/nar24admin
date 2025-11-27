@@ -49,6 +49,7 @@ import { db } from "../lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { toast } from "react-hot-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Types
 interface ShopData {
@@ -114,6 +115,10 @@ function ShopDetailsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const shopId = searchParams.get("shopId");
+  const { user: authUser } = useAuth();
+
+  // Check if current user is a full admin (not semi-admin)
+  const isFullAdmin = authUser?.isAdmin === true && !authUser?.isSemiAdmin;
 
   // Refs
   const allFieldsContainerRef = useRef<HTMLDivElement | null>(null);
@@ -317,6 +322,7 @@ function ShopDetailsContent() {
     onFieldSave,
     savingField,
     setSavingField,
+    canEdit,
   }: {
     shop: ShopData;
     onFieldSave: (
@@ -325,6 +331,7 @@ function ShopDetailsContent() {
     ) => Promise<void>;
     savingField: string | null;
     setSavingField: (field: string | null) => void;
+    canEdit: boolean;
   }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const [editingField, setEditingField] = useState<string | null>(null);
@@ -534,7 +541,7 @@ function ShopDetailsContent() {
             const { display, type } = formatFieldValue(field.value);
             const isEditing = editingField === field.key;
             const isSaving = savingField === field.key;
-            const canEdit = field.editable && type !== "timestamp";
+            const fieldEditable = field.editable && type !== "timestamp";
 
             return (
               <div
@@ -556,7 +563,7 @@ function ShopDetailsContent() {
                       </span>
                     </div>
 
-                    {isEditing ? (
+                    {isEditing && canEdit ? (
                       <div className="flex items-center gap-1">
                         <input
                           type="text"
@@ -620,7 +627,7 @@ function ShopDetailsContent() {
                           )}
                         </span>
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {canEdit && (
+                          {canEdit && fieldEditable && (
                             <button
                               onClick={() =>
                                 startEditing(field.key, field.value)
@@ -831,6 +838,7 @@ function ShopDetailsContent() {
               onFieldSave={saveIndividualField}
               savingField={savingField}
               setSavingField={setSavingField}
+              canEdit={isFullAdmin}
             />
           </div>
 

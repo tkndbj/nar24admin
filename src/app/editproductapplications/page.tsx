@@ -8,7 +8,7 @@ import {
   query,
   orderBy,
   doc,
-  updateDoc,  
+  updateDoc,
   addDoc,
   Timestamp,
   getDoc,
@@ -32,6 +32,7 @@ import {
   Edit2,
   X,
   MessageSquare,
+  FileEdit,
 } from "lucide-react";
 
 interface ProductAttributes {
@@ -51,7 +52,7 @@ interface OriginalProductData {
   quantity?: number;
   deliveryOption?: string;
   videoUrl?: string | null;
-  availableColors?: string[]; 
+  availableColors?: string[];
   colorImages?: Record<string, string[]>;
   colorQuantities?: Record<string, number>;
   attributes?: ProductAttributes;
@@ -165,56 +166,55 @@ const RejectionModal: React.FC<RejectionModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-900 border border-white/20 rounded-xl max-w-md w-full">
-        <div className="flex items-center justify-between p-4 border-b border-white/20">
-          <h3 className="text-lg font-bold text-white">Reddetme Nedeni</h3>
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full border border-gray-200">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="text-base font-semibold text-gray-800">Reddetme Nedeni</h3>
           <button
             onClick={handleClose}
             disabled={isLoading}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors disabled:opacity-50"
+            className="p-1.5 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
           >
-            <X className="w-5 h-5 text-white" />
+            <X className="w-4 h-4 text-gray-500" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4">
-          <p className="text-sm text-gray-300 mb-4">
-            <strong>{productName}</strong> ürünü için düzenleme başvurusunu
-            neden reddediyorsunuz?
+        <form onSubmit={handleSubmit} className="p-5">
+          <p className="text-sm text-gray-600 mb-3">
+            <span className="font-medium text-gray-800">{productName}</span> ürünü için düzenleme başvurusunu neden reddediyorsunuz?
           </p>
 
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="Reddetme nedeninizi buraya yazın..."
-            className="w-full h-32 px-3 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-red-500"
+            className="w-full h-28 px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-gray-800 placeholder-gray-400 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400"
             disabled={isLoading}
             required
           />
 
-          <div className="flex gap-3 mt-4">
+          <div className="flex gap-2 mt-4">
             <button
               type="button"
               onClick={handleClose}
               disabled={isLoading}
-              className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors disabled:opacity-50"
+              className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors text-sm font-medium disabled:opacity-50"
             >
               İptal
             </button>
             <button
               type="submit"
               disabled={isLoading || !reason.trim()}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-600/50 text-white rounded-lg transition-colors"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-md transition-colors text-sm font-medium"
             >
               {isLoading ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                   Reddediliyor...
                 </>
               ) : (
                 <>
-                  <MessageSquare className="w-4 h-4" />
+                  <MessageSquare className="w-3.5 h-3.5" />
                   Reddet
                 </>
               )}
@@ -428,14 +428,14 @@ export default function EditProductApplicationsPage() {
         "Shop ID:",
         application.shopId || application.originalProductData?.shopId || "None"
       );
-  
+
       // Determine the correct collection based on shopId
       const isShopProduct =
         application.shopId || application.originalProductData?.shopId;
       const collection_name = isShopProduct ? "shop_products" : "products";
-  
+
       console.log(`Using collection: ${collection_name}`);
-  
+
       // Check if the original product exists
       const productRef = doc(
         db,
@@ -443,7 +443,7 @@ export default function EditProductApplicationsPage() {
         application.originalProductId
       );
       const productSnapshot = await getDoc(productRef);
-  
+
       if (!productSnapshot.exists()) {
         console.error(
           `Original product not found in ${collection_name}:`,
@@ -454,52 +454,52 @@ export default function EditProductApplicationsPage() {
         );
         return;
       }
-  
+
       console.log("Original product found, proceeding with update...");
-  
+
       // CLEAN THE UPDATE DATA - Remove undefined, null values and empty arrays/objects
       const cleanUpdateData = (obj: unknown): unknown => {
         if (obj === null || obj === undefined) {
           return null;
         }
-  
+
         if (Array.isArray(obj)) {
           const cleaned = obj
             .map((item) => cleanUpdateData(item))
             .filter((item) => item !== null && item !== undefined);
           return cleaned.length > 0 ? cleaned : null;
         }
-  
+
         if (typeof obj === "object") {
           const cleaned: Record<string, unknown> = {};
           Object.keys(obj).forEach((key) => {
             const cleanedValue = cleanUpdateData(
               (obj as Record<string, unknown>)[key]
             );
-  
+
             if (cleanedValue !== null && cleanedValue !== undefined) {
               cleaned[key] = cleanedValue;
             }
           });
           return Object.keys(cleaned).length > 0 ? cleaned : null;
         }
-  
+
         return obj;
       };
-  
+
       // ✅ FIX: Check if colors were completely removed
-      const hasColors = 
-        application.availableColors && 
+      const hasColors =
+        application.availableColors &&
         application.availableColors.length > 0;
-      
-      const hasColorQuantities = 
-        application.colorQuantities && 
+
+      const hasColorQuantities =
+        application.colorQuantities &&
         Object.keys(application.colorQuantities).length > 0;
-      
-      const hasColorImages = 
-        application.colorImages && 
+
+      const hasColorImages =
+        application.colorImages &&
         Object.keys(application.colorImages).length > 0;
-  
+
       console.log("Color data status:", {
         hasColors,
         hasColorQuantities,
@@ -508,7 +508,7 @@ export default function EditProductApplicationsPage() {
         colorQuantities: application.colorQuantities,
         colorImages: application.colorImages
       });
-  
+
       // Build update data with cleaning
       const rawUpdateData: Partial<OriginalProductData> = {
         productName: application.productName,
@@ -522,8 +522,8 @@ export default function EditProductApplicationsPage() {
         subsubcategory: application.subsubcategory,
         quantity: application.quantity,
         deliveryOption: application.deliveryOption,
-        availableColors: hasColors && application.availableColors 
-        ? application.availableColors 
+        availableColors: hasColors && application.availableColors
+        ? application.availableColors
         : [],
         colorImages: hasColors && hasColorImages ? application.colorImages : {},
         colorQuantities: hasColors && hasColorQuantities ? application.colorQuantities : {},
@@ -531,30 +531,30 @@ export default function EditProductApplicationsPage() {
         gender: (() => {
           // Priority 1: Root level from application
           if (application.gender) return application.gender;
-          
+
           // Priority 2: Root level from original
           if (application.originalProductData?.gender) {
             console.log("⚠️ Preserving gender from original root level");
             return application.originalProductData.gender;
           }
-          
+
           // Priority 3: Attributes from original (Flutter products)
           if (application.originalProductData?.attributes?.gender &&
               typeof application.originalProductData.attributes.gender === "string") {
             console.log("⚠️ Preserving gender from original attributes");
             return application.originalProductData.attributes.gender;
           }
-          
+
           return null;
         })(),
         modifiedAt: Timestamp.now(),
       };
-  
+
       // ✅ FIXED: Handle videoUrl properly (set to null if removed)
       if (application.videoUrl !== undefined) {
         rawUpdateData.videoUrl = application.videoUrl || null;
       }
-  
+
       // Clean the update data
       const updateData: Record<string, unknown> = {};
       Object.keys(rawUpdateData).forEach((key) => {
@@ -565,10 +565,10 @@ export default function EditProductApplicationsPage() {
           updateData[key] = cleanedValue;
         }
       });
-  
+
       // ✅ FIX: Explicitly set colorImages and colorQuantities to empty objects if no colors
       if (!hasColors) {
-        updateData.availableColors = []; 
+        updateData.availableColors = [];
         updateData.colorImages = {};
         updateData.colorQuantities = {};
       } else {
@@ -577,32 +577,32 @@ export default function EditProductApplicationsPage() {
           updateData.availableColors = application.availableColors;
         }
       }
-  
+
       // Always include modifiedAt
       updateData.modifiedAt = Timestamp.now();
-  
-      
-  
+
+
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await updateDoc(productRef, updateData as any);
-      
-  
+
+
       // Delete the edit application
       await updateDoc(doc(db, "product_edit_applications", application.id), {
         status: "approved",
         reviewedAt: Timestamp.now(),
       });
-      
-  
+
+
       // Send notifications based on product type
       await sendNotifications(application, "approved");
       console.log("Notifications sent successfully");
-  
+
       setSelectedApplication(null);
       alert("Başvuru başarıyla onaylandı!");
     } catch (error) {
       console.error("Error approving application:", error);
-  
+
       // More specific error handling
       if (isFirebaseError(error)) {
         if (error.code === "not-found") {
@@ -694,12 +694,12 @@ export default function EditProductApplicationsPage() {
     if (!hasChanged) return null;
 
     return (
-      <div className="grid grid-cols-3 gap-2 py-2 border-b border-white/10">
-        <div className="text-xs font-medium text-white">{label}</div>
-        <div className="text-xs text-red-300 bg-red-500/10 rounded px-2 py-1">
+      <div className="grid grid-cols-3 gap-2 py-2 border-b border-gray-100">
+        <div className="text-xs font-medium text-gray-700">{label}</div>
+        <div className="text-xs text-red-700 bg-red-50 rounded px-2 py-1 truncate">
           {formatValue(oldValue)}
         </div>
-        <div className="text-xs text-green-300 bg-green-500/10 rounded px-2 py-1">
+        <div className="text-xs text-green-700 bg-green-50 rounded px-2 py-1 truncate">
           {formatValue(newValue)}
         </div>
       </div>
@@ -737,33 +737,33 @@ export default function EditProductApplicationsPage() {
 
     return (
       <div className="mb-4">
-        <h4 className="text-sm font-medium text-white mb-2">{label}</h4>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-xs text-gray-400 mb-1">Eski:</p>
+        <h4 className="text-xs font-medium text-gray-700 mb-2">{label}</h4>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-red-50 rounded-md p-2">
+            <p className="text-xs text-red-600 mb-1 font-medium">Eski:</p>
             <div className="flex gap-1 flex-wrap">
               {oldImages.map((url, index) => (
                 <img
                   key={index}
                   src={url}
                   alt={`Eski ${index + 1}`}
-                  className="w-12 h-12 object-cover rounded"
+                  className="w-10 h-10 object-cover rounded border border-red-200"
                 />
               ))}
               {oldImages.length === 0 && (
-                <span className="text-xs text-gray-500">Resim yok</span>
+                <span className="text-xs text-red-400">Resim yok</span>
               )}
             </div>
           </div>
-          <div>
-            <p className="text-xs text-gray-400 mb-1">Yeni:</p>
+          <div className="bg-green-50 rounded-md p-2">
+            <p className="text-xs text-green-600 mb-1 font-medium">Yeni:</p>
             <div className="flex gap-1 flex-wrap">
               {newImages.map((url, index) => (
                 <img
                   key={index}
                   src={url}
                   alt={`Yeni ${index + 1}`}
-                  className="w-12 h-12 object-cover rounded border border-green-400"
+                  className="w-10 h-10 object-cover rounded border border-green-300"
                 />
               ))}
             </div>
@@ -776,10 +776,10 @@ export default function EditProductApplicationsPage() {
   if (loading) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-          <div className="text-white text-center">
-            <div className="animate-spin w-8 h-8 border-2 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
-            <p>Başvurular yükleniyor...</p>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full mx-auto mb-3"></div>
+            <p className="text-gray-600 text-sm">Başvurular yükleniyor...</p>
           </div>
         </div>
       </ProtectedRoute>
@@ -788,26 +788,32 @@ export default function EditProductApplicationsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      <div className="min-h-screen bg-gray-50">
         {/* Header */}
-        <header className="backdrop-blur-xl bg-white/10 border-b border-white/20 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between py-4">
-              <div className="flex items-center gap-4">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex items-center justify-between h-14">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => router.back()}
-                  className="flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-white"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors text-sm"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   Geri
                 </button>
-                <div>
-                  <h1 className="text-xl font-bold text-white">
-                    Ürün Düzenleme Başvuruları
-                  </h1>
-                  <p className="text-sm text-gray-300">
-                    {applications.length} başvuru
-                  </p>
+                <div className="h-5 w-px bg-gray-200"></div>
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-blue-100 rounded-md">
+                    <FileEdit className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div>
+                    <h1 className="text-sm font-semibold text-gray-900">
+                      Ürün Düzenleme Başvuruları
+                    </h1>
+                    <p className="text-xs text-gray-500">
+                      {applications.length} başvuru
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -815,49 +821,51 @@ export default function EditProductApplicationsPage() {
         </header>
 
         {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
           {applications.length === 0 ? (
-            <div className="text-center py-12">
-              <Edit2 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-white mb-2">
+            <div className="text-center py-16 bg-white rounded-lg border border-gray-200">
+              <Edit2 className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <h2 className="text-lg font-semibold text-gray-900 mb-1">
                 Ürün Güncelleme Yok
               </h2>
-              <p className="text-gray-300">
+              <p className="text-sm text-gray-500">
                 Henüz hiç ürün düzenleme başvurusu yapılmamış.
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               {applications.map((app) => (
                 <div
                   key={app.id}
-                  className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4 cursor-pointer hover:bg-white/20 transition-colors"
+                  className="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:border-blue-300 hover:shadow-sm transition-all"
                   onClick={() => setSelectedApplication(app)}
                 >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="flex items-center justify-center w-10 h-10 bg-blue-500/20 rounded-lg">
-                      <Package className="w-5 h-5 text-blue-400" />
+                  <div className="flex items-start gap-2.5 mb-2.5">
+                    <div className="flex items-center justify-center w-9 h-9 bg-blue-50 rounded-lg flex-shrink-0">
+                      <Package className="w-4 h-4 text-blue-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-white font-semibold truncate">
+                      <h3 className="text-sm font-medium text-gray-900 truncate">
                         {app.productName}
                       </h3>
-                      <p className="text-gray-400 text-xs">
-                        ID: {app.id.substring(0, 8)}...
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-xs text-gray-400">
+                          {app.id.substring(0, 8)}...
+                        </span>
                         {(app.shopId || app.originalProductData?.shopId) && (
-                          <span className="ml-2 px-1 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs">
+                          <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium">
                             SHOP
                           </span>
                         )}
-                      </p>
+                      </div>
                     </div>
                     <span
-                      className={`px-2 py-1 rounded text-xs font-medium ${
+                      className={`px-2 py-1 rounded text-[10px] font-medium flex-shrink-0 ${
                         app.status === "pending"
-                          ? "bg-yellow-500/20 text-yellow-400"
+                          ? "bg-amber-50 text-amber-700"
                           : app.status === "approved"
-                          ? "bg-green-500/20 text-green-400"
-                          : "bg-red-500/20 text-red-400"
+                          ? "bg-green-50 text-green-700"
+                          : "bg-red-50 text-red-700"
                       }`}
                     >
                       {app.status === "pending"
@@ -868,12 +876,12 @@ export default function EditProductApplicationsPage() {
                     </span>
                   </div>
 
-                  <div className="space-y-1 text-xs text-gray-300">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3 text-xs text-gray-500 pt-2 border-t border-gray-100">
+                    <div className="flex items-center gap-1">
                       <User className="w-3 h-3" />
-                      <span>{app.userId.substring(0, 8)}...</span>
+                      <span>{app.userId.substring(0, 6)}...</span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
                       <span>
                         {app.submittedAt
@@ -881,9 +889,9 @@ export default function EditProductApplicationsPage() {
                           ?.toLocaleDateString("tr-TR")}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 ml-auto">
                       <DollarSign className="w-3 h-3" />
-                      <span>₺{app.price}</span>
+                      <span className="font-medium text-gray-700">₺{app.price}</span>
                     </div>
                   </div>
                 </div>
@@ -894,192 +902,191 @@ export default function EditProductApplicationsPage() {
 
         {/* Main Modal */}
         {selectedApplication && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-white/20 rounded-xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-hidden border border-gray-200">
               {/* Modal Header */}
-              <div className="flex items-center justify-between p-4 border-b border-white/20">
-                <div>
-                  <h2 className="text-xl font-bold text-white">
-                    {selectedApplication.productName}
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm text-gray-300">
-                      ID: {selectedApplication.originalProductId}
-                    </p>
-                    {(selectedApplication.shopId ||
-                      selectedApplication.originalProductData?.shopId) && (
-                      <span className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-xs">
-                        SHOP PRODUCT
-                      </span>
-                    )}
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-gray-50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Package className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-gray-900">
+                      {selectedApplication.productName}
+                    </h2>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <p className="text-xs text-gray-500">
+                        ID: {selectedApplication.originalProductId}
+                      </p>
+                      {(selectedApplication.shopId ||
+                        selectedApplication.originalProductData?.shopId) && (
+                        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded text-[10px] font-medium">
+                          SHOP PRODUCT
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   {selectedApplication.status === "pending" && (
                     <>
                       <button
                         onClick={() => handleApprove(selectedApplication)}
                         disabled={processing}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 text-white rounded-lg transition-colors text-sm"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-md transition-colors text-sm font-medium"
                       >
                         <CheckCircle className="w-4 h-4" />
-                        {processing ? "Onaylanıyor..." : "Onayla"}
+                        {processing ? "İşleniyor..." : "Onayla"}
                       </button>
                       <button
                         onClick={() => handleReject(selectedApplication)}
                         disabled={processing}
-                        className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-600/50 text-white rounded-lg transition-colors text-sm"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-md transition-colors text-sm font-medium"
                       >
                         <XCircle className="w-4 h-4" />
-                        {processing ? "Reddediliyor..." : "Reddet"}
+                        {processing ? "İşleniyor..." : "Reddet"}
                       </button>
                     </>
                   )}
                   <button
                     onClick={() => setSelectedApplication(null)}
-                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                    className="p-1.5 hover:bg-gray-200 rounded-md transition-colors ml-1"
                   >
-                    <X className="w-5 h-5 text-white" />
+                    <X className="w-5 h-5 text-gray-500" />
                   </button>
                 </div>
               </div>
 
-              {/* Modal Content - keeping existing content structure */}
-              <div className="p-4 overflow-y-auto max-h-[calc(90vh-80px)]">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Left Column - Changes */}
-                  <div>
-                    <h3 className="text-lg font-semibold text-white mb-4">
-                      Değişiklikler
-                    </h3>
-                    <div className="space-y-1">
-                      <div className="grid grid-cols-3 gap-2 py-2 border-b border-white/20 text-xs font-medium text-gray-400">
-                        <div>Alan</div>
-                        <div>Eski</div>
-                        <div>Yeni</div>
-                      </div>
-
-                      <CompactComparisonField
-                        label="Ürün Adı"
-                        oldValue={
-                          selectedApplication.originalProductData?.productName
-                        }
-                        newValue={selectedApplication.productName}
-                      />
-                      <CompactComparisonField
-                        label="Fiyat"
-                        oldValue={
-                          selectedApplication.originalProductData?.price
-                        }
-                        newValue={selectedApplication.price}
-                      />
-                      <CompactComparisonField
-                        label="Miktar"
-                        oldValue={
-                          selectedApplication.originalProductData?.quantity
-                        }
-                        newValue={selectedApplication.quantity}
-                      />
-                      <CompactComparisonField
-                        label="Durum"
-                        oldValue={
-                          selectedApplication.originalProductData?.condition
-                        }
-                        newValue={selectedApplication.condition}
-                      />
-                      <CompactComparisonField
-                        label="Marka"
-                        oldValue={
-                          selectedApplication.originalProductData?.brandModel
-                        }
-                        newValue={selectedApplication.brandModel}
-                      />
-                      <CompactComparisonField
-  label="Cinsiyet"
-  oldValue={(() => {
-    // For Flutter products: check attributes first, then root
-    const orig = selectedApplication.originalProductData;
-    if (orig?.attributes?.gender) return orig.attributes.gender;
-    return orig?.gender;
-  })()}
-  newValue={(() => {
-    // For edited products: ALWAYS check root level (web app moves it there)
-    const app = selectedApplication;
-    if (app.gender) return app.gender;
-    
-    // Fallback: if somehow still in attributes (shouldn't happen after web edit)
-    if (app.attributes?.gender) return app.attributes.gender;
-    
-    // Last resort: check original to preserve it
-    const orig = app.originalProductData;
-    if (orig?.gender) return orig.gender;
-    if (orig?.attributes?.gender) return orig.attributes.gender;
-    
-    return null;
-  })()}
-/>
-
-                      <CompactComparisonField
-                        label="Kategori"
-                        oldValue={
-                          selectedApplication.originalProductData?.category
-                        }
-                        newValue={selectedApplication.category}
-                      />
-                      <CompactComparisonField
-                        label="Teslimat"
-                        oldValue={
-                          selectedApplication.originalProductData
-                            ?.deliveryOption
-                        }
-                        newValue={selectedApplication.deliveryOption}
-                      />
-
-                      {/* Description */}
-                      {selectedApplication.originalProductData?.description !==
-                        selectedApplication.description && (
-                        <div className="py-2 border-b border-white/10">
-                          <div className="text-xs font-medium text-white mb-2">
-                            Açıklama
-                          </div>
-                          <div className="grid grid-cols-1 gap-2">
-                            <div className="text-xs text-red-300 bg-red-500/10 rounded px-2 py-1 max-h-20 overflow-y-auto">
-                              {formatValue(
-                                selectedApplication.originalProductData
-                                  ?.description
-                              )}
-                            </div>
-                            <div className="text-xs text-green-300 bg-green-500/10 rounded px-2 py-1 max-h-20 overflow-y-auto">
-                              {formatValue(selectedApplication.description)}
-                            </div>
-                          </div>
+              {/* Modal Content */}
+              <div className="p-5 overflow-y-auto max-h-[calc(90vh-64px)]">
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+                  {/* Left Column - Changes (3/5) */}
+                  <div className="lg:col-span-3">
+                    <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
+                      <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                        <Edit2 className="w-4 h-4 text-blue-600" />
+                        Değişiklikler
+                      </h3>
+                      <div className="space-y-0">
+                        <div className="grid grid-cols-3 gap-2 py-2 border-b border-gray-200 text-xs font-medium text-gray-500">
+                          <div>Alan</div>
+                          <div>Eski Değer</div>
+                          <div>Yeni Değer</div>
                         </div>
-                      )}
 
-                     {/* Dynamic Attributes */}
-{Object.keys({
-  ...selectedApplication.originalProductData?.attributes,
-  ...selectedApplication.attributes,
-}).map((key) => {
-  // ✅ SKIP gender - it's already shown in its own field above
-  if (key === 'gender') return null;
-  
-  return (
-    <CompactComparisonField
-      key={key}
-      label={key}
-      oldValue={
-        selectedApplication.originalProductData
-          ?.attributes?.[key]
-      }
-      newValue={selectedApplication.attributes?.[key]}
-    />
-  );
-})}
+                        <CompactComparisonField
+                          label="Ürün Adı"
+                          oldValue={
+                            selectedApplication.originalProductData?.productName
+                          }
+                          newValue={selectedApplication.productName}
+                        />
+                        <CompactComparisonField
+                          label="Fiyat"
+                          oldValue={
+                            selectedApplication.originalProductData?.price
+                          }
+                          newValue={selectedApplication.price}
+                        />
+                        <CompactComparisonField
+                          label="Miktar"
+                          oldValue={
+                            selectedApplication.originalProductData?.quantity
+                          }
+                          newValue={selectedApplication.quantity}
+                        />
+                        <CompactComparisonField
+                          label="Durum"
+                          oldValue={
+                            selectedApplication.originalProductData?.condition
+                          }
+                          newValue={selectedApplication.condition}
+                        />
+                        <CompactComparisonField
+                          label="Marka"
+                          oldValue={
+                            selectedApplication.originalProductData?.brandModel
+                          }
+                          newValue={selectedApplication.brandModel}
+                        />
+                        <CompactComparisonField
+                          label="Cinsiyet"
+                          oldValue={(() => {
+                            const orig = selectedApplication.originalProductData;
+                            if (orig?.attributes?.gender) return orig.attributes.gender;
+                            return orig?.gender;
+                          })()}
+                          newValue={(() => {
+                            const app = selectedApplication;
+                            if (app.gender) return app.gender;
+                            if (app.attributes?.gender) return app.attributes.gender;
+                            const orig = app.originalProductData;
+                            if (orig?.gender) return orig.gender;
+                            if (orig?.attributes?.gender) return orig.attributes.gender;
+                            return null;
+                          })()}
+                        />
+                        <CompactComparisonField
+                          label="Kategori"
+                          oldValue={
+                            selectedApplication.originalProductData?.category
+                          }
+                          newValue={selectedApplication.category}
+                        />
+                        <CompactComparisonField
+                          label="Teslimat"
+                          oldValue={
+                            selectedApplication.originalProductData
+                              ?.deliveryOption
+                          }
+                          newValue={selectedApplication.deliveryOption}
+                        />
+
+                        {/* Description */}
+                        {selectedApplication.originalProductData?.description !==
+                          selectedApplication.description && (
+                          <div className="py-2 border-b border-gray-100">
+                            <div className="text-xs font-medium text-gray-700 mb-2">
+                              Açıklama
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="text-xs text-red-700 bg-red-50 rounded px-2 py-1.5 max-h-16 overflow-y-auto">
+                                {formatValue(
+                                  selectedApplication.originalProductData
+                                    ?.description
+                                )}
+                              </div>
+                              <div className="text-xs text-green-700 bg-green-50 rounded px-2 py-1.5 max-h-16 overflow-y-auto">
+                                {formatValue(selectedApplication.description)}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Dynamic Attributes */}
+                        {Object.keys({
+                          ...selectedApplication.originalProductData?.attributes,
+                          ...selectedApplication.attributes,
+                        }).map((key) => {
+                          if (key === 'gender') return null;
+                          return (
+                            <CompactComparisonField
+                              key={key}
+                              label={key}
+                              oldValue={
+                                selectedApplication.originalProductData
+                                  ?.attributes?.[key]
+                              }
+                              newValue={selectedApplication.attributes?.[key]}
+                            />
+                          );
+                        })}
+                      </div>
                     </div>
 
-                    {/* Images */}
-                    <div className="mt-6">
+                    {/* Images Section */}
+                    <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 mt-4">
+                      <h3 className="text-sm font-semibold text-gray-900 mb-3">Medya Değişiklikleri</h3>
                       <ImageComparison
                         label="Ürün Resimleri"
                         oldImages={ensureArray(
@@ -1111,13 +1118,13 @@ export default function EditProductApplicationsPage() {
                         selectedApplication.videoUrl) &&
                         selectedApplication.originalProductData?.videoUrl !==
                           selectedApplication.videoUrl && (
-                          <div className="mb-4">
-                            <h4 className="text-sm font-medium text-white mb-2">
+                          <div className="mb-3">
+                            <h4 className="text-xs font-medium text-gray-700 mb-2">
                               Video
                             </h4>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <p className="text-xs text-gray-400 mb-1">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="bg-red-50 rounded-md p-2">
+                                <p className="text-xs text-red-600 mb-1 font-medium">
                                   Eski:
                                 </p>
                                 {selectedApplication.originalProductData
@@ -1128,26 +1135,26 @@ export default function EditProductApplicationsPage() {
                                         .videoUrl
                                     }
                                     controls
-                                    className="w-full h-20 rounded"
+                                    className="w-full h-16 rounded"
                                   />
                                 ) : (
-                                  <span className="text-xs text-gray-500">
+                                  <span className="text-xs text-red-400">
                                     Video yok
                                   </span>
                                 )}
                               </div>
-                              <div>
-                                <p className="text-xs text-gray-400 mb-1">
+                              <div className="bg-green-50 rounded-md p-2">
+                                <p className="text-xs text-green-600 mb-1 font-medium">
                                   Yeni:
                                 </p>
                                 {selectedApplication.videoUrl ? (
                                   <video
                                     src={selectedApplication.videoUrl}
                                     controls
-                                    className="w-full h-20 rounded border border-green-400"
+                                    className="w-full h-16 rounded border border-green-300"
                                   />
                                 ) : (
-                                  <span className="text-xs text-gray-500">
+                                  <span className="text-xs text-green-400">
                                     Video yok
                                   </span>
                                 )}
@@ -1158,32 +1165,45 @@ export default function EditProductApplicationsPage() {
                     </div>
                   </div>
 
-                  {/* Right Column - User & Product Info */}
-                  <div>
-                    <h3 className="text-lg font-semibold text-white mb-4">
-                      Başvuru Bilgileri
-                    </h3>
-
+                  {/* Right Column - User & Product Info (2/5) */}
+                  <div className="lg:col-span-2 space-y-4">
                     {/* Application Info */}
-                    <div className="bg-white/5 border border-white/10 rounded-lg p-3 mb-4">
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div className="flex items-center gap-2 text-gray-300">
-                          <User className="w-4 h-4" />
-                          <span>Kullanıcı: {selectedApplication.userId}</span>
+                    <div className="bg-white rounded-lg border border-gray-200 p-4">
+                      <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-gray-500" />
+                        Başvuru Bilgileri
+                      </h3>
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between py-1.5 border-b border-gray-100">
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <User className="w-3.5 h-3.5" />
+                            <span>Kullanıcı</span>
+                          </div>
+                          <span className="text-xs text-gray-700 font-medium">{selectedApplication.userId.substring(0, 12)}...</span>
                         </div>
-                        <div className="flex items-center gap-2 text-gray-300">
-                          <Calendar className="w-4 h-4" />
-                          <span>
-                            Tarih:{" "}
+                        <div className="flex items-center justify-between py-1.5 border-b border-gray-100">
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <Calendar className="w-3.5 h-3.5" />
+                            <span>Tarih</span>
+                          </div>
+                          <span className="text-xs text-gray-700 font-medium">
                             {selectedApplication.submittedAt
                               ?.toDate?.()
                               ?.toLocaleDateString("tr-TR")}
                           </span>
                         </div>
-                        <div className="flex items-center gap-2 text-gray-300">
-                          <Clock className="w-4 h-4" />
-                          <span>
-                            Durum:{" "}
+                        <div className="flex items-center justify-between py-1.5 border-b border-gray-100">
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>Durum</span>
+                          </div>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                            selectedApplication.status === "pending"
+                              ? "bg-amber-50 text-amber-700"
+                              : selectedApplication.status === "approved"
+                              ? "bg-green-50 text-green-700"
+                              : "bg-red-50 text-red-700"
+                          }`}>
                             {selectedApplication.status === "pending"
                               ? "Beklemede"
                               : selectedApplication.status === "approved"
@@ -1191,20 +1211,23 @@ export default function EditProductApplicationsPage() {
                               : "Reddedildi"}
                           </span>
                         </div>
-                        <div className="flex items-center gap-2 text-gray-300">
-                          <Package className="w-4 h-4" />
-                          <span>
-                            Orijinal ID: {selectedApplication.originalProductId}
-                          </span>
+                        <div className="flex items-center justify-between py-1.5 border-b border-gray-100">
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <Package className="w-3.5 h-3.5" />
+                            <span>Ürün ID</span>
+                          </div>
+                          <span className="text-xs text-gray-700 font-mono">{selectedApplication.originalProductId.substring(0, 12)}...</span>
                         </div>
                         {(selectedApplication.shopId ||
                           selectedApplication.originalProductData?.shopId) && (
-                          <div className="col-span-2 flex items-center gap-2 text-blue-300">
-                            <Package className="w-4 h-4" />
-                            <span>
-                              Shop ID:{" "}
-                              {selectedApplication.shopId ||
-                                selectedApplication.originalProductData?.shopId}
+                          <div className="flex items-center justify-between py-1.5">
+                            <div className="flex items-center gap-2 text-xs text-blue-500">
+                              <Package className="w-3.5 h-3.5" />
+                              <span>Shop ID</span>
+                            </div>
+                            <span className="text-xs text-blue-600 font-mono">
+                              {(selectedApplication.shopId ||
+                                selectedApplication.originalProductData?.shopId || '').substring(0, 12)}...
                             </span>
                           </div>
                         )}
@@ -1212,31 +1235,34 @@ export default function EditProductApplicationsPage() {
                     </div>
 
                     {/* Seller Info */}
-                    <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-                      <h4 className="text-sm font-semibold text-white mb-3">
+                    <div className="bg-white rounded-lg border border-gray-200 p-4">
+                      <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                        <User className="w-4 h-4 text-gray-500" />
                         Satıcı Bilgileri
-                      </h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex items-center gap-2 text-gray-300">
-                          <Phone className="w-4 h-4" />
-                          <span>{selectedApplication.phone}</span>
+                      </h3>
+                      <div className="space-y-2.5">
+                        <div className="flex items-center gap-2 py-1.5 border-b border-gray-100">
+                          <Phone className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="text-xs text-gray-700">{selectedApplication.phone}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-gray-300">
-                          <MapPin className="w-4 h-4" />
-                          <span>{selectedApplication.region}</span>
+                        <div className="flex items-center gap-2 py-1.5 border-b border-gray-100">
+                          <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="text-xs text-gray-700">{selectedApplication.region}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-gray-300">
-                          <CreditCard className="w-4 h-4" />
-                          <span>
+                        <div className="flex items-center gap-2 py-1.5 border-b border-gray-100">
+                          <CreditCard className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="text-xs text-gray-700">
                             {selectedApplication.ibanOwnerName}{" "}
                             {selectedApplication.ibanOwnerSurname}
                           </span>
                         </div>
-                        <div className="text-gray-300">
-                          <strong>Adres:</strong> {selectedApplication.address}
+                        <div className="py-1.5 border-b border-gray-100">
+                          <div className="text-xs text-gray-500 mb-1">Adres</div>
+                          <div className="text-xs text-gray-700">{selectedApplication.address}</div>
                         </div>
-                        <div className="text-gray-300">
-                          <strong>IBAN:</strong> {selectedApplication.iban}
+                        <div className="py-1.5">
+                          <div className="text-xs text-gray-500 mb-1">IBAN</div>
+                          <div className="text-xs text-gray-700 font-mono">{selectedApplication.iban}</div>
                         </div>
                       </div>
                     </div>

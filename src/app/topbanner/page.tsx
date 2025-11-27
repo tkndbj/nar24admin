@@ -193,9 +193,146 @@ const formatColorHex = (color: number | undefined): string => {
   return `#${color.toString(16).padStart(8, "0").slice(2).toUpperCase()}`;
 };
 
+  
+const hexToArgb = (hex: string): number => {
+  const cleanHex = hex.replace("#", "");
+  const rgb = parseInt(cleanHex, 16);
+  return ((0xff << 24) | rgb) >>> 0;
+};
+
 // ============================================================================
 // IMAGE MODAL COMPONENT
 // ============================================================================
+
+const ColorPickerModal: React.FC<{
+  isOpen: boolean;
+  currentColor: number;
+  onClose: () => void;
+  onSave: (color: number) => void;
+  onReset: () => void;
+}> = ({ isOpen, currentColor, onClose, onSave, onReset }) => {
+  const [selectedColor, setSelectedColor] = useState(formatColorHex(currentColor));
+  const [isResetting, setIsResetting] = useState(false);
+
+  useEffect(() => {
+    setSelectedColor(formatColorHex(currentColor));
+  }, [currentColor]);
+
+  if (!isOpen) return null;
+
+  const presetColors = [
+    "#FF5733", "#FF8C00", "#FFD700", "#32CD32", "#00CED1",
+    "#4169E1", "#8A2BE2", "#FF1493", "#DC143C", "#2F4F4F",
+    "#F5F5DC", "#FFFAF0", "#F0F8FF", "#FFF0F5", "#1a1a2e",
+    "#FFFFFF", "#000000", "#808080", "#C0C0C0", "#9E9E9E",
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">Dominant Renk Düzenle</h3>
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+              <X className="w-5 h-5 text-gray-600" />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Color Preview */}
+          <div className="flex items-center gap-4">
+            <div
+              className="w-20 h-20 rounded-xl border-2 border-gray-300 shadow-inner"
+              style={{ backgroundColor: selectedColor }}
+            />
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Hex Renk Kodu
+              </label>
+              <input
+                type="text"
+                value={selectedColor}
+                onChange={(e) => setSelectedColor(e.target.value.toUpperCase())}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono"
+                placeholder="#RRGGBB"
+              />
+            </div>
+          </div>
+
+          {/* Native Color Picker */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Renk Seçici
+            </label>
+            <input
+              type="color"
+              value={selectedColor}
+              onChange={(e) => setSelectedColor(e.target.value.toUpperCase())}
+              className="w-full h-12 rounded-lg cursor-pointer border border-gray-300"
+            />
+          </div>
+
+          {/* Preset Colors */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Hazır Renkler
+            </label>
+            <div className="grid grid-cols-10 gap-2">
+              {presetColors.map((color) => (
+                <button
+                  key={color}
+                  onClick={() => setSelectedColor(color)}
+                  className={`w-8 h-8 rounded-lg border-2 transition-transform hover:scale-110 ${
+                    selectedColor.toUpperCase() === color.toUpperCase()
+                      ? "border-purple-600 ring-2 ring-purple-300"
+                      : "border-gray-300"
+                  }`}
+                  style={{ backgroundColor: color }}
+                  title={color}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 border-t border-gray-200 flex items-center justify-between">
+          <button
+            onClick={async () => {
+              setIsResetting(true);
+              await onReset();
+              setIsResetting(false);
+            }}
+            disabled={isResetting}
+            className="flex items-center gap-2 px-4 py-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {isResetting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <AlertCircle className="w-4 h-4" />
+            )}
+            <span>{isResetting ? "Sıfırlanıyor..." : "Otomatik Algıla"}</span>
+          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              İptal
+            </button>
+            <button
+              onClick={() => onSave(hexToArgb(selectedColor))}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+            >
+              Kaydet
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const ImageModal: React.FC<ImageModalProps> = ({
   isOpen,
@@ -287,6 +424,59 @@ export default function TopBannerPage() {
     useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [, setHasMore] = useState(true);
   const [, setCompressionInfo] = useState<string>("");
+
+  const [colorPickerModal, setColorPickerModal] = useState<{
+    isOpen: boolean;
+    adId: string;
+    currentColor: number;
+    originalColor: number | null;
+  } | null>(null);
+  
+  const openColorPicker = async (ad: TopBannerAd) => {
+    setColorPickerModal({
+      isOpen: true,
+      adId: ad.id,
+      currentColor: ad.dominantColor || 0xff9e9e9e,
+      originalColor: ad.dominantColor || null,
+    });
+  };
+  
+  const updateAdColor = async (adId: string, newColor: number) => {
+    try {
+      await updateDoc(doc(db, ACTIVE_ADS_COLLECTION, adId), {
+        dominantColor: newColor,
+      });
+      setColorPickerModal(null);
+    } catch (error) {
+      console.error("Update color error:", error);
+      alert("Renk güncellenemedi.");
+    }
+  };
+  
+  const resetAdColor = async (adId: string, imageUrl: string) => {
+    try {
+      const functions = getFunctions();
+      const extractColor = httpsCallable(functions, "extractColorOnly");
+      
+      console.log("🎨 Re-extracting dominant color...");
+      const result = await extractColor({ imageUrl });
+      
+      if ((result.data as { success: boolean }).success) {
+        const newColor = (result.data as { dominantColor: number }).dominantColor;
+        await updateDoc(doc(db, ACTIVE_ADS_COLLECTION, adId), {
+          dominantColor: newColor,
+        });
+        setColorPickerModal(null);
+        console.log(`✅ Color reset to: 0x${newColor.toString(16).toUpperCase()}`);
+      } else {
+        alert("Renk çıkarma başarısız oldu.");
+      }
+    } catch (error) {
+      console.error("Reset color error:", error);
+      alert("Renk sıfırlanamadı.");
+    }
+  };
+
 
   // ============================================================================
   // DATA FETCHING
@@ -871,22 +1061,20 @@ export default function TopBannerPage() {
                             </span>
                           </div>
 
-                          {/* Color Indicator */}
-                          {ad.dominantColor && (
-                            <div className="absolute bottom-3 left-3">
-                              <div
-                                className="w-8 h-8 rounded-lg border-2 border-white shadow-lg"
-                                style={{
-                                  backgroundColor: formatColorHex(
-                                    ad.dominantColor
-                                  ),
-                                }}
-                                title={`Dominant Color: ${formatColorHex(
-                                  ad.dominantColor
-                                )}`}
-                              />
-                            </div>
-                          )}
+                          {/* Color Indicator - Clickable */}
+<div className="absolute bottom-3 left-3">
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+      openColorPicker(ad);
+    }}
+    className="w-8 h-8 rounded-lg border-2 border-white shadow-lg hover:scale-110 transition-transform cursor-pointer hover:ring-2 hover:ring-purple-400"
+    style={{
+      backgroundColor: formatColorHex(ad.dominantColor),
+    }}
+    title={`Rengi Düzenle: ${formatColorHex(ad.dominantColor)}`}
+  />
+</div>
                         </div>
 
                         {/* Banner Info */}
@@ -1259,6 +1447,23 @@ export default function TopBannerPage() {
           onClose={() => setImageModal((prev) => ({ ...prev, isOpen: false }))}
           bannerName={imageModal.bannerName}
         />
+
+        {/* Color Picker Modal */}
+{colorPickerModal && (
+  <ColorPickerModal
+    isOpen={colorPickerModal.isOpen}
+    currentColor={colorPickerModal.currentColor}
+    onClose={() => setColorPickerModal(null)}
+    onSave={(color) => updateAdColor(colorPickerModal.adId, color)}
+    onReset={() => {
+      const ad = activeAds.find((a) => a.id === colorPickerModal.adId);
+      if (ad) {
+        return resetAdColor(colorPickerModal.adId, ad.imageUrl);
+      }
+      return Promise.resolve();
+    }}
+  />
+)}
 
         {/* Upload Overlay */}
         {uploading && (
