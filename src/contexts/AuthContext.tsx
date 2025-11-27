@@ -16,6 +16,7 @@ interface UserData {
   uid: string;
   email: string;
   isAdmin: boolean;
+  isSemiAdmin?: boolean;
   displayName?: string;
   photoURL?: string;
 }
@@ -61,12 +62,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             if (userDoc.exists()) {
               const userData = userDoc.data();
 
-              // Only set user if they are admin
-              if (userData.isAdmin) {
+              // Only set user if they are admin or semi-admin
+              if (userData.isAdmin || userData.isSemiAdmin) {
                 setUser({
                   uid: firebaseUser.uid,
                   email: firebaseUser.email || "",
                   isAdmin: userData.isAdmin,
+                  isSemiAdmin: userData.isSemiAdmin,
                   displayName: userData.displayName || firebaseUser.displayName,
                   photoURL: userData.photoURL || firebaseUser.photoURL,
                 });

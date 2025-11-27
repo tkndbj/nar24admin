@@ -46,7 +46,7 @@ export default function AdminLogin() {
 
       const userData = userDoc.data();
 
-      if (!userData.isAdmin) {
+      if (!userData.isAdmin && !userData.isSemiAdmin) {
         await auth.signOut();
         throw new Error("Erişim reddedildi. Yönetici yetkileri gereklidir.");
       }

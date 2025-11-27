@@ -553,96 +553,98 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* 6. Nar24 Yönetimi */}
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-all">
-              <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-100">
-                <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
-                  <Settings className="w-4 h-4 text-indigo-600" />
+            {/* 6. Nar24 Yönetimi - Only visible to full admins */}
+            {user?.isAdmin && (
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-all">
+                <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-100">
+                  <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                    <Settings className="w-4 h-4 text-indigo-600" />
+                  </div>
+                  <h3 className="font-semibold text-gray-900 text-sm">
+                    Nar24 Yönetimi
+                  </h3>
                 </div>
-                <h3 className="font-semibold text-gray-900 text-sm">
-                  Nar24 Yönetimi
-                </h3>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => handleNavigation("notifications")}
+                    className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Bell className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
+                      <span className="text-xs font-medium text-gray-900">
+                        Bildirim Gönder
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => handleNavigation("user-activity")}
+                    className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Activity className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
+                      <span className="text-xs font-medium text-gray-900">
+                        Kullanıcı Aktiviteleri
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => handleNavigation("marketscreenfilters")}
+                    className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Filter className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
+                      <span className="text-xs font-medium text-gray-900">
+                        Ana Ekran Filtreleri
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => handleNavigation("createcampaing")}
+                    className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Zap className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
+                      <span className="text-xs font-medium text-gray-900">
+                        Özel Gün Kampanyaları
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => handleNavigation("marketscreenhorizontallist")}
+                    className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <List className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
+                      <span className="text-xs font-medium text-gray-900">
+                        Yatay Ürün Listesi
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => handleNavigation("marketlayout")}
+                    className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Layout className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
+                      <span className="text-xs font-medium text-gray-900">
+                        Ana Ekran Layout
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => handleNavigation("listproduct-flowmanagement")}
+                    className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Activity className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
+                      <span className="text-xs font-medium text-gray-900">
+                        Ürün Akış Yönetimi
+                      </span>
+                    </div>
+                  </button>
+                </div>
               </div>
-              <div className="space-y-2">
-                <button
-                  onClick={() => handleNavigation("notifications")}
-                  className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
-                >
-                  <div className="flex items-center gap-2">
-                    <Bell className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-medium text-gray-900">
-                      Bildirim Gönder
-                    </span>
-                  </div>
-                </button>
-                <button
-  onClick={() => handleNavigation("user-activity")}
-  className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
->
-  <div className="flex items-center gap-2">
-    <Activity className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
-    <span className="text-xs font-medium text-gray-900">
-      Kullanıcı Aktiviteleri
-    </span>
-  </div>
-</button>
-                <button
-                  onClick={() => handleNavigation("marketscreenfilters")}
-                  className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
-                >
-                  <div className="flex items-center gap-2">
-                    <Filter className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-medium text-gray-900">
-                      Ana Ekran Filtreleri
-                    </span>
-                  </div>
-                </button>
-                <button
-                  onClick={() => handleNavigation("createcampaing")}
-                  className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
-                >
-                  <div className="flex items-center gap-2">
-                    <Zap className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-medium text-gray-900">
-                      Özel Gün Kampanyaları
-                    </span>
-                  </div>
-                </button>
-                <button
-                  onClick={() => handleNavigation("marketscreenhorizontallist")}
-                  className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
-                >
-                  <div className="flex items-center gap-2">
-                    <List className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-medium text-gray-900">
-                      Yatay Ürün Listesi
-                    </span>
-                  </div>
-                </button>
-                <button
-                  onClick={() => handleNavigation("marketlayout")}
-                  className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
-                >
-                  <div className="flex items-center gap-2">
-                    <Layout className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-medium text-gray-900">
-                      Ana Ekran Layout
-                    </span>
-                  </div>
-                </button>
-                <button
-                  onClick={() => handleNavigation("listproduct-flowmanagement")}
-                  className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
-                >
-                  <div className="flex items-center gap-2">
-                    <Activity className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-medium text-gray-900">
-                      Ürün Akış Yönetimi
-                    </span>
-                  </div>
-                </button>
-              </div>
-            </div>
+            )}
           </div>
 
           {/* Search and Quick Access */}
