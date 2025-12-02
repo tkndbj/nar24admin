@@ -122,6 +122,7 @@ interface ProductApplication {
   bulkDiscountPercentage?: number;
   campaign?: string;
   campaignName?: string;
+  status?: string;
 }
 
 // Detail Modal Component
@@ -927,18 +928,24 @@ export default function ProductApplications() {
                 : undefined,
             campaign: ProductUtils.safeStringNullable(data.campaign),
             campaignName: ProductUtils.safeStringNullable(data.campaignName),
+            status: ProductUtils.safeStringNullable(data.status),
           } as ProductApplication;
         }) as ProductApplication[];
 
+        // Filter to only show pending applications (not approved or rejected)
+        const pendingApplications = applicationsData.filter(
+          (app) => !app.status || app.status === "pending"
+        );
+
         // Sort by creation date (newest first)
-        applicationsData.sort((a, b) => {
+        pendingApplications.sort((a, b) => {
           if (!a.createdAt || !b.createdAt) return 0;
           return (
             b.createdAt.toDate().getTime() - a.createdAt.toDate().getTime()
           );
         });
 
-        setApplications(applicationsData);
+        setApplications(pendingApplications);
         setLoading(false);
       },
       (error) => {
