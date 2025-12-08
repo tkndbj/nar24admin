@@ -33,11 +33,7 @@ import {
   Shield,
 } from "lucide-react";
 
-import {
-  categories,
-  subcategoriesMap,
-  subSubcategoriesMap,
-} from "@/constants/productData";
+import { AllInOneCategoryData } from "@/constants/categoryData";
 import { flutterScreens } from "@/constants/list_product_screens";
 
 interface FlowStep {
@@ -534,42 +530,42 @@ export default function FlowManagementPage() {
   const invalidFlowsCount = flows.filter(f => f.validationStatus === 'error').length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 py-4">
         {/* Header */}
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex justify-between items-center mb-4">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2">
+            <h1 className="text-xl font-semibold text-gray-800">
               Product Flow Management
             </h1>
-            <p className="text-gray-300">
+            <p className="text-sm text-gray-500">
               Configure dynamic product listing flows
             </p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-2">
             <button
               onClick={validateAllFlows}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
             >
-              <Shield className="w-4 h-4" /> Validate All
+              <Shield className="w-3.5 h-3.5" /> Validate
             </button>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-500 hover:bg-green-600 text-white rounded transition-colors"
             >
-              <Plus className="w-4 h-4" /> Create Flow
+              <Plus className="w-3.5 h-3.5" /> Create
             </button>
           </div>
         </div>
 
         {/* Validation Warnings */}
         {validationWarnings.length > 0 && (
-          <div className="mb-6 p-4 bg-yellow-900/50 border border-yellow-600 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle className="w-5 h-5 text-yellow-400" />
-              <h3 className="text-yellow-400 font-semibold">Validation Warnings</h3>
+          <div className="mb-3 p-2 bg-yellow-50 border border-yellow-300 rounded text-sm">
+            <div className="flex items-center gap-1.5 mb-1">
+              <AlertTriangle className="w-4 h-4 text-yellow-600" />
+              <h3 className="text-yellow-700 font-medium">Validation Warnings</h3>
             </div>
-            <ul className="text-yellow-300 text-sm space-y-1">
+            <ul className="text-yellow-600 text-xs space-y-0.5 ml-5">
               {validationWarnings.map((warning, i) => (
                 <li key={i}>• {warning}</li>
               ))}
@@ -578,29 +574,25 @@ export default function FlowManagementPage() {
         )}
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
           {[
-            { label: "Total Flows", value: flows.length, icon: <BarChart3 /> },
-            { label: "Active Flows", value: activeFlowsCount, icon: <CheckCircle /> },
-            { label: "Invalid Flows", value: invalidFlowsCount, icon: <AlertTriangle />, alert: invalidFlowsCount > 0 },
-            { label: "Total Usage", value: totalUsage, icon: <Users /> },
-            { label: "Avg Completion", value: avgCompletion + "%", icon: <BarChart3 /> },
+            { label: "Total", value: flows.length, icon: <BarChart3 className="w-4 h-4" /> },
+            { label: "Active", value: activeFlowsCount, icon: <CheckCircle className="w-4 h-4" /> },
+            { label: "Invalid", value: invalidFlowsCount, icon: <AlertTriangle className="w-4 h-4" />, alert: invalidFlowsCount > 0 },
+            { label: "Usage", value: totalUsage, icon: <Users className="w-4 h-4" /> },
+            { label: "Completion", value: avgCompletion + "%", icon: <BarChart3 className="w-4 h-4" /> },
           ].map(({ label, value, icon, alert }, i) => (
             <div
               key={i}
-              className={`backdrop-blur-xl border rounded-xl p-4 ${
-                alert ? 'bg-red-900/20 border-red-600' : 'bg-white/10 border-white/20'
+              className={`border rounded px-3 py-2 ${
+                alert ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'
               }`}
             >
-              <div className="flex items-center gap-3">
-                <div className={`flex items-center justify-center w-10 h-10 rounded-lg ${
-                  alert ? 'bg-red-500/20' : 'bg-blue-500/20'
-                }`}>
-                  <span className={alert ? 'text-red-400' : 'text-blue-400'}>{icon}</span>
-                </div>
+              <div className="flex items-center gap-2">
+                <span className={alert ? 'text-red-500' : 'text-gray-400'}>{icon}</span>
                 <div>
-                  <h3 className="text-sm font-semibold text-white">{label}</h3>
-                  <p className={`text-xl font-bold ${alert ? 'text-red-400' : 'text-blue-400'}`}>{value}</p>
+                  <p className="text-xs text-gray-500">{label}</p>
+                  <p className={`text-lg font-semibold ${alert ? 'text-red-600' : 'text-gray-800'}`}>{value}</p>
                 </div>
               </div>
             </div>
@@ -608,134 +600,136 @@ export default function FlowManagementPage() {
         </div>
 
         {/* Flows Table */}
-        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl overflow-hidden">
-          <div className="p-6 border-b border-white/20">
-            <h2 className="text-xl font-semibold text-white">Product Flows</h2>
+        <div className="bg-white border border-gray-200 rounded overflow-hidden">
+          <div className="px-3 py-2 border-b border-gray-200 bg-gray-50">
+            <h2 className="text-sm font-medium text-gray-700">Product Flows</h2>
           </div>
-          <table className="w-full">
-            <thead className="bg-white/5">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50">
               <tr>
-                {["Flow", "Status", "Validation", "Steps", "Usage", "Completion", "Last Updated", "Actions"].map((h) => (
-                  <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                {["Flow", "Status", "Valid", "Steps", "Usage", "Completion", "Updated", "Actions"].map((h) => (
+                  <th key={h} className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                     {h}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/10">
+            <tbody className="divide-y divide-gray-100">
               {flows.map((flow) => {
                 const cx = getFlowComplexity(flow);
                 const validation = validateFlow(flow);
                 return (
-                  <tr key={flow.id} className="hover:bg-white/5 transition-colors">
+                  <tr key={flow.id} className="hover:bg-gray-50 transition-colors">
                     {/* Name & desc */}
-                    <td className="px-6 py-4">
+                    <td className="px-3 py-2">
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-white font-medium">{flow.name}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-gray-800 font-medium text-sm">{flow.name}</span>
                           {flow.isDefault && (
-                            <span className="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs rounded">Default</span>
+                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-600 text-xs rounded">Default</span>
                           )}
                         </div>
-                        <p className="text-xs text-gray-400">{flow.description || "No description"}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-gray-500">v{flow.version}</span>
-                          <span className={cx.color}>{cx.label}</span>
+                        <p className="text-xs text-gray-400 truncate max-w-[200px]">{flow.description || "No description"}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-xs text-gray-400">v{flow.version}</span>
+                          <span className={`text-xs ${cx.color.replace('text-green-400', 'text-green-600').replace('text-yellow-400', 'text-yellow-600').replace('text-red-400', 'text-red-600')}`}>{cx.label}</span>
                         </div>
                       </div>
                     </td>
 
                     {/* Status */}
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${flow.isActive ? "bg-green-400" : "bg-gray-400"}`} />
-                        <span className={flow.isActive ? "text-green-400" : "text-gray-400"}>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-1.5 h-1.5 rounded-full ${flow.isActive ? "bg-green-500" : "bg-gray-300"}`} />
+                        <span className={`text-xs ${flow.isActive ? "text-green-600" : "text-gray-400"}`}>
                           {flow.isActive ? "Active" : "Inactive"}
                         </span>
                       </div>
                     </td>
 
                     {/* Validation Status */}
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${
-                          validation.isValid ? "bg-green-400" : "bg-red-400"
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1">
+                        <div className={`w-1.5 h-1.5 rounded-full ${
+                          validation.isValid ? "bg-green-500" : "bg-red-500"
                         }`} />
-                        <span className={validation.isValid ? "text-green-400" : "text-red-400"}>
-                          {validation.isValid ? "Valid" : "Invalid"}
+                        <span className={`text-xs ${validation.isValid ? "text-green-600" : "text-red-600"}`}>
+                          {validation.isValid ? "Yes" : "No"}
                         </span>
                         {validation.errors.length > 0 && (
-                          <AlertTriangle className="w-4 h-4 text-red-400" />
+                          <AlertTriangle className="w-3 h-3 text-red-500" />
                         )}
                       </div>
                     </td>
 
                     {/* Steps */}
-                    <td className="px-6 py-4">
-                      <span className="text-white">{getStepCount(flow)} steps</span>
+                    <td className="px-3 py-2">
+                      <span className="text-gray-700 text-xs">{getStepCount(flow)}</span>
                     </td>
 
                     {/* Usage */}
-                    <td className="px-6 py-4 text-white">
+                    <td className="px-3 py-2 text-gray-700 text-xs">
                       {flow.usageCount?.toLocaleString() || 0}
                     </td>
 
                     {/* Completion */}
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-20 h-2 bg-gray-700 rounded-full">
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-12 h-1.5 bg-gray-200 rounded-full">
                           <div
-                            className="h-full bg-green-400 rounded-full"
+                            className="h-full bg-green-500 rounded-full"
                             style={{ width: `${flow.completionRate || 0}%` }}
                           />
                         </div>
-                        <span className="text-white">{Math.round(flow.completionRate || 0)}%</span>
+                        <span className="text-gray-600 text-xs">{Math.round(flow.completionRate || 0)}%</span>
                       </div>
                     </td>
 
                     {/* Last Updated */}
-                    <td className="px-6 py-4 text-gray-400">
+                    <td className="px-3 py-2 text-gray-500 text-xs">
                       {flow.updatedAt.toLocaleDateString()}
                     </td>
 
                     {/* Actions */}
-                    <td className="px-6 py-4 text-right flex justify-end gap-2">
-                      <button
-                        onClick={() => setSelectedFlow(flow)}
-                        className="text-gray-400 hover:text-blue-400 transition-colors"
-                        title="View Details"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button className="text-gray-400 hover:text-yellow-400 transition-colors">
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleCloneFlow(flow)}
-                        className="text-gray-400 hover:text-green-400 transition-colors"
-                      >
-                        <Copy className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleToggleFlow(flow.id, flow.isActive)}
-                        disabled={loading}
-                        className={`transition-colors disabled:opacity-50 ${
-                          flow.isActive
-                            ? "text-gray-400 hover:text-yellow-400"
-                            : "text-gray-400 hover:text-green-400"
-                        }`}
-                        title={flow.isActive ? "Deactivate" : "Activate"}
-                      >
-                        {flow.isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                      </button>
-                      <button
-                        onClick={() => handleDeleteFlow(flow.id)}
-                        className="text-gray-400 hover:text-red-400 transition-colors"
-                        disabled={flow.isActive}
-                        title={flow.isActive ? "Cannot delete active flow" : "Delete flow"}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setSelectedFlow(flow)}
+                          className="p-1 text-gray-400 hover:text-blue-500 transition-colors"
+                          title="View Details"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <button className="p-1 text-gray-400 hover:text-yellow-500 transition-colors">
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleCloneFlow(flow)}
+                          className="p-1 text-gray-400 hover:text-green-500 transition-colors"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleToggleFlow(flow.id, flow.isActive)}
+                          disabled={loading}
+                          className={`p-1 transition-colors disabled:opacity-50 ${
+                            flow.isActive
+                              ? "text-gray-400 hover:text-yellow-500"
+                              : "text-gray-400 hover:text-green-500"
+                          }`}
+                          title={flow.isActive ? "Deactivate" : "Activate"}
+                        >
+                          {flow.isActive ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteFlow(flow.id)}
+                          className="p-1 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-30"
+                          disabled={flow.isActive}
+                          title={flow.isActive ? "Cannot delete active flow" : "Delete flow"}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -746,16 +740,16 @@ export default function FlowManagementPage() {
 
         {/* Flow Details Modal */}
         {selectedFlow && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-800 border border-white/20 rounded-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-              <div className="p-6 border-b border-white/20 flex justify-between items-start">
+          <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+            <div className="bg-white border border-gray-200 rounded-lg shadow-lg max-w-xl w-full max-h-[80vh] overflow-y-auto">
+              <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-start">
                 <div>
-                  <h3 className="text-xl font-semibold text-white">{selectedFlow.name}</h3>
-                  <p className="text-gray-400">{selectedFlow.description || "No description"}</p>
+                  <h3 className="text-base font-semibold text-gray-800">{selectedFlow.name}</h3>
+                  <p className="text-xs text-gray-500">{selectedFlow.description || "No description"}</p>
                   {selectedFlow.validationStatus === 'error' && (
-                    <div className="mt-2 p-2 bg-red-900/50 border border-red-600 rounded text-red-300 text-sm">
-                      <strong>Validation Errors:</strong>
-                      <ul className="mt-1 ml-4">
+                    <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs">
+                      <strong className="text-red-700">Validation Errors:</strong>
+                      <ul className="mt-1 ml-3 text-red-600">
                         {selectedFlow.validationErrors?.map((error, i) => (
                           <li key={i}>• {error}</li>
                         ))}
@@ -765,46 +759,46 @@ export default function FlowManagementPage() {
                 </div>
                 <button
                   onClick={() => setSelectedFlow(null)}
-                  className="text-gray-400 hover:text-white text-2xl leading-none"
+                  className="text-gray-400 hover:text-gray-600 p-1"
                 >
-                  ×
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="p-6">
-                <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="p-4">
+                <div className="grid grid-cols-4 gap-2 mb-4">
                   {[
                     ["Version", selectedFlow.version],
                     ["Steps", getStepCount(selectedFlow).toString()],
-                    ["Usage Count", (selectedFlow.usageCount ?? 0).toLocaleString()],
-                    ["Completion Rate", Math.round(selectedFlow.completionRate ?? 0) + "%"],
+                    ["Usage", (selectedFlow.usageCount ?? 0).toLocaleString()],
+                    ["Completion", Math.round(selectedFlow.completionRate ?? 0) + "%"],
                   ].map(([title, val], i) => (
-                    <div key={i} className="bg-white/5 rounded-lg p-4 flex flex-col">
-                      <span className="text-sm text-gray-300">{title}</span>
-                      <span className="text-lg text-white">{val}</span>
+                    <div key={i} className="bg-gray-50 rounded px-2 py-1.5 text-center">
+                      <span className="text-xs text-gray-500 block">{title}</span>
+                      <span className="text-sm font-medium text-gray-800">{val}</span>
                     </div>
                   ))}
                 </div>
 
                 {/* Steps List */}
-                <div className="mb-6">
-                  <h4 className="text-sm text-gray-300 mb-3">Flow Steps</h4>
-                  <div className="space-y-3">
+                <div className="mb-4">
+                  <h4 className="text-xs font-medium text-gray-500 mb-2">Flow Steps</h4>
+                  <div className="space-y-1.5">
                     {Object.values(selectedFlow.steps).map((step, i) => (
-                      <div key={step.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
-                        <div className="w-8 h-8 flex items-center justify-center bg-blue-500/20 rounded-full text-blue-400 font-medium">
+                      <div key={step.id} className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 rounded">
+                        <div className="w-5 h-5 flex items-center justify-center bg-blue-100 rounded-full text-blue-600 text-xs font-medium">
                           {i + 1}
                         </div>
-                        <div className="flex-1">
-                          <h5 className="text-white">{step.title}</h5>
-                          <p className="text-gray-400 text-sm">Type: {step.stepType}</p>
+                        <div className="flex-1 min-w-0">
+                          <h5 className="text-sm text-gray-800 truncate">{step.title}</h5>
+                          <p className="text-xs text-gray-400">{step.stepType}</p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
                           {step.required && (
-                            <span className="px-2 py-1 bg-red-500/20 text-red-400 text-xs rounded">Required</span>
+                            <span className="px-1.5 py-0.5 bg-red-100 text-red-600 text-xs rounded">Req</span>
                           )}
-                          <span className="px-2 py-1 bg-gray-500/20 text-gray-400 text-xs rounded">
-                            {step.nextSteps.length} next
+                          <span className="px-1.5 py-0.5 bg-gray-200 text-gray-500 text-xs rounded">
+                            {step.nextSteps.length}→
                           </span>
                         </div>
                       </div>
@@ -813,16 +807,16 @@ export default function FlowManagementPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex gap-3">
-                  <button className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
-                    Edit Flow
+                <div className="flex gap-2">
+                  <button className="flex-1 px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors">
+                    Edit
                   </button>
-                  <button className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors">
+                  <button className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors">
                     <Download className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => handleCloneFlow(selectedFlow)}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                    className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors"
                   >
                     <Copy className="w-4 h-4" />
                   </button>
@@ -832,61 +826,61 @@ export default function FlowManagementPage() {
           </div>
         )}
 
-        {/* Create Flow Modal - Enhanced with Better Validation */}
+        {/* Create Flow Modal */}
         {showCreateModal && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-800 border border-white/20 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="p-6 border-b border-white/20 flex justify-between items-center">
-                <h3 className="text-xl font-semibold text-white">Create New Flow</h3>
-                <button onClick={resetCreateModal} className="text-gray-400 hover:text-white">
-                  <X className="w-6 h-6" />
+          <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+            <div className="bg-white border border-gray-200 rounded-lg shadow-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                <h3 className="text-base font-semibold text-gray-800">Create New Flow</h3>
+                <button onClick={resetCreateModal} className="text-gray-400 hover:text-gray-600 p-1">
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="p-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="p-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {/* Left Column - Flow Configuration */}
-                  <div className="space-y-6">
-                    <h4 className="text-lg font-semibold text-white mb-4">Flow Configuration</h4>
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium text-gray-700">Configuration</h4>
 
                     {/* Flow Name */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
                         Flow Name *
                       </label>
                       <input
                         type="text"
                         value={newFlowName}
                         onChange={(e) => setNewFlowName(e.target.value)}
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-2.5 py-1.5 text-sm bg-white border border-gray-300 rounded text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="Enter unique flow name"
                         maxLength={50}
                       />
                       {flows.some(f => f.name.toLowerCase() === newFlowName.toLowerCase().trim()) && (
-                        <p className="text-red-400 text-xs mt-1">A flow with this name already exists</p>
+                        <p className="text-red-500 text-xs mt-0.5">Name already exists</p>
                       )}
                     </div>
 
                     {/* Description */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
                       <textarea
-                        rows={3}
+                        rows={2}
                         value={newFlowDesc}
                         onChange={(e) => setNewFlowDesc(e.target.value)}
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-2.5 py-1.5 text-sm bg-white border border-gray-300 rounded text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="Describe this flow"
                         maxLength={200}
                       />
                     </div>
 
                     {/* Category Conditions */}
-                    <div className="space-y-4">
-                      <h5 className="text-md font-medium text-white">Trigger Conditions</h5>
+                    <div className="space-y-2">
+                      <h5 className="text-xs font-medium text-gray-500">Trigger Conditions</h5>
 
                       {/* Category */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Category *</label>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Category *</label>
                         <select
                           value={newCategory}
                           onChange={(e) => {
@@ -894,10 +888,10 @@ export default function FlowManagementPage() {
                             setNewSubcategory("");
                             setNewSubSubcategory("");
                           }}
-                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-2.5 py-1.5 text-sm bg-white border border-gray-300 rounded text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                         >
                           <option value="">— select category —</option>
-                          {categories.map((c) => (
+                          {AllInOneCategoryData.kCategories.map((c) => (
                             <option key={c.key} value={c.key}>{c.key}</option>
                           ))}
                         </select>
@@ -906,8 +900,8 @@ export default function FlowManagementPage() {
                       {/* Subcategory */}
                       {newCategory && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Subcategory (Optional)
+                          <label className="block text-xs font-medium text-gray-600 mb-1">
+                            Subcategory
                           </label>
                           <select
                             value={newSubcategory}
@@ -915,10 +909,10 @@ export default function FlowManagementPage() {
                               setNewSubcategory(e.target.value);
                               setNewSubSubcategory("");
                             }}
-                            className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-2.5 py-1.5 text-sm bg-white border border-gray-300 rounded text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                           >
-                            <option value="">— any subcategory —</option>
-                            {subcategoriesMap[newCategory].map((sc) => (
+                            <option value="">— any —</option>
+                            {AllInOneCategoryData.kSubcategories[newCategory]?.map((sc) => (
                               <option key={sc} value={sc}>{sc}</option>
                             ))}
                           </select>
@@ -926,18 +920,18 @@ export default function FlowManagementPage() {
                       )}
 
                       {/* Sub‑subcategory */}
-                      {newCategory && newSubcategory && Array.isArray(subSubcategoriesMap[newCategory]?.[newSubcategory]) && (
+                      {newCategory && newSubcategory && Array.isArray(AllInOneCategoryData.kSubSubcategories[newCategory]?.[newSubcategory]) && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Sub‑subcategory (Optional)
+                          <label className="block text-xs font-medium text-gray-600 mb-1">
+                            Sub‑subcategory
                           </label>
                           <select
                             value={newSubSubcategory}
                             onChange={(e) => setNewSubSubcategory(e.target.value)}
-                            className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-2.5 py-1.5 text-sm bg-white border border-gray-300 rounded text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                           >
-                            <option value="">— any sub‑subcategory —</option>
-                            {subSubcategoriesMap[newCategory][newSubcategory].map((ssc) => (
+                            <option value="">— any —</option>
+                            {AllInOneCategoryData.kSubSubcategories[newCategory][newSubcategory].map((ssc) => (
                               <option key={ssc} value={ssc}>{ssc}</option>
                             ))}
                           </select>
@@ -947,44 +941,44 @@ export default function FlowManagementPage() {
                   </div>
 
                   {/* Right Column - Flow Steps */}
-                  <div className="space-y-6">
-                    <h4 className="text-lg font-semibold text-white mb-4">Flow Steps</h4>
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium text-gray-700">Flow Steps</h4>
 
                     {/* Current Flow Order */}
-                    <div className="bg-white/5 rounded-lg p-4">
-                      <h5 className="text-sm font-medium text-gray-300 mb-3">Current Flow Order</h5>
+                    <div className="bg-gray-50 rounded p-2.5">
+                      <h5 className="text-xs font-medium text-gray-500 mb-2">Current Order</h5>
                       {newScreens.length === 0 ? (
-                        <p className="text-gray-400 text-sm">
-                          No steps added yet. Select screens below to build your flow.
+                        <p className="text-gray-400 text-xs">
+                          No steps added. Select screens below.
                         </p>
                       ) : (
-                        <div className="space-y-2">
+                        <div className="space-y-1">
                           {newScreens.map((screenId, index) => {
                             const screen = flutterScreens.find((s) => s.id === screenId);
                             return (
-                              <div key={screenId} className="flex items-center gap-3 p-2 bg-white/10 rounded">
-                                <div className="w-6 h-6 flex items-center justify-center bg-blue-500/20 rounded-full text-blue-400 text-xs font-medium">
+                              <div key={screenId} className="flex items-center gap-2 px-2 py-1 bg-white border border-gray-200 rounded">
+                                <div className="w-5 h-5 flex items-center justify-center bg-blue-100 rounded-full text-blue-600 text-xs font-medium">
                                   {index + 1}
                                 </div>
-                                <span className="flex-1 text-white text-sm">{screen?.label}</span>
-                                <div className="flex gap-1">
+                                <span className="flex-1 text-gray-700 text-xs truncate">{screen?.label}</span>
+                                <div className="flex gap-0.5">
                                   <button
                                     onClick={() => moveScreen(index, "up")}
                                     disabled={index === 0}
-                                    className="text-gray-400 hover:text-white disabled:opacity-30"
+                                    className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30"
                                   >
                                     <ArrowUp className="w-3 h-3" />
                                   </button>
                                   <button
                                     onClick={() => moveScreen(index, "down")}
                                     disabled={index === newScreens.length - 1}
-                                    className="text-gray-400 hover:text-white disabled:opacity-30"
+                                    className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30"
                                   >
                                     <ArrowDown className="w-3 h-3" />
                                   </button>
                                   <button
                                     onClick={() => removeScreen(index)}
-                                    className="text-gray-400 hover:text-red-400"
+                                    className="p-0.5 text-gray-400 hover:text-red-500"
                                   >
                                     <X className="w-3 h-3" />
                                   </button>
@@ -998,23 +992,23 @@ export default function FlowManagementPage() {
 
                     {/* Available Screens */}
                     <div>
-                      <h5 className="text-sm font-medium text-gray-300 mb-3">Available Screens</h5>
-                      <div className="max-h-60 overflow-auto bg-white/5 border border-white/20 rounded-lg p-3">
-                        <div className="grid grid-cols-1 gap-2">
+                      <h5 className="text-xs font-medium text-gray-500 mb-1.5">Available Screens</h5>
+                      <div className="max-h-48 overflow-auto bg-gray-50 border border-gray-200 rounded p-2">
+                        <div className="grid grid-cols-1 gap-1">
                           {flutterScreens.map((screen) => (
                             <button
                               key={screen.id}
                               onClick={() => addScreen(screen.id)}
                               disabled={newScreens.includes(screen.id)}
-                              className={`text-left p-2 rounded transition-colors ${
+                              className={`text-left px-2 py-1 rounded text-xs transition-colors ${
                                 newScreens.includes(screen.id)
-                                  ? "bg-green-500/20 text-green-400 cursor-not-allowed"
-                                  : "bg-white/10 text-white hover:bg-white/20"
+                                  ? "bg-green-100 text-green-600 cursor-not-allowed"
+                                  : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-100"
                               }`}
                             >
                               <div className="flex items-center justify-between">
-                                <span className="text-sm">{screen.label}</span>
-                                {newScreens.includes(screen.id) && <CheckCircle className="w-4 h-4" />}
+                                <span>{screen.label}</span>
+                                {newScreens.includes(screen.id) && <CheckCircle className="w-3 h-3" />}
                               </div>
                             </button>
                           ))}
@@ -1026,22 +1020,22 @@ export default function FlowManagementPage() {
               </div>
 
               {/* Footer */}
-              <div className="flex gap-3 p-6 border-t border-white/20">
+              <div className="flex gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
                 <button
                   onClick={resetCreateModal}
-                  className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                  className="flex-1 px-3 py-1.5 text-sm bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCreateFlow}
                   disabled={
-                    !newFlowName?.trim() || 
-                    !newCategory || 
+                    !newFlowName?.trim() ||
+                    !newCategory ||
                     newScreens.length === 0 ||
                     flows.some(f => f.name.toLowerCase() === newFlowName.toLowerCase().trim())
                   }
-                  className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                  className="flex-1 px-3 py-1.5 text-sm bg-green-500 hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded transition-colors"
                 >
                   Create Flow
                 </button>
