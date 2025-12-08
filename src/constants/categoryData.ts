@@ -997,7 +997,7 @@ export class AllInOneCategoryData {
         ],
         "Home Appliances": [
           "Kitchen Appliances",
-          "Home Appliances",
+          "White Goods",
           "Air Conditioning",
           "Heating",
         ],
@@ -3560,8 +3560,8 @@ export class AllInOneCategoryData {
                   l10n.subSubcategoryKitchenAppliancesElectronics ??
                   "Kitchen Appliances"
                 );
-              case "Home Appliances":
-                return l10n.subcategoryHomeAppliances ?? "Home Appliances";
+              case "White Goods":
+                return l10n.subSubcategoryWhiteGoods ?? "White Goods";
               case "Air Conditioning":
                 return l10n.subSubcategoryAirConditioning ?? "Air Conditioning";
               case "Heating":
@@ -4781,6 +4781,7 @@ export class AllInOneCategoryData {
     { key: "Pet Supplies", image: "pet_supplies.jpg" },
     { key: "Automotive", image: "automotive.jpg" },
     { key: "Health & Wellness", image: "health_wellness.jpg" },
+    { key: "Flowers & Gifts", image: "flowers_gifts.jpg" },
   ];
 
   /// Buyer-focused subcategories structure
@@ -4884,6 +4885,13 @@ export class AllInOneCategoryData {
       "Mobility & Daily Living",
       "Alternative Medicine",
       "Personal Care",
+    ],
+    "Flowers & Gifts": [
+      "Bouquets & Arrangements",
+      "Potted Plants",
+      "Gift Arrangements",
+      "Flower Accessories",
+      "Wreaths & Centerpieces",
     ],
   };
 
@@ -5312,6 +5320,8 @@ export class AllInOneCategoryData {
         return l10n.categoryAutomotive ?? "Automotive";
       case "Health & Wellness":
         return l10n.categoryHealthWellness ?? "Health & Wellness";
+      case "Flowers & Gifts":
+        return l10n.categoryFlowersGifts ?? "Flowers & Gifts";
       default:
         return rawKey;
     }
