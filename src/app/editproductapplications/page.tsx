@@ -14,6 +14,7 @@ import {
   getDoc,
   writeBatch,
   WriteBatch,
+  deleteField,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import ProtectedRoute from "../../components/ProtectedRoute";
@@ -581,7 +582,12 @@ export default function EditProductApplicationsPage() {
       // Always include modifiedAt
       updateData.modifiedAt = Timestamp.now();
 
-
+      if (application.attributes?.clothingTypes) {
+        updateData['attributes.clothingType'] = deleteField();
+      }
+      if (application.attributes?.pantFabricTypes) {
+        updateData['attributes.pantFabricType'] = deleteField();
+      }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await updateDoc(productRef, updateData as any);
