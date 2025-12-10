@@ -6,7 +6,6 @@ import {
   collection,
   onSnapshot,
   doc,
-  setDoc,
   Timestamp,
   arrayRemove,
   getDoc,
@@ -36,7 +35,6 @@ import {
   Phone,
   MapPin,
   CreditCard,
-  
   Info,
   Layers,
   Eye,
@@ -48,7 +46,6 @@ import {
   MousePointer,
   Zap,
   TrendingUp,
-  
   Video,
 } from "lucide-react";
 import { ProductUtils } from "../../models/Product";
@@ -142,8 +139,12 @@ function ProductDetailModal({
   isProcessing: boolean;
 }) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  const [activeTab, setActiveTab] = useState<"images" | "colors" | "video">("images");
-  const [selectedColorForPreview, setSelectedColorForPreview] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"images" | "colors" | "video">(
+    "images"
+  );
+  const [selectedColorForPreview, setSelectedColorForPreview] = useState<
+    string | null
+  >(null);
 
   const allImages = application.imageUrls || [];
   const hasColorImages = Object.keys(application.colorImages || {}).length > 0;
@@ -152,7 +153,8 @@ function ProductDetailModal({
   const formatDate = (timestamp: Timestamp | Date | undefined) => {
     if (!timestamp) return null;
     try {
-      const date = timestamp instanceof Timestamp ? timestamp.toDate() : timestamp;
+      const date =
+        timestamp instanceof Timestamp ? timestamp.toDate() : timestamp;
       return date.toLocaleDateString("tr-TR", {
         day: "2-digit",
         month: "long",
@@ -181,7 +183,9 @@ function ProductDetailModal({
     children: React.ReactNode;
     className?: string;
   }) => (
-    <div className={`bg-white rounded-lg border border-gray-200 overflow-hidden ${className}`}>
+    <div
+      className={`bg-white rounded-lg border border-gray-200 overflow-hidden ${className}`}
+    >
       <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center gap-1.5">
         <Icon className="w-3.5 h-3.5 text-gray-600" />
         <h3 className="font-semibold text-gray-800 text-xs">{title}</h3>
@@ -202,7 +206,12 @@ function ProductDetailModal({
     icon?: React.ElementType;
     valueClassName?: string;
   }) => {
-    if (value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)) {
+    if (
+      value === null ||
+      value === undefined ||
+      value === "" ||
+      (Array.isArray(value) && value.length === 0)
+    ) {
       return null;
     }
     return (
@@ -211,7 +220,9 @@ function ProductDetailModal({
           {Icon && <Icon className="w-3.5 h-3.5" />}
           <span>{label}</span>
         </div>
-        <div className={`text-xs font-medium text-gray-900 text-right max-w-[60%] ${valueClassName}`}>
+        <div
+          className={`text-xs font-medium text-gray-900 text-right max-w-[60%] ${valueClassName}`}
+        >
           {value}
         </div>
       </div>
@@ -234,7 +245,9 @@ function ProductDetailModal({
       info: "bg-blue-100 text-blue-700",
     };
     return (
-      <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${variants[variant]}`}>
+      <span
+        className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${variants[variant]}`}
+      >
         {children}
       </span>
     );
@@ -262,7 +275,10 @@ function ProductDetailModal({
       fantasyWearType: "Fantezi Giyim Tipi",
       selectedFantasyWearType: "Fantezi Giyim Tipi",
     };
-    return attributeNames[key] || key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, " $1");
+    return (
+      attributeNames[key] ||
+      key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, " $1")
+    );
   };
 
   // Format attribute value
@@ -286,9 +302,13 @@ function ProductDetailModal({
               <Package className="w-4 h-4 text-blue-600" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-gray-900 line-clamp-1">{application.productName}</h2>
+              <h2 className="text-sm font-bold text-gray-900 line-clamp-1">
+                {application.productName}
+              </h2>
               <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-gray-500">ID: {application.ilan_no || application.id}</span>
+                <span className="text-[10px] text-gray-500">
+                  ID: {application.ilan_no || application.id}
+                </span>
                 {application.shopId ? (
                   <Badge variant="info">
                     <Store className="w-2.5 h-2.5 mr-0.5" />
@@ -375,7 +395,9 @@ function ProductDetailModal({
                                 <button
                                   onClick={() =>
                                     setActiveImageIndex((prev) =>
-                                      prev === 0 ? allImages.length - 1 : prev - 1
+                                      prev === 0
+                                        ? allImages.length - 1
+                                        : prev - 1
                                     )
                                   }
                                   className="absolute left-1.5 top-1/2 -translate-y-1/2 p-1.5 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
@@ -385,7 +407,9 @@ function ProductDetailModal({
                                 <button
                                   onClick={() =>
                                     setActiveImageIndex((prev) =>
-                                      prev === allImages.length - 1 ? 0 : prev + 1
+                                      prev === allImages.length - 1
+                                        ? 0
+                                        : prev + 1
                                     )
                                   }
                                   className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
@@ -458,22 +482,27 @@ function ProductDetailModal({
                           </button>
                         ))}
                       </div>
-                      {selectedColorForPreview && application.colorImages[selectedColorForPreview] && (
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {application.colorImages[selectedColorForPreview].map((url, idx) => (
-                            <div
-                              key={idx}
-                              className="aspect-square bg-gray-100 rounded overflow-hidden"
-                            >
-                              <img
-                                src={url}
-                                alt={`${selectedColorForPreview} - ${idx + 1}`}
-                                className="w-full h-full object-cover"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                      {selectedColorForPreview &&
+                        application.colorImages[selectedColorForPreview] && (
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {application.colorImages[
+                              selectedColorForPreview
+                            ].map((url, idx) => (
+                              <div
+                                key={idx}
+                                className="aspect-square bg-gray-100 rounded overflow-hidden"
+                              >
+                                <img
+                                  src={url}
+                                  alt={`${selectedColorForPreview} - ${
+                                    idx + 1
+                                  }`}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       {!selectedColorForPreview && (
                         <p className="text-xs text-gray-500 text-center py-2">
                           Görüntülemek için bir renk seçin
@@ -519,100 +548,144 @@ function ProductDetailModal({
                     icon={Tag}
                     valueClassName="text-green-600 text-sm font-bold"
                   />
-                  {application.originalPrice && application.originalPrice > application.price && (
-                    <DetailRow
-                      label="Orijinal Fiyat"
-                      value={
-                        <span className="line-through text-gray-400">
-                          {formatPrice(application.originalPrice, application.currency)}
-                        </span>
-                      }
-                    />
-                  )}
-                  {application.discountPercentage && application.discountPercentage > 0 && (
-                    <DetailRow
-                      label="İndirim"
-                      value={<Badge variant="error">%{application.discountPercentage}</Badge>}
-                    />
-                  )}
-                  <DetailRow label="Stok Miktarı" value={application.quantity} icon={Box} />
+                  {application.originalPrice &&
+                    application.originalPrice > application.price && (
+                      <DetailRow
+                        label="Orijinal Fiyat"
+                        value={
+                          <span className="line-through text-gray-400">
+                            {formatPrice(
+                              application.originalPrice,
+                              application.currency
+                            )}
+                          </span>
+                        }
+                      />
+                    )}
+                  {application.discountPercentage &&
+                    application.discountPercentage > 0 && (
+                      <DetailRow
+                        label="İndirim"
+                        value={
+                          <Badge variant="error">
+                            %{application.discountPercentage}
+                          </Badge>
+                        }
+                      />
+                    )}
+                  <DetailRow
+                    label="Stok Miktarı"
+                    value={application.quantity}
+                    icon={Box}
+                  />
                   {application.maxQuantity && (
-                    <DetailRow label="Maksimum Miktar" value={application.maxQuantity} />
-                  )}
-                  <DetailRow label="Durum" value={application.condition} icon={Star} />
-                  {application.bulkDiscountPercentage && application.bulkDiscountPercentage > 0 && (
                     <DetailRow
-                      label="Toplu İndirim"
-                      value={`%${application.bulkDiscountPercentage}`}
+                      label="Maksimum Miktar"
+                      value={application.maxQuantity}
                     />
                   )}
-                  {application.discountThreshold && application.discountThreshold > 0 && (
-                    <DetailRow
-                      label="İndirim Eşiği"
-                      value={`${application.discountThreshold} adet`}
-                    />
-                  )}
+                  <DetailRow
+                    label="Durum"
+                    value={application.condition}
+                    icon={Star}
+                  />
+                  {application.bulkDiscountPercentage &&
+                    application.bulkDiscountPercentage > 0 && (
+                      <DetailRow
+                        label="Toplu İndirim"
+                        value={`%${application.bulkDiscountPercentage}`}
+                      />
+                    )}
+                  {application.discountThreshold &&
+                    application.discountThreshold > 0 && (
+                      <DetailRow
+                        label="İndirim Eşiği"
+                        value={`${application.discountThreshold} adet`}
+                      />
+                    )}
                 </div>
               </Section>
 
               {/* Category */}
               <Section title="Kategori" icon={Layers}>
                 <div className="space-y-1">
-                  <DetailRow label="Ana Kategori" value={application.category} />
+                  <DetailRow
+                    label="Ana Kategori"
+                    value={application.category}
+                  />
                   {application.subcategory && (
-                    <DetailRow label="Alt Kategori" value={application.subcategory} />
+                    <DetailRow
+                      label="Alt Kategori"
+                      value={application.subcategory}
+                    />
                   )}
                   {application.subsubcategory && (
-                    <DetailRow label="Alt Alt Kategori" value={application.subsubcategory} />
+                    <DetailRow
+                      label="Alt Alt Kategori"
+                      value={application.subsubcategory}
+                    />
                   )}
                   {application.brandModel && (
-                    <DetailRow label="Marka / Model" value={application.brandModel} />
+                    <DetailRow
+                      label="Marka / Model"
+                      value={application.brandModel}
+                    />
                   )}
                 </div>
               </Section>
 
               {/* Gender & Attributes */}
-              {(application.gender || (application.attributes && Object.keys(application.attributes).length > 0)) && (
+              {(application.gender ||
+                (application.attributes &&
+                  Object.keys(application.attributes).length > 0)) && (
                 <Section title="Ürün Özellikleri" icon={Tag}>
                   <div className="space-y-1">
                     {application.gender && (
                       <DetailRow label="Cinsiyet" value={application.gender} />
                     )}
                     {application.attributes &&
-                      Object.entries(application.attributes).map(([key, value]) => {
-                        if (key === "gender" || !value) return null;
-                        const displayValue = formatAttributeValue(value);
-                        if (!displayValue || displayValue === "") return null;
-                        return (
-                          <DetailRow
-                            key={key}
-                            label={getAttributeDisplayName(key)}
-                            value={displayValue}
-                          />
-                        );
-                      })}
+                      Object.entries(application.attributes).map(
+                        ([key, value]) => {
+                          if (key === "gender" || !value) return null;
+                          const displayValue = formatAttributeValue(value);
+                          if (!displayValue || displayValue === "") return null;
+                          return (
+                            <DetailRow
+                              key={key}
+                              label={getAttributeDisplayName(key)}
+                              value={displayValue}
+                            />
+                          );
+                        }
+                      )}
                   </div>
                 </Section>
               )}
 
               {/* Colors */}
-              {application.availableColors && application.availableColors.length > 0 && (
-                <Section title="Renkler ve Stok" icon={Palette}>
-                  <div className="space-y-1">
-                    {application.availableColors.map((color) => (
-                      <div
-                        key={color}
-                        className="flex items-center justify-between py-1 px-2 bg-gray-50 rounded"
-                      >
-                        <span className="text-xs font-medium text-gray-700">{color}</span>
-                        {application.colorQuantities?.[color] !== undefined && (
-                          <Badge variant="info">{application.colorQuantities[color]} adet</Badge>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </Section>
-              )}
+              {application.availableColors &&
+                application.availableColors.length > 0 && (
+                  <Section title="Renkler ve Stok" icon={Palette}>
+                    <div className="space-y-1">
+                      {application.availableColors.map((color) => (
+                        <div
+                          key={color}
+                          className="flex items-center justify-between py-1 px-2 bg-gray-50 rounded"
+                        >
+                          <span className="text-xs font-medium text-gray-700">
+                            {color}
+                          </span>
+                          {application.colorQuantities?.[color] !==
+                            undefined && (
+                            <Badge variant="info">
+                              {application.colorQuantities[color]} adet
+                            </Badge>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </Section>
+                )}
 
               {/* Delivery */}
               <Section title="Teslimat" icon={Truck}>
@@ -631,7 +704,9 @@ function ProductDetailModal({
                     )}
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900 text-xs">{application.deliveryOption}</p>
+                    <p className="font-medium text-gray-900 text-xs">
+                      {application.deliveryOption}
+                    </p>
                     <p className="text-[10px] text-gray-500">
                       {application.deliveryOption === "Fast Delivery"
                         ? "Hızlı teslimat"
@@ -652,24 +727,44 @@ function ProductDetailModal({
                     {application.shopId && shopName && (
                       <DetailRow label="Mağaza" value={shopName} icon={Store} />
                     )}
-                    <DetailRow label="Satıcı Adı" value={application.sellerName} />
-                    {application.ibanOwnerName && application.ibanOwnerSurname && (
+                    <DetailRow
+                      label="Satıcı Adı"
+                      value={application.sellerName}
+                    />
+                    {application.ibanOwnerName &&
+                      application.ibanOwnerSurname && (
+                        <DetailRow
+                          label="Hesap Sahibi"
+                          value={`${application.ibanOwnerName} ${application.ibanOwnerSurname}`}
+                        />
+                      )}
+                    {application.phone && (
                       <DetailRow
-                        label="Hesap Sahibi"
-                        value={`${application.ibanOwnerName} ${application.ibanOwnerSurname}`}
+                        label="Telefon"
+                        value={application.phone}
+                        icon={Phone}
                       />
                     )}
-                    {application.phone && (
-                      <DetailRow label="Telefon" value={application.phone} icon={Phone} />
-                    )}
                     {application.region && (
-                      <DetailRow label="Bölge" value={application.region} icon={MapPin} />
+                      <DetailRow
+                        label="Bölge"
+                        value={application.region}
+                        icon={MapPin}
+                      />
                     )}
                     {application.address && (
-                      <DetailRow label="Adres" value={application.address} icon={MapPin} />
+                      <DetailRow
+                        label="Adres"
+                        value={application.address}
+                        icon={MapPin}
+                      />
                     )}
                     {application.iban && (
-                      <DetailRow label="IBAN" value={application.iban} icon={CreditCard} />
+                      <DetailRow
+                        label="IBAN"
+                        value={application.iban}
+                        icon={CreditCard}
+                      />
                     )}
                   </div>
                 </Section>
@@ -686,7 +781,9 @@ function ProductDetailModal({
                     {application.clickCount > 0 && (
                       <div className="bg-gray-50 rounded p-1.5 text-center">
                         <MousePointer className="w-3.5 h-3.5 text-gray-400 mx-auto" />
-                        <p className="text-sm font-bold text-gray-900">{application.clickCount}</p>
+                        <p className="text-sm font-bold text-gray-900">
+                          {application.clickCount}
+                        </p>
                         <p className="text-[10px] text-gray-500">Tıklama</p>
                       </div>
                     )}
@@ -702,7 +799,9 @@ function ProductDetailModal({
                     {application.cartCount > 0 && (
                       <div className="bg-gray-50 rounded p-1.5 text-center">
                         <ShoppingCart className="w-3.5 h-3.5 text-blue-400 mx-auto" />
-                        <p className="text-sm font-bold text-gray-900">{application.cartCount}</p>
+                        <p className="text-sm font-bold text-gray-900">
+                          {application.cartCount}
+                        </p>
                         <p className="text-[10px] text-gray-500">Sepet</p>
                       </div>
                     )}
@@ -737,10 +836,18 @@ function ProductDetailModal({
                 application.paused) && (
                 <Section title="Durum Etiketleri" icon={Tag}>
                   <div className="flex flex-wrap gap-2">
-                    {application.isFeatured && <Badge variant="warning">⭐ Öne Çıkan</Badge>}
-                    {application.isTrending && <Badge variant="info">📈 Trend</Badge>}
-                    {application.isBoosted && <Badge variant="success">🚀 Boost Edilmiş</Badge>}
-                    {application.paused && <Badge variant="error">⏸️ Duraklatılmış</Badge>}
+                    {application.isFeatured && (
+                      <Badge variant="warning">⭐ Öne Çıkan</Badge>
+                    )}
+                    {application.isTrending && (
+                      <Badge variant="info">📈 Trend</Badge>
+                    )}
+                    {application.isBoosted && (
+                      <Badge variant="success">🚀 Boost Edilmiş</Badge>
+                    )}
+                    {application.paused && (
+                      <Badge variant="error">⏸️ Duraklatılmış</Badge>
+                    )}
                   </div>
                 </Section>
               )}
@@ -748,9 +855,15 @@ function ProductDetailModal({
               {/* Timestamps */}
               <Section title="Tarihler" icon={Calendar}>
                 <div className="space-y-1">
-                  <DetailRow label="Başvuru Tarihi" value={formatDate(application.createdAt)} />
+                  <DetailRow
+                    label="Başvuru Tarihi"
+                    value={formatDate(application.createdAt)}
+                  />
                   {application.updatedAt && (
-                    <DetailRow label="Güncelleme Tarihi" value={formatDate(application.updatedAt)} />
+                    <DetailRow
+                      label="Güncelleme Tarihi"
+                      value={formatDate(application.updatedAt)}
+                    />
                   )}
                 </div>
               </Section>
@@ -1066,9 +1179,26 @@ export default function ProductApplications() {
     setProcessingIds((prev) => new Set(prev).add(application.id));
 
     try {
+      // ✅ STEP 0: Verify application still exists and is pending
+      const applicationRef = doc(db, "product_applications", application.id);
+      const applicationSnap = await getDoc(applicationRef);
+
+      if (!applicationSnap.exists()) {
+        showNotification("Başvuru bulunamadı - zaten işlenmiş olabilir");
+        return;
+      }
+
+      const currentStatus = applicationSnap.data()?.status;
+      if (currentStatus && currentStatus !== "pending") {
+        showNotification("Bu başvuru zaten işlenmiş");
+        return;
+      }
+
+      // ✅ Destructure and EXPLICITLY list ALL excluded fields
       const {
         id,
         ilan_no,
+        ilanNo: _ilanNo, // Also exclude this to avoid duplication
         createdAt: applicationCreatedAt,
         phone,
         region,
@@ -1076,9 +1206,14 @@ export default function ProductApplications() {
         ibanOwnerName,
         ibanOwnerSurname,
         iban,
+        needsSync: _needsSync, // Exclude - will set fresh
+        updatedAt: _updatedAt, // Exclude - will set fresh
+        relatedProductIds: _relatedProductIds, // Exclude - will set fresh
+        status: _status, // ✅ CRITICAL: Exclude status field!
         ...productData
       } = application;
 
+      // Suppress unused variable warnings
       void applicationCreatedAt;
       void phone;
       void region;
@@ -1086,63 +1221,108 @@ export default function ProductApplications() {
       void ibanOwnerName;
       void ibanOwnerSurname;
       void iban;
+      void _ilanNo;
+      void _needsSync;
+      void _updatedAt;
+      void _relatedProductIds;
+      void _status;
 
       const newDocId = ilan_no && ilan_no.trim() !== "" ? ilan_no : id;
+      const isShopProduct =
+        productData.shopId && productData.shopId.trim() !== "";
+      const collectionName = isShopProduct ? "shop_products" : "products";
 
+      // ✅ STEP 1: Check if product already exists (prevent overwrites)
+      const productRef = doc(db, collectionName, newDocId);
+      const existingProduct = await getDoc(productRef);
+
+      if (existingProduct.exists()) {
+        showNotification(
+          `Ürün zaten mevcut (ID: ${newDocId}). Lütfen kontrol edin.`
+        );
+        // Optionally: Mark application as duplicate instead of failing
+        await updateDoc(applicationRef, {
+          status: "duplicate",
+          reviewedAt: Timestamp.now(),
+          existingProductId: newDocId,
+        });
+        return;
+      }
+
+      // ✅ Build payload with explicit field control
       const payload = {
         ...productData,
         id: newDocId,
         ilanNo: newDocId,
         createdAt: Timestamp.now(),
-        needsSync: true,
         updatedAt: Timestamp.now(),
+        needsSync: true,
         relatedProductIds: [],
       };
 
-      // Remove undefined values
-      Object.keys(payload).forEach((key) => {
-        if (payload[key as keyof typeof payload] === undefined) {
-          delete payload[key as keyof typeof payload];
-        }
-      });
+      // Remove undefined values (keep null values as they may be intentional)
+      const cleanedPayload = Object.fromEntries(
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        Object.entries(payload).filter(([_, value]) => value !== undefined)
+      );
 
-      console.log("📤 Approving product with data:", {
-        id: newDocId,
-        shopId: payload.shopId,
-        category: payload.category,
-        subcategory: payload.subcategory,
-        subsubcategory: payload.subsubcategory,
-      });
+      // ✅ STEP 2: Use BATCH for atomic write
+      const batch = writeBatch(db);
 
-      const isShopProduct = payload.shopId && payload.shopId.trim() !== "";
-      const collectionName = isShopProduct ? "shop_products" : "products";
+      // Add product
+      batch.set(productRef, cleanedPayload);
 
-      // ✅ STEP 1: Add product to main collection
-      await setDoc(doc(db, collectionName, newDocId), payload);
-
-      // ✅ STEP 2: Update category_shops index (only for shop products)
-      if (isShopProduct) {
-        await updateCategoryShopsIndex(
-          payload.shopId!,
-          payload.category,
-          payload.subcategory,
-          payload.subsubcategory,
-          "add"
-        );
-      }
-
-      // ✅ STEP 3: Delete the application
-      await updateDoc(doc(db, "product_applications", id), {
+      // Mark application as approved
+      batch.update(applicationRef, {
         status: "approved",
         reviewedAt: Timestamp.now(),
+        approvedProductId: newDocId,
+        approvedCollection: collectionName,
       });
+
+      // ✅ COMMIT ATOMICALLY - both succeed or both fail
+      await batch.commit();
+
+      console.log(`✅ Product approved: ${newDocId} in ${collectionName}`);
+
+      // ✅ STEP 3: Update category index AFTER successful commit
+      // This is non-critical - if it fails, product still exists
+      if (isShopProduct) {
+        try {
+          await updateCategoryShopsIndex(
+            productData.shopId!,
+            productData.category,
+            productData.subcategory,
+            productData.subsubcategory,
+            "add"
+          );
+        } catch (indexError) {
+          console.error(
+            "Category index update failed (non-critical):",
+            indexError
+          );
+          // Don't fail the approval - product is already created
+        }
+      }
 
       showNotification("Ürün başarıyla onaylandı!");
       setShowDetailModal(false);
       setSelectedApplication(null);
     } catch (error) {
       console.error("Onaylama hatası:", error);
-      showNotification("Ürün onaylanırken hata oluştu");
+
+      // ✅ More specific error messages
+      if (error instanceof Error) {
+        if (error.message.includes("permission")) {
+          showNotification("Yetki hatası - lütfen tekrar giriş yapın");
+        } else if (error.message.includes("network")) {
+          showNotification("Ağ hatası - lütfen tekrar deneyin");
+        } else {
+          showNotification(`Hata: ${error.message}`);
+        }
+      } else {
+        showNotification("Ürün onaylanırken hata oluştu");
+      }
     } finally {
       setProcessingIds((prev) => {
         const newSet = new Set(prev);
@@ -1154,16 +1334,31 @@ export default function ProductApplications() {
 
   const rejectApplication = async (application: ProductApplication) => {
     if (processingIds.has(application.id)) return;
-
     setProcessingIds((prev) => new Set(prev).add(application.id));
 
     try {
-      // ✅ Update status instead of deleting
-      await updateDoc(doc(db, "product_applications", application.id), {
+      // ✅ Verify still pending
+      const applicationRef = doc(db, "product_applications", application.id);
+      const applicationSnap = await getDoc(applicationRef);
+
+      if (!applicationSnap.exists()) {
+        showNotification("Başvuru bulunamadı");
+        return;
+      }
+
+      const currentStatus = applicationSnap.data()?.status;
+      if (currentStatus && currentStatus !== "pending") {
+        showNotification("Bu başvuru zaten işlenmiş");
+        return;
+      }
+
+      // ✅ Consider adding a reason modal
+      await updateDoc(applicationRef, {
         status: "rejected",
         reviewedAt: Timestamp.now(),
-        rejectionReason: "Başvuru reddedildi", // You may want to add a modal for custom reason
+        rejectionReason: "Başvuru reddedildi",
       });
+
       showNotification("Ürün başvurusu reddedildi");
       setShowDetailModal(false);
       setSelectedApplication(null);
