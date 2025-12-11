@@ -720,11 +720,10 @@ export default function UserActivityPage() {
           }
 
           remainingToFetch = PAGE_SIZE - allActivities.length;
-        } catch (shardError) {
+        } catch {
           // Shard might not exist, continue to previous day
           console.log(`No data in shard ${currentDateShard}`);
         }
-
         // Move to previous day
         currentDateShard = getPreviousDateShard(currentDateShard);
         lastTimestamp = null; // Reset for new shard
