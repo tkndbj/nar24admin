@@ -42,6 +42,9 @@ import {
   limit,
   updateDoc,
   Timestamp,
+  startAfter,
+  QueryDocumentSnapshot,
+  DocumentData,
 } from "firebase/firestore";
 import { db, functions } from "../lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -81,11 +84,23 @@ interface ShopData {
   profileImageUrl?: string;
 }
 
+interface OrderItemData {
+  id: string;
+  productName: string;
+  quantity: number;
+  gatheringStatus?: string;
+  productImage?: string;
+  selectedColorImage?: string;
+}
+
 interface OrderData {
   id: string;
   totalPrice: number;
   timestamp: Timestamp;
   itemCount: number;
+  items: OrderItemData[];
+  distributionStatus?: string;
+  allItemsGathered?: boolean;
 }
 
 // Create a separate component that uses useSearchParams
@@ -113,6 +128,12 @@ function UserDetailsContent() {
   const [productSearch, setProductSearch] = useState("");
   const [shopSearch, setShopSearch] = useState("");
   const [orderSearch, setOrderSearch] = useState("");
+
+  // Orders pagination state
+  const [ordersLastDoc, setOrdersLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMoreOrders, setHasMoreOrders] = useState(true);
+  const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
+  const ORDERS_PER_PAGE = 10;
 
   // Active tab
   const [activeTab, setActiveTab] = useState<"products" | "shops" | "orders">(
@@ -171,18 +192,55 @@ function UserDetailsContent() {
       );
       setShops(shopsData);
 
-      // Fetch orders (limit to 30 for performance)
+      // Fetch orders with pagination (10 at a time) and include items
       const ordersQuery = query(
         collection(db, "orders"),
         where("buyerId", "==", userId),
         firestoreOrderBy("timestamp", "desc"),
-        limit(30)
+        limit(ORDERS_PER_PAGE)
       );
       const ordersSnapshot = await getDocs(ordersQuery);
-      const ordersData = ordersSnapshot.docs.map(
-        (doc) => ({ id: doc.id, ...doc.data() } as OrderData)
+
+      // Fetch items for each order
+      const ordersData = await Promise.all(
+        ordersSnapshot.docs.map(async (orderDoc) => {
+          const orderData = orderDoc.data();
+
+          // Fetch items subcollection
+          const itemsSnapshot = await getDocs(
+            collection(db, "orders", orderDoc.id, "items")
+          );
+          const items: OrderItemData[] = itemsSnapshot.docs.map((itemDoc) => {
+            const data = itemDoc.data();
+            return {
+              id: itemDoc.id,
+              productName: data.productName || "Bilinmeyen Ürün",
+              quantity: data.quantity || 1,
+              gatheringStatus: data.gatheringStatus,
+              productImage: data.productImage,
+              selectedColorImage: data.selectedColorImage,
+            };
+          });
+
+          return {
+            id: orderDoc.id,
+            totalPrice: orderData.totalPrice,
+            timestamp: orderData.timestamp,
+            itemCount: orderData.itemCount || items.length,
+            items,
+            distributionStatus: orderData.distributionStatus,
+            allItemsGathered: orderData.allItemsGathered,
+          } as OrderData;
+        })
       );
+
       setOrders(ordersData);
+
+      // Set pagination state
+      if (ordersSnapshot.docs.length > 0) {
+        setOrdersLastDoc(ordersSnapshot.docs[ordersSnapshot.docs.length - 1]);
+      }
+      setHasMoreOrders(ordersSnapshot.docs.length === ORDERS_PER_PAGE);
     } catch (error) {
       console.error("Error fetching user data:", error);
       toast.error("Kullanıcı verileri yüklenemedi");
@@ -194,6 +252,71 @@ function UserDetailsContent() {
   useEffect(() => {
     fetchUserData();
   }, [fetchUserData]);
+
+  // Load more orders function for pagination
+  const loadMoreOrders = useCallback(async () => {
+    if (!userId || !ordersLastDoc || loadingMoreOrders || !hasMoreOrders) return;
+
+    try {
+      setLoadingMoreOrders(true);
+
+      const ordersQuery = query(
+        collection(db, "orders"),
+        where("buyerId", "==", userId),
+        firestoreOrderBy("timestamp", "desc"),
+        startAfter(ordersLastDoc),
+        limit(ORDERS_PER_PAGE)
+      );
+      const ordersSnapshot = await getDocs(ordersQuery);
+
+      // Fetch items for each order
+      const newOrdersData = await Promise.all(
+        ordersSnapshot.docs.map(async (orderDoc) => {
+          const orderData = orderDoc.data();
+
+          // Fetch items subcollection
+          const itemsSnapshot = await getDocs(
+            collection(db, "orders", orderDoc.id, "items")
+          );
+          const items: OrderItemData[] = itemsSnapshot.docs.map((itemDoc) => {
+            const data = itemDoc.data();
+            return {
+              id: itemDoc.id,
+              productName: data.productName || "Bilinmeyen Ürün",
+              quantity: data.quantity || 1,
+              gatheringStatus: data.gatheringStatus,
+              productImage: data.productImage,
+              selectedColorImage: data.selectedColorImage,
+            };
+          });
+
+          return {
+            id: orderDoc.id,
+            totalPrice: orderData.totalPrice,
+            timestamp: orderData.timestamp,
+            itemCount: orderData.itemCount || items.length,
+            items,
+            distributionStatus: orderData.distributionStatus,
+            allItemsGathered: orderData.allItemsGathered,
+          } as OrderData;
+        })
+      );
+
+      // Append new orders to existing ones
+      setOrders((prev) => [...prev, ...newOrdersData]);
+
+      // Update pagination state
+      if (ordersSnapshot.docs.length > 0) {
+        setOrdersLastDoc(ordersSnapshot.docs[ordersSnapshot.docs.length - 1]);
+      }
+      setHasMoreOrders(ordersSnapshot.docs.length === ORDERS_PER_PAGE);
+    } catch (error) {
+      console.error("Error loading more orders:", error);
+      toast.error("Daha fazla sipariş yüklenemedi");
+    } finally {
+      setLoadingMoreOrders(false);
+    }
+  }, [userId, ordersLastDoc, loadingMoreOrders, hasMoreOrders]);
 
   // Save individual field
   const saveIndividualField = async (
@@ -1043,29 +1166,119 @@ function UserDetailsContent() {
                     {/* Orders List */}
                     {filteredOrders.length > 0 ? (
                       <div className="space-y-2">
-                        {filteredOrders.map((order) => (
-                          <div
-                            key={order.id}
-                            className="p-2 bg-gray-50 rounded border border-gray-200"
+                        {filteredOrders.map((order) => {
+                          // Determine shipment status with distinct colors
+                          const getShipmentStatus = () => {
+                            if (order.distributionStatus === "delivered") {
+                              return { label: "Teslim Edildi", textColor: "text-green-600", bgColor: "bg-green-50", borderColor: "border-green-200" };
+                            }
+                            if (order.distributionStatus === "distributed" || order.distributionStatus === "assigned") {
+                              return { label: "Dağıtımda", textColor: "text-blue-600", bgColor: "bg-blue-50", borderColor: "border-blue-200" };
+                            }
+                            if (order.allItemsGathered || order.distributionStatus === "ready") {
+                              return { label: "Depoda", textColor: "text-purple-600", bgColor: "bg-purple-50", borderColor: "border-purple-200" };
+                            }
+                            // Check if any items are being gathered
+                            const hasGatheredItems = order.items.some(
+                              (item) => item.gatheringStatus === "gathered" || item.gatheringStatus === "at_warehouse"
+                            );
+                            if (hasGatheredItems) {
+                              return { label: "Toplanıyor", textColor: "text-amber-600", bgColor: "bg-amber-50", borderColor: "border-amber-200" };
+                            }
+                            return { label: "Beklemede", textColor: "text-orange-600", bgColor: "bg-orange-50", borderColor: "border-orange-200" };
+                          };
+
+                          const shipmentStatus = getShipmentStatus();
+
+                          return (
+                            <div
+                              key={order.id}
+                              className="p-3 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 transition-colors"
+                            >
+                              {/* Order Header */}
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-mono text-gray-600">
+                                  #{order.id.substring(0, 8)}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${shipmentStatus.textColor} ${shipmentStatus.bgColor} ${shipmentStatus.borderColor}`}
+                                >
+                                  {shipmentStatus.label}
+                                </span>
+                              </div>
+
+                              {/* Product Items with Thumbnails */}
+                              <div className="mb-2 space-y-1.5">
+                                {order.items.slice(0, 3).map((item) => {
+                                  // Use selectedColorImage if available, otherwise fall back to productImage
+                                  const thumbnailUrl = item.selectedColorImage || item.productImage;
+
+                                  return (
+                                    <div key={item.id} className="flex items-center gap-2">
+                                      {/* Thumbnail */}
+                                      <div className="relative w-8 h-8 rounded overflow-hidden flex-shrink-0 bg-gray-100">
+                                        {thumbnailUrl ? (
+                                          <Image
+                                            src={thumbnailUrl}
+                                            alt={item.productName}
+                                            fill
+                                            className="object-cover"
+                                          />
+                                        ) : (
+                                          <div className="w-full h-full flex items-center justify-center">
+                                            <Package className="w-3 h-3 text-gray-400" />
+                                          </div>
+                                        )}
+                                      </div>
+                                      {/* Product Name and Quantity */}
+                                      <div className="flex-1 min-w-0 flex items-center gap-1">
+                                        <span className="text-xs text-gray-700 truncate">{item.productName}</span>
+                                        {item.quantity > 1 && (
+                                          <span className="text-[10px] text-gray-500 flex-shrink-0">x{item.quantity}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                                {order.items.length > 3 && (
+                                  <div className="text-[10px] text-gray-500 ml-10">
+                                    +{order.items.length - 3} daha fazla ürün
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Order Footer */}
+                              <div className="flex items-center justify-between text-[10px] text-gray-600 pt-2 border-t border-gray-200">
+                                <span>
+                                  {order.timestamp
+                                    .toDate()
+                                    .toLocaleDateString("tr-TR")}
+                                </span>
+                                <span className="font-semibold text-gray-900">
+                                  {order.totalPrice} TL
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Load More Button */}
+                        {hasMoreOrders && !orderSearch.trim() && (
+                          <button
+                            onClick={loadMoreOrders}
+                            disabled={loadingMoreOrders}
+                            className="w-full py-2 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded border border-blue-200 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                           >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs font-mono text-gray-600">
-                                #{order.id.substring(0, 8)}
-                              </span>
-                              <span className="text-xs text-gray-900 font-semibold">
-                                {order.totalPrice} TL
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between text-[10px] text-gray-600">
-                              <span>
-                                {order.timestamp
-                                  .toDate()
-                                  .toLocaleDateString("tr-TR")}
-                              </span>
-                              <span>{order.itemCount} ürün</span>
-                            </div>
-                          </div>
-                        ))}
+                            {loadingMoreOrders ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                Yükleniyor...
+                              </>
+                            ) : (
+                              "Daha fazla yükle"
+                            )}
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <div className="text-center py-6">
