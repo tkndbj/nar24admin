@@ -391,7 +391,7 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2">
                     <MapPin className="w-3.5 h-3.5 text-blue-600 group-hover:scale-110 transition-transform" />
                     <span className="text-xs font-medium text-gray-900">
-                      Teslimat Noktaları
+                      Gel-Al Noktaları
                     </span>
                   </div>
                 </button>
@@ -639,6 +639,17 @@ export default function Dashboard() {
                       <Activity className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
                       <span className="text-xs font-medium text-gray-900">
                         Ürün Akış Yönetimi
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => handleNavigation("cloudfunctionmonitoring")}
+                    className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Zap className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
+                      <span className="text-xs font-medium text-gray-900">
+                        Cloud Functions Takibi
                       </span>
                     </div>
                   </button>
