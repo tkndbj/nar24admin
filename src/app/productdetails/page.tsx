@@ -26,6 +26,10 @@ import {
   Zap,
   Copy,
   Database,
+  Archive,
+  ArchiveRestore,
+  AlertTriangle,
+  Shield,
 } from "lucide-react";
 import {
   useState,
@@ -101,6 +105,12 @@ interface ProductData {
   stock?: number;
   discountPercentage?: number;
   originalPrice?: number;
+  // Admin archive fields
+  paused?: boolean;
+  archivedByAdmin?: boolean;
+  archivedByAdminAt?: Timestamp;
+  archivedByAdminId?: string;
+  adminArchiveReason?: string;
 }
 
 interface ShopData {
@@ -148,11 +158,128 @@ interface ReviewData {
   verified?: boolean;
 }
 
+// Archive Confirmation Modal Component
+const ArchiveConfirmationModal = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  isLoading,
+  productName,
+  isArchiving,
+  isAdminArchived,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  isLoading: boolean;
+  productName: string;
+  isArchiving: boolean;
+  isAdminArchived: boolean;
+}) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 border border-gray-200">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-full ${isArchiving ? 'bg-orange-100' : 'bg-green-100'}`}>
+              {isArchiving ? (
+                <Archive className={`w-6 h-6 text-orange-600`} />
+              ) : (
+                <ArchiveRestore className={`w-6 h-6 text-green-600`} />
+              )}
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900">
+              {isArchiving ? 'Ürünü Arşivle' : 'Arşivden Çıkar'}
+            </h3>
+          </div>
+          <button 
+            onClick={onClose} 
+            className="p-1 hover:bg-gray-100 rounded transition-colors"
+            disabled={isLoading}
+          >
+            <X className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
+
+        <div className="mb-6">
+          <p className="text-gray-700 mb-3">
+            <span className="font-semibold">&quot;{productName}&quot;</span> ürününü {isArchiving ? 'arşivlemek' : 'arşivden çıkarmak'} istediğinizden emin misiniz?
+          </p>
+          
+          {isArchiving && (
+            <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-orange-800 text-sm font-medium">Önemli Uyarı</p>
+                  <p className="text-orange-700 text-sm mt-1">
+                    Admin tarafından arşivlenen ürünler, mağaza sahipleri tarafından arşivden çıkarılamaz. 
+                    Kullanıcılar bu ürünü arşivden çıkarmaya çalıştığında &quot;Bu ürün bir yönetici tarafından arşivlenmiştir&quot; mesajı görecekler.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!isArchiving && isAdminArchived && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start gap-2">
+                <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-blue-800 text-sm font-medium">Admin Arşivi</p>
+                  <p className="text-blue-700 text-sm mt-1">
+                    Bu ürün daha önce bir admin tarafından arşivlenmiş. Arşivden çıkardığınızda normal bir ürün olarak işlem görecek ve mağaza sahibi tekrar arşivleyip çıkarabilecek.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            disabled={isLoading}
+            className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 disabled:bg-gray-100 text-gray-700 rounded-lg transition-colors font-medium"
+          >
+            İptal
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isLoading}
+            className={`flex-1 px-4 py-2 rounded-lg transition-colors font-medium flex items-center justify-center gap-2 ${
+              isArchiving 
+                ? 'bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white' 
+                : 'bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white'
+            }`}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>İşleniyor...</span>
+              </>
+            ) : (
+              <>
+                {isArchiving ? <Archive className="w-4 h-4" /> : <ArchiveRestore className="w-4 h-4" />}
+                <span>{isArchiving ? 'Arşivle' : 'Arşivden Çıkar'}</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Create a separate component that uses useSearchParams
 function ProductDetailsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const productId = searchParams.get("productId");
+  const isArchivedParam = searchParams.get("isArchived") === "true";
   const { user: authUser } = useAuth();
 
   // Check if current user is a full admin (not semi-admin)
@@ -164,6 +291,8 @@ function ProductDetailsContent() {
   // State Management
   const [product, setProduct] = useState<ProductData | null>(null);
   const [shop, setShop] = useState<ShopData | null>(null);
+  const [isArchived, setIsArchived] = useState(isArchivedParam);
+  const [productCollection, setProductCollection] = useState<string>("");
 
   const [activeTab, setActiveTab] = useState<"reviews" | "questions">(
     "reviews"
@@ -188,6 +317,10 @@ function ProductDetailsContent() {
   const [isBoostLoading, setIsBoostLoading] = useState(false);
   const [savingField, setSavingField] = useState<string | null>(null);
 
+  // Archive modal state
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
+  const [isArchiveLoading, setIsArchiveLoading] = useState(false);
+
   // Image Gallery State
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
@@ -211,20 +344,37 @@ function ProductDetailsContent() {
     try {
       setLoading(true);
 
-      // Try both collections
-      let productDoc = await getDoc(doc(db, "shop_products", productId));
-      let isShopProduct = true;
+      // Define collection search order based on isArchived param
+      const collectionsToSearch = isArchivedParam 
+        ? ["paused_shop_products", "paused_products", "shop_products", "products"]
+        : ["shop_products", "products", "paused_shop_products", "paused_products"];
 
-      if (!productDoc.exists()) {
-        productDoc = await getDoc(doc(db, "products", productId));
-        isShopProduct = false;
+      let productDoc = null;
+      let foundCollection = "";
+      let isShopProduct = false;
+      let foundIsArchived = false;
+
+      for (const collectionName of collectionsToSearch) {
+        const docRef = doc(db, collectionName, productId);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          productDoc = docSnap;
+          foundCollection = collectionName;
+          isShopProduct = collectionName.includes("shop");
+          foundIsArchived = collectionName.includes("paused");
+          break;
+        }
       }
 
-      if (!productDoc.exists()) {
+      if (!productDoc) {
         toast.error("Ürün bulunamadı");
         router.push("/dashboard");
         return;
       }
+
+      setProductCollection(foundCollection);
+      setIsArchived(foundIsArchived);
 
       const productData = {
         id: productDoc.id,
@@ -241,15 +391,92 @@ function ProductDetailsContent() {
       }
 
       // Fetch reviews
-      await fetchProductReviews(productId, isShopProduct);
-      await fetchProductQuestions(productId, isShopProduct);
+      await fetchProductReviews(productId, foundCollection);
+      await fetchProductQuestions(productId, foundCollection);
     } catch (error) {
       console.error("Error fetching product:", error);
       toast.error("Ürün bilgileri yüklenirken hata oluştu");
     } finally {
       setLoading(false);
     }
-  }, [productId, router]);
+  }, [productId, router, isArchivedParam]);
+
+  // Handle Archive/Unarchive
+  const handleArchiveToggle = async () => {
+    if (!product || !productId) return;
+
+    try {
+      setIsArchiveLoading(true);
+
+      const functions = getFunctions(undefined, "europe-west3");
+      const adminToggleArchive = httpsCallable(functions, "adminToggleProductArchiveStatus");
+
+      const request = {
+        productId: productId,
+        shopId: product.shopId || null,
+        archiveStatus: !isArchived, // Toggle the status
+        collection: productCollection,
+      };
+
+      const result = await adminToggleArchive(request);
+      const data = result.data as { success: boolean; archived: boolean; message?: string };
+
+      if (data.success) {
+        setIsArchived(data.archived);
+        setShowArchiveModal(false);
+        
+        // Update local product state
+        setProduct(prev => prev ? {
+          ...prev,
+          paused: data.archived,
+          archivedByAdmin: data.archived,
+          archivedByAdminAt: data.archived ? Timestamp.now() : undefined,
+        } : null);
+
+        // Update the collection name
+        if (data.archived) {
+          setProductCollection(prev => 
+            prev === "shop_products" ? "paused_shop_products" : 
+            prev === "products" ? "paused_products" : prev
+          );
+        } else {
+          setProductCollection(prev => 
+            prev === "paused_shop_products" ? "shop_products" : 
+            prev === "paused_products" ? "products" : prev
+          );
+        }
+
+        toast.success(
+          data.archived 
+            ? "Ürün başarıyla arşivlendi!" 
+            : "Ürün arşivden çıkarıldı!"
+        );
+      } else {
+        throw new Error(data.message || "İşlem başarısız oldu");
+      }
+    } catch (error: unknown) {
+      console.error("Archive error:", error);
+      
+      let errorMessage = "Arşiv işlemi sırasında hata oluştu";
+      
+      if (error && typeof error === "object") {
+        if ("code" in error) {
+          const errorCode = (error as { code: string }).code;
+          if (errorCode === "unauthenticated") {
+            errorMessage = "Bu işlem için giriş yapmanız gerekiyor";
+          } else if (errorCode === "permission-denied") {
+            errorMessage = "Bu işlemi gerçekleştirme yetkiniz yok";
+          }
+        } else if ("message" in error) {
+          errorMessage = (error as { message: string }).message;
+        }
+      }
+      
+      toast.error(errorMessage);
+    } finally {
+      setIsArchiveLoading(false);
+    }
+  };
 
   const CategorySelectionModal = ({
     isOpen,
@@ -656,8 +883,7 @@ function ProductDetailsContent() {
   ) => {
     if (!productId) throw new Error("Product ID not found");
 
-    const collectionName = product?.shopId ? "shop_products" : "products";
-    const productRef = doc(db, collectionName, productId);
+    const productRef = doc(db, productCollection, productId);
     await updateDoc(productRef, {
       [field]: value,
       updatedAt: Timestamp.now(),
@@ -697,13 +923,12 @@ function ProductDetailsContent() {
   };
 
   const fetchProductReviews = useCallback(
-    async (prodId: string, isShopProduct: boolean) => {
+    async (prodId: string, collectionName: string) => {
       try {
         setReviewsLoading(true);
-        const collection_name = isShopProduct ? "shop_products" : "products";
 
         const reviewsQuery = query(
-          collection(db, collection_name, prodId, "reviews"),
+          collection(db, collectionName, prodId, "reviews"),
           orderBy("timestamp", "desc"),
           limit(10)
         );
@@ -725,13 +950,12 @@ function ProductDetailsContent() {
   );
 
   const fetchProductQuestions = useCallback(
-    async (prodId: string, isShopProduct: boolean) => {
+    async (prodId: string, collectionName: string) => {
       try {
         setQuestionsLoading(true);
-        const collection_name = isShopProduct ? "shop_products" : "products";
 
         const questionsQuery = query(
-          collection(db, collection_name, prodId, "product_questions"),
+          collection(db, collectionName, prodId, "product_questions"),
           orderBy("timestamp", "desc"),
           limit(20)
         );
@@ -1285,31 +1509,91 @@ function ProductDetailsContent() {
               <ArrowLeft className="w-4 h-4 text-gray-700" />
             </button>
             <div className="flex-1 min-w-0">
-              <h1 className="text-sm font-bold text-gray-900 truncate">
-                {product.productName}
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm font-bold text-gray-900 truncate">
+                  {product.productName}
+                </h1>
+                {/* Archive Status Badge */}
+                {isArchived && (
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                    product.archivedByAdmin 
+                      ? 'bg-red-100 text-red-700 border border-red-200' 
+                      : 'bg-orange-100 text-orange-700 border border-orange-200'
+                  }`}>
+                    <Archive className="w-3 h-3" />
+                    {product.archivedByAdmin ? 'Admin Arşivi' : 'Arşivde'}
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-gray-600 truncate">
-                {product.brandModel} • {product.category}
+                {product.brandModel} • {product.category} • <span className="font-mono text-blue-600">{productCollection}</span>
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {!product.isBoosted ? (
+              {/* Archive/Unarchive Button - Only for Full Admins */}
+              {isFullAdmin && (
                 <button
-                  onClick={() => setShowBoostModal(true)}
-                  className="px-2 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded text-xs transition-colors flex items-center gap-1"
+                  onClick={() => setShowArchiveModal(true)}
+                  disabled={isArchiveLoading}
+                  className={`px-2 py-1 rounded text-xs transition-colors flex items-center gap-1 ${
+                    isArchived
+                      ? 'bg-green-100 hover:bg-green-200 text-green-700'
+                      : 'bg-orange-100 hover:bg-orange-200 text-orange-700'
+                  } disabled:opacity-50`}
                 >
-                  <Zap className="w-3 h-3" />
-                  <span>Boost</span>
+                  {isArchiveLoading ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : isArchived ? (
+                    <ArchiveRestore className="w-3 h-3" />
+                  ) : (
+                    <Archive className="w-3 h-3" />
+                  )}
+                  <span>{isArchived ? 'Arşivden Çıkar' : 'Arşivle'}</span>
                 </button>
-              ) : product.boostEndTime ? (
-                <BoostCountdown boostEndTime={product.boostEndTime} />
-              ) : null}
+              )}
+
+              {/* Boost Button - Only show for non-archived products */}
+              {!isArchived && (
+                <>
+                  {!product.isBoosted ? (
+                    <button
+                      onClick={() => setShowBoostModal(true)}
+                      className="px-2 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded text-xs transition-colors flex items-center gap-1"
+                    >
+                      <Zap className="w-3 h-3" />
+                      <span>Boost</span>
+                    </button>
+                  ) : product.boostEndTime ? (
+                    <BoostCountdown boostEndTime={product.boostEndTime} />
+                  ) : null}
+                </>
+              )}
             </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-[1800px] mx-auto px-4 py-4 h-screen overflow-hidden">
+        {/* Admin Archive Warning Banner */}
+        {isArchived && product.archivedByAdmin && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-start gap-3">
+              <Shield className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-red-800 font-medium text-sm">Admin Tarafından Arşivlendi</p>
+                <p className="text-red-700 text-xs mt-1">
+                  Bu ürün bir yönetici tarafından arşivlenmiştir. Mağaza sahibi bu ürünü arşivden çıkaramaz.
+                  {product.archivedByAdminAt && (
+                    <span className="block mt-1 text-red-600">
+                      Arşivlenme tarihi: {product.archivedByAdminAt.toDate().toLocaleString('tr-TR')}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Main Content Grid - Maximized Width & Height Usage */}
         <div className="grid grid-cols-12 gap-4 h-full overflow-hidden">
           {/* Left Column - Product Images (Compact) */}
@@ -1327,6 +1611,16 @@ function ProductDetailsContent() {
                 ) : (
                   <div className="w-full h-full bg-gray-100 flex items-center justify-center">
                     <ImageIcon className="w-12 h-12 text-gray-400" />
+                  </div>
+                )}
+
+                {/* Archive Overlay */}
+                {isArchived && (
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                    <div className="bg-white/90 px-3 py-2 rounded-lg flex items-center gap-2">
+                      <Archive className="w-4 h-4 text-orange-600" />
+                      <span className="text-sm font-medium text-gray-900">Arşivde</span>
+                    </div>
                   </div>
                 )}
 
@@ -1822,6 +2116,17 @@ function ProductDetailsContent() {
           currentSubcategory={product.subcategory}
         />
       )}
+
+      {/* Archive Confirmation Modal */}
+      <ArchiveConfirmationModal
+        isOpen={showArchiveModal}
+        onClose={() => setShowArchiveModal(false)}
+        onConfirm={handleArchiveToggle}
+        isLoading={isArchiveLoading}
+        productName={product?.productName || ""}
+        isArchiving={!isArchived}
+        isAdminArchived={product?.archivedByAdmin || false}
+      />
     </div>
   );
 }
