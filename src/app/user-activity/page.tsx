@@ -96,6 +96,7 @@ interface SearchResult {
 interface PaginationState {
   lastTimestamp: number | null;
   lastDateShard: string | null;
+  currentDateShard: string | null;
   hasMore: boolean;
 }
 
@@ -168,9 +169,9 @@ const ACTIVITY_CONFIG: Record<string, {
   },
 };
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 50;
 const RETENTION_DAYS = 90;
-const MAX_SHARDS_PER_LOAD = 14; // Query up to 7 days at a time for efficiency
+const MAX_SHARDS_PER_LOAD = 30;
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -520,13 +521,19 @@ function CompactStatsBar({ profile }: { profile: UserProfile }) {
 function ActivityTypeFilter({
   selectedTypes,
   onToggle,
-  activityCounts,
+  activities,
 }: {
   selectedTypes: Set<string>;
   onToggle: (type: string) => void;
-  activityCounts: Record<string, number>;
+  activities: ActivityEvent[];
 }) {
   const allTypes = Object.keys(ACTIVITY_CONFIG);
+  
+  // Calculate counts from actual loaded activities
+  const activityCounts = activities.reduce((acc, activity) => {
+    acc[activity.type] = (acc[activity.type] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
   
   return (
     <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-hide">
@@ -539,13 +546,15 @@ function ActivityTypeFilter({
         }`}
       >
         <Filter className="w-3 h-3" />
-        Tümü
+        Tümü ({activities.length})
       </button>
       {allTypes.map((type) => {
         const config = ACTIVITY_CONFIG[type];
         const Icon = config.icon;
         const isSelected = selectedTypes.has(type);
         const count = activityCounts[type] || 0;
+        
+        if (count === 0) return null; // Hide types with no activities
         
         return (
           <button
@@ -559,11 +568,9 @@ function ActivityTypeFilter({
           >
             <Icon className="w-3 h-3" />
             {config.label}
-            {count > 0 && (
-              <span className={`text-[10px] ${isSelected ? "opacity-70" : "text-gray-400"}`}>
-                {count}
-              </span>
-            )}
+            <span className={`text-[10px] ${isSelected ? "opacity-70" : "text-gray-400"}`}>
+              {count}
+            </span>
           </button>
         );
       })}
@@ -595,12 +602,12 @@ export default function UserActivityPage() {
   const [pagination, setPagination] = useState<PaginationState>({
     lastTimestamp: null,
     lastDateShard: null,
+    currentDateShard: null,
     hasMore: true,
   });
   
-  // Filter state
+  // Filter state - filters are client-side only
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
-  const [activityCounts, setActivityCounts] = useState<Record<string, number>>({});
   
   // Detail modal
   const [selectedEvent, setSelectedEvent] = useState<ActivityEvent | null>(null);
@@ -656,133 +663,128 @@ export default function UserActivityPage() {
     return () => clearTimeout(timer);
   }, [searchQuery, searchUsers]);
 
- // Load activities with cross-shard pagination
-const loadActivities = useCallback(async (
-  userId: string,
-  paginationState: PaginationState,
-  append: boolean = false
-) => {
-  setIsLoadingActivities(true);
-  setActivitiesError(null);
+  // Load activities with cross-shard pagination
+  const loadActivities = useCallback(async (
+    userId: string,
+    paginationState: PaginationState,
+    append: boolean = false
+  ) => {
+    setIsLoadingActivities(true);
+    setActivitiesError(null);
 
-  try {
-    const allActivities: ActivityEvent[] = [];
-    const counts: Record<string, number> = append ? { ...activityCounts } : {};
-    
-    let currentDateShard = paginationState.lastDateShard || getDateShard(new Date());
-    let lastTimestamp = paginationState.lastTimestamp;
-    const cutoffDateShard = getCutoffDateShard();
-    
-    let shardsChecked = 0;
-    let remainingToFetch = PAGE_SIZE;
-    let reachedCutoff = false;
+    try {
+      const newActivities: ActivityEvent[] = [];
+      
+      // Determine starting point
+      let currentDateShard = paginationState.currentDateShard || getDateShard(new Date());
+      let lastTimestamp = paginationState.lastTimestamp;
+      const cutoffDateShard = getCutoffDateShard();
+      
+      let shardsChecked = 0;
+      let remainingToFetch = PAGE_SIZE;
+      let reachedCutoff = false;
 
-    // Query across multiple date shards
-    while (remainingToFetch > 0 && !reachedCutoff && shardsChecked < MAX_SHARDS_PER_LOAD) {
-      // Check if we've gone past the cutoff
-      if (currentDateShard < cutoffDateShard) {
-        reachedCutoff = true;
-        break;
-      }
-
-      try {
-        const eventsRef = collection(db, "activity_events", currentDateShard, "events");
-        
-        let q;
-        if (lastTimestamp && shardsChecked === 0) {
-          // First shard with pagination - get events BEFORE the last timestamp
-          q = query(
-            eventsRef,
-            where("userId", "==", userId),
-            where("timestamp", "<", lastTimestamp),
-            orderBy("timestamp", "desc"),
-            limit(remainingToFetch)
-          );
-        } else {
-          // New shard or initial load
-          q = query(
-            eventsRef,
-            where("userId", "==", userId),
-            orderBy("timestamp", "desc"),
-            limit(remainingToFetch)
-          );
+      // Query across multiple date shards
+      while (remainingToFetch > 0 && !reachedCutoff && shardsChecked < MAX_SHARDS_PER_LOAD) {
+        // Check if we've gone past the cutoff
+        if (currentDateShard < cutoffDateShard) {
+          reachedCutoff = true;
+          break;
         }
 
-        const snapshot = await getDocs(q);
-        
-        for (const docSnap of snapshot.docs) {
-          const data = docSnap.data();
-          const event: ActivityEvent = {
-            id: docSnap.id,
-            ...data,
-            dateShard: currentDateShard,
-          } as ActivityEvent;
+        try {
+          const eventsRef = collection(db, "activity_events", currentDateShard, "events");
           
-          allActivities.push(event);
+          let q;
+          if (lastTimestamp && shardsChecked === 0 && append) {
+            // Continuing from previous load - get events BEFORE the last timestamp
+            q = query(
+              eventsRef,
+              where("userId", "==", userId),
+              where("timestamp", "<", lastTimestamp),
+              orderBy("timestamp", "desc"),
+              limit(remainingToFetch)
+            );
+          } else if (shardsChecked === 0 && append) {
+            // Same shard but no timestamp (shouldn't happen, but handle it)
+            q = query(
+              eventsRef,
+              where("userId", "==", userId),
+              orderBy("timestamp", "desc"),
+              limit(remainingToFetch)
+            );
+          } else {
+            // New shard or initial load
+            q = query(
+              eventsRef,
+              where("userId", "==", userId),
+              orderBy("timestamp", "desc"),
+              limit(remainingToFetch)
+            );
+          }
+
+          const snapshot = await getDocs(q);
           
-          // Count by type
-          counts[event.type] = (counts[event.type] || 0) + 1;
+          for (const docSnap of snapshot.docs) {
+            const data = docSnap.data();
+            const event: ActivityEvent = {
+              id: docSnap.id,
+              ...data,
+              dateShard: currentDateShard,
+            } as ActivityEvent;
+            
+            newActivities.push(event);
+          }
+
+          remainingToFetch = PAGE_SIZE - newActivities.length;
+        } catch {
+          // Shard might not exist, continue to previous day
+          console.log(`No data in shard ${currentDateShard}`);
         }
 
-        remainingToFetch = PAGE_SIZE - allActivities.length;
-      } catch {
-        // Shard might not exist, continue to previous day
-        console.log(`No data in shard ${currentDateShard}`);
+        // Move to previous day for next iteration
+        currentDateShard = getPreviousDateShard(currentDateShard);
+        lastTimestamp = null; // Reset for new shard
+        shardsChecked++;
       }
 
-      // Move to previous day
-      currentDateShard = getPreviousDateShard(currentDateShard);
-      lastTimestamp = null; // Reset for new shard
-      shardsChecked++;
-    }
+      // Sort all new activities by timestamp descending
+      newActivities.sort((a, b) => b.timestamp - a.timestamp);
 
-    // Sort all activities by timestamp descending
-    allActivities.sort((a, b) => b.timestamp - a.timestamp);
-
-    // Update state
-    if (append) {
-      setActivities(prev => [...prev, ...allActivities]);
-    } else {
-      setActivities(allActivities);
-    }
-    
-    setActivityCounts(prev => {
-      // Merge counts properly when appending
+      // Update activities state
       if (append) {
-        const merged = { ...prev };
-        for (const [type, count] of Object.entries(counts)) {
-          merged[type] = (merged[type] || 0) + count;
-        }
-        return merged;
+        setActivities(prev => {
+          // Create a Set of existing IDs to prevent duplicates
+          const existingIds = new Set(prev.map(a => `${a.dateShard}-${a.id}`));
+          const uniqueNew = newActivities.filter(a => !existingIds.has(`${a.dateShard}-${a.id}`));
+          return [...prev, ...uniqueNew];
+        });
+      } else {
+        setActivities(newActivities);
       }
-      return counts;
-    });
-    
-    // Update pagination state
-    const lastActivity = allActivities[allActivities.length - 1];
-    
-    // hasMore is true if:
-    // 1. We haven't reached the cutoff date yet, AND
-    // 2. We either got activities OR there are more shards to check
-    const nextDateShard = lastActivity?.dateShard 
-      ? getPreviousDateShard(lastActivity.dateShard) 
-      : currentDateShard;
-    
-    const hasMoreToLoad = !reachedCutoff && nextDateShard >= cutoffDateShard;
-    
-    setPagination({
-      lastTimestamp: lastActivity?.timestamp || null,
-      lastDateShard: lastActivity?.dateShard || currentDateShard,
-      hasMore: hasMoreToLoad,
-    });
+      
+      // Update pagination state
+      const lastActivity = newActivities[newActivities.length - 1];
+      
+      // Determine if there's more to load
+      const hasMoreToLoad = !reachedCutoff && 
+        newActivities.length > 0 && 
+        currentDateShard >= cutoffDateShard;
+      
+      setPagination({
+        lastTimestamp: lastActivity?.timestamp || null,
+        lastDateShard: lastActivity?.dateShard || null,
+        currentDateShard: currentDateShard, // Next shard to query
+        hasMore: hasMoreToLoad,
+      });
 
-  } catch (error) {
-    console.error("Error loading activities:", error);
-    setActivitiesError("Aktiviteler yüklenirken hata oluştu");
-  } finally {
-    setIsLoadingActivities(false);
-  }
-}, [activityCounts]);
+    } catch (error) {
+      console.error("Error loading activities:", error);
+      setActivitiesError("Aktiviteler yüklenirken hata oluştu");
+    } finally {
+      setIsLoadingActivities(false);
+    }
+  }, []);
 
   // Load user profile
   const loadUserProfile = useCallback(async (userId: string): Promise<UserProfile | null> => {
@@ -804,7 +806,6 @@ const loadActivities = useCallback(async (
     setSearchResults([]);
     setShowSearchDropdown(false);
     setActivities([]);
-    setActivityCounts({});
     setSelectedTypes(new Set());
     
     // Set initial user data
@@ -814,6 +815,7 @@ const loadActivities = useCallback(async (
     const initialPagination: PaginationState = {
       lastTimestamp: null,
       lastDateShard: null,
+      currentDateShard: null,
       hasMore: true,
     };
     setPagination(initialPagination);
@@ -838,18 +840,19 @@ const loadActivities = useCallback(async (
   // Refresh activities
   const refreshActivities = useCallback(() => {
     if (selectedUser) {
+      setActivities([]);
       const initialPagination: PaginationState = {
         lastTimestamp: null,
         lastDateShard: null,
+        currentDateShard: null,
         hasMore: true,
       };
       setPagination(initialPagination);
-      setActivityCounts({});
       loadActivities(selectedUser.id, initialPagination, false);
     }
   }, [selectedUser, loadActivities]);
 
-  // Toggle filter type
+  // Toggle filter type (client-side filtering only)
   const toggleFilterType = useCallback((type: string) => {
     if (type === "all") {
       setSelectedTypes(new Set());
@@ -866,7 +869,7 @@ const loadActivities = useCallback(async (
     }
   }, []);
 
-  // Filtered activities
+  // Filtered activities (client-side)
   const filteredActivities = selectedTypes.size > 0
     ? activities.filter(a => selectedTypes.has(a.type))
     : activities;
@@ -965,12 +968,12 @@ const loadActivities = useCallback(async (
               {/* Compact Stats Bar */}
               <CompactStatsBar profile={selectedUser} />
               
-              {/* Filters */}
+              {/* Filters - counts calculated from loaded activities */}
               <div className="bg-white border border-gray-200 rounded-lg p-2 mb-4">
                 <ActivityTypeFilter
                   selectedTypes={selectedTypes}
                   onToggle={toggleFilterType}
-                  activityCounts={activityCounts}
+                  activities={activities}
                 />
               </div>
 
@@ -996,8 +999,10 @@ const loadActivities = useCallback(async (
                     <div className="flex items-center gap-2">
                       <Activity className="w-4 h-4 text-gray-500" />
                       <span className="text-xs font-medium text-gray-700">
-                        {filteredActivities.length} aktivite
-                        {selectedTypes.size > 0 && ` (filtrelenmiş)`}
+                        {selectedTypes.size > 0 
+                          ? `${filteredActivities.length} / ${activities.length} aktivite (filtrelenmiş)`
+                          : `${activities.length} aktivite yüklendi`
+                        }
                       </span>
                     </div>
                     {pagination.lastDateShard && (
@@ -1012,8 +1017,8 @@ const loadActivities = useCallback(async (
                   <div className="divide-y divide-gray-100">
                     {filteredActivities.length > 0 ? (
                       <>
-                        {filteredActivities.map((activity) => (
-                          <div key={`${activity.dateShard}-${activity.id}`} className="px-2 py-1">
+                        {filteredActivities.map((activity, index) => (
+                          <div key={`${activity.dateShard}-${activity.id}-${index}`} className="px-2 py-1">
                             <CompactActivityRow 
                               event={activity} 
                               onClick={() => setSelectedEvent(activity)}
@@ -1021,7 +1026,7 @@ const loadActivities = useCallback(async (
                           </div>
                         ))}
                         
-                        {/* Load More */}
+                        {/* Load More - only show when not filtering or when filter matches all */}
                         {pagination.hasMore && (
                           <div className="p-3">
                             <button
@@ -1037,16 +1042,16 @@ const loadActivities = useCallback(async (
                               ) : (
                                 <>
                                   <ChevronDown className="w-3 h-3" />
-                                  Daha Fazla ({PAGE_SIZE})
+                                  Daha Fazla Yükle
                                 </>
                               )}
                             </button>
                           </div>
                         )}
                         
-                        {!pagination.hasMore && filteredActivities.length > 0 && (
+                        {!pagination.hasMore && activities.length > 0 && (
                           <p className="text-center text-[10px] text-gray-400 py-3">
-                            Tüm aktiviteler yüklendi
+                            ✓ Tüm aktiviteler yüklendi ({activities.length} adet)
                           </p>
                         )}
                       </>
@@ -1054,6 +1059,17 @@ const loadActivities = useCallback(async (
                       <div className="p-8 text-center">
                         <RefreshCw className="w-6 h-6 text-gray-400 animate-spin mx-auto mb-2" />
                         <p className="text-xs text-gray-500">Yükleniyor...</p>
+                      </div>
+                    ) : selectedTypes.size > 0 ? (
+                      <div className="p-8 text-center">
+                        <Filter className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                        <p className="text-sm text-gray-500">Seçilen filtreye uygun aktivite yok</p>
+                        <button
+                          onClick={() => setSelectedTypes(new Set())}
+                          className="mt-2 text-xs text-blue-600 hover:underline"
+                        >
+                          Filtreyi temizle
+                        </button>
                       </div>
                     ) : (
                       <div className="p-8 text-center">
