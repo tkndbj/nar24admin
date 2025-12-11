@@ -380,10 +380,6 @@ function parseMemory(memoryString: string): number {
   return unit === "G" ? value * 1024 : value;
 }
 
-function parseTimeout(timeout: number | { seconds?: number }): number {
-  if (typeof timeout === "number") return timeout;
-  return timeout?.seconds || 60;
-}
 
 function generateFallbackFunctions(page: number, pageSize: number): CloudFunction[] {
   const allFunctions = [
@@ -443,7 +439,7 @@ function generateFallbackFunctions(page: number, pageSize: number): CloudFunctio
   const endIndex = Math.min(startIndex + pageSize, allFunctions.length);
   const pageFunctions = allFunctions.slice(startIndex, endIndex);
 
-  return pageFunctions.map((name, i) => {
+  return pageFunctions.map((name) => {
     const hasErrors = Math.random() < 0.15;
     const executions = Math.floor(Math.random() * 5000) + 100;
     const errors = hasErrors ? Math.floor(Math.random() * (executions * 0.1)) : 0;
