@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import {
@@ -15,12 +15,18 @@ import {
   CreditCard,
   SearchIcon,
   Trash2,
-  ChevronDown,
   Clock,
   Package,
-  TrendingUp,
   RefreshCw,
   AlertCircle,
+  ChevronDown,
+  Calendar,
+  Hash,
+  Tag,
+  Store,
+  X,
+  Filter,
+  BarChart3,
 } from "lucide-react";
 import {
   collection,
@@ -28,9 +34,9 @@ import {
   where,
   orderBy,
   limit,
-  startAfter,
   getDocs,
-  DocumentSnapshot,
+  doc,
+  getDoc,
   Timestamp,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -61,6 +67,7 @@ interface UserProfile {
 
 interface ActivityEvent {
   id: string;
+  orderId?: string;
   userId: string;
   type: string;
   productId?: string;
@@ -76,12 +83,20 @@ interface ActivityEvent {
   weight: number;
   timestamp: number;
   serverTimestamp?: Timestamp;
+  dateShard?: string;
 }
 
 interface SearchResult {
   id: string;
   displayName: string;
   email?: string;
+  photoURL?: string;
+}
+
+interface PaginationState {
+  lastTimestamp: number | null;
+  lastDateShard: string | null;
+  hasMore: boolean;
 }
 
 // ============================================================================
@@ -93,58 +108,69 @@ const ACTIVITY_CONFIG: Record<string, {
   icon: React.ElementType; 
   color: string;
   bgColor: string;
+  borderColor: string;
 }> = {
   click: { 
     label: "Tıklama", 
     icon: MousePointer, 
     color: "text-blue-600",
-    bgColor: "bg-blue-100"
+    bgColor: "bg-blue-50",
+    borderColor: "border-blue-200"
   },
   view: { 
     label: "Görüntüleme", 
     icon: Eye, 
     color: "text-indigo-600",
-    bgColor: "bg-indigo-100"
+    bgColor: "bg-indigo-50",
+    borderColor: "border-indigo-200"
   },
   addToCart: { 
     label: "Sepete Ekleme", 
     icon: ShoppingCart, 
     color: "text-green-600",
-    bgColor: "bg-green-100"
+    bgColor: "bg-green-50",
+    borderColor: "border-green-200"
   },
   removeFromCart: { 
     label: "Sepetten Çıkarma", 
     icon: Trash2, 
     color: "text-red-600",
-    bgColor: "bg-red-100"
+    bgColor: "bg-red-50",
+    borderColor: "border-red-200"
   },
   favorite: { 
-    label: "Favorilere Ekleme", 
+    label: "Favori", 
     icon: Heart, 
     color: "text-pink-600",
-    bgColor: "bg-pink-100"
+    bgColor: "bg-pink-50",
+    borderColor: "border-pink-200"
   },
   unfavorite: { 
-    label: "Favorilerden Çıkarma", 
+    label: "Favori Kaldırma", 
     icon: Heart, 
-    color: "text-gray-600",
-    bgColor: "bg-gray-100"
+    color: "text-gray-500",
+    bgColor: "bg-gray-50",
+    borderColor: "border-gray-200"
   },
   purchase: { 
     label: "Satın Alma", 
     icon: CreditCard, 
     color: "text-emerald-600",
-    bgColor: "bg-emerald-100"
+    bgColor: "bg-emerald-50",
+    borderColor: "border-emerald-200"
   },
   search: { 
     label: "Arama", 
     icon: SearchIcon, 
     color: "text-purple-600",
-    bgColor: "bg-purple-100"
+    bgColor: "bg-purple-50",
+    borderColor: "border-purple-200"
   },
 };
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 30;
+const RETENTION_DAYS = 90;
+const MAX_SHARDS_PER_LOAD = 7; // Query up to 7 days at a time for efficiency
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -158,34 +184,15 @@ function formatTimestamp(timestamp: number | Timestamp): string {
   const now = new Date();
   const diff = now.getTime() - date.getTime();
   
-  // Less than 1 minute
-  if (diff < 60000) {
-    return "Az önce";
-  }
+  if (diff < 60000) return "Az önce";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}dk`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}sa`;
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}g`;
   
-  // Less than 1 hour
-  if (diff < 3600000) {
-    const minutes = Math.floor(diff / 60000);
-    return `${minutes} dakika önce`;
-  }
-  
-  // Less than 24 hours
-  if (diff < 86400000) {
-    const hours = Math.floor(diff / 3600000);
-    return `${hours} saat önce`;
-  }
-  
-  // Less than 7 days
-  if (diff < 604800000) {
-    const days = Math.floor(diff / 86400000);
-    return `${days} gün önce`;
-  }
-  
-  // Format as date
   return date.toLocaleDateString("tr-TR", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -195,203 +202,371 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("tr-TR", {
     style: "currency",
     currency: "TRY",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(amount);
+}
+
+function getDateShard(date: Date): string {
+  return date.toISOString().split("T")[0];
+}
+
+function getPreviousDateShard(dateShard: string): string {
+  const date = new Date(dateShard);
+  date.setDate(date.getDate() - 1);
+  return getDateShard(date);
+}
+
+function getCutoffDateShard(): string {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
+  return getDateShard(cutoff);
 }
 
 // ============================================================================
 // COMPONENTS
 // ============================================================================
 
-function ActivityIcon({ type }: { type: string }) {
-  const config = ACTIVITY_CONFIG[type] || { 
-    label: type, 
-    icon: Activity, 
-    color: "text-gray-600",
-    bgColor: "bg-gray-100"
-  };
-  const Icon = config.icon;
-  
-  return (
-    <div className={`w-10 h-10 ${config.bgColor} rounded-xl flex items-center justify-center`}>
-      <Icon className={`w-5 h-5 ${config.color}`} />
-    </div>
-  );
-}
-
-function ActivityCard({ event }: { event: ActivityEvent }) {
+function CompactActivityRow({ event, onClick }: { event: ActivityEvent; onClick?: () => void }) {
   const config = ACTIVITY_CONFIG[event.type] || { 
     label: event.type, 
-    color: "text-gray-600" 
+    icon: Activity, 
+    color: "text-gray-600",
+    bgColor: "bg-gray-50",
+    borderColor: "border-gray-200"
   };
+  const Icon = config.icon;
 
   return (
-    <div className="flex items-start gap-4 p-4 bg-white rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all">
-      <ActivityIcon type={event.type} />
-      
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2 mb-1">
-          <span className={`font-semibold ${config.color}`}>
-            {config.label}
-          </span>
-          <span className="text-xs text-gray-500 flex items-center gap-1">
-            <Clock className="w-3 h-3" />
-            {formatTimestamp(event.timestamp)}
-          </span>
-        </div>
-        
-        <div className="space-y-1">
-        {event.productId && (
-  <p className="text-sm text-gray-700">
-    <span className="text-gray-500">Ürün:</span>{" "}
-    {event.productName ? (
-      <span className="font-medium text-gray-900">{event.productName}</span>
-    ) : (
-      <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">
-        {event.productId.substring(0, 12)}...
-      </span>
-    )}
-  </p>
-)}
-          
-          {event.searchQuery && (
-            <p className="text-sm text-gray-700">
-              <span className="text-gray-500">Arama:</span>{" "}
-              <span className="font-medium">&quot;{event.searchQuery}&quot;</span>
-            </p>
-          )}
-          
-          {event.category && (
-            <p className="text-sm text-gray-600">
-              <span className="text-gray-500">Kategori:</span>{" "}
-              {event.category}
-              {event.subcategory && ` → ${event.subcategory}`}
-            </p>
-          )}
-          
-          {event.brand && (
-            <p className="text-sm text-gray-600">
-              <span className="text-gray-500">Marka:</span>{" "}
-              {event.brand}
-            </p>
-          )}
-          
-          {event.price !== undefined && (
-            <p className="text-sm text-gray-600">
-              <span className="text-gray-500">Fiyat:</span>{" "}
-              {formatCurrency(event.price)}
-              {event.quantity && event.quantity > 1 && (
-                <span className="text-gray-500"> × {event.quantity}</span>
-              )}
-            </p>
-          )}
-          
-          {event.totalValue !== undefined && event.totalValue !== event.price && (
-            <p className="text-sm font-medium text-emerald-600">
-              Toplam: {formatCurrency(event.totalValue)}
-            </p>
-          )}
-        </div>
+    <div 
+      className={`flex items-center gap-3 px-3 py-2 ${config.bgColor} border ${config.borderColor} rounded-lg hover:shadow-sm transition-all cursor-pointer group`}
+      onClick={onClick}
+    >
+      {/* Icon */}
+      <div className={`w-7 h-7 rounded-md flex items-center justify-center ${config.bgColor} border ${config.borderColor}`}>
+        <Icon className={`w-3.5 h-3.5 ${config.color}`} />
       </div>
-      
-      <div className="flex flex-col items-end gap-1">
-        <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+
+      {/* Main Info */}
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <span className={`text-xs font-semibold ${config.color} whitespace-nowrap`}>
+          {config.label}
+        </span>
+        
+        {event.productName && (
+          <span className="text-xs text-gray-700 truncate max-w-[200px]" title={event.productName}>
+            {event.productName}
+          </span>
+        )}
+        
+        {event.searchQuery && (
+          <span className="text-xs text-gray-700 truncate max-w-[200px]">
+            &quot;{event.searchQuery}&quot;
+          </span>
+        )}
+        
+        {event.category && !event.productName && (
+          <span className="text-xs text-gray-500 truncate">
+            {event.category}
+          </span>
+        )}
+      </div>
+
+      {/* Meta Info */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {event.price !== undefined && (
+          <span className="text-xs font-medium text-gray-700">
+            {formatCurrency(event.price)}
+          </span>
+        )}
+        
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
           event.weight > 0 
             ? "bg-green-100 text-green-700" 
             : event.weight < 0 
             ? "bg-red-100 text-red-700"
-            : "bg-gray-100 text-gray-700"
+            : "bg-gray-100 text-gray-600"
         }`}>
-          {event.weight > 0 ? "+" : ""}{event.weight} puan
+          {event.weight > 0 ? "+" : ""}{event.weight}
+        </span>
+        
+        <span className="text-[10px] text-gray-400 w-12 text-right">
+          {formatTimestamp(event.timestamp)}
         </span>
       </div>
     </div>
   );
 }
 
-function UserStatsCard({ profile }: { profile: UserProfile }) {
+function ActivityDetailModal({ 
+  event, 
+  onClose 
+}: { 
+  event: ActivityEvent; 
+  onClose: () => void;
+}) {
+  const config = ACTIVITY_CONFIG[event.type] || { 
+    label: event.type, 
+    icon: Activity, 
+    color: "text-gray-600",
+    bgColor: "bg-gray-50"
+  };
+  const Icon = config.icon;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+        {/* Header */}
+        <div className={`${config.bgColor} px-4 py-3 rounded-t-xl border-b flex items-center justify-between`}>
+          <div className="flex items-center gap-2">
+            <Icon className={`w-5 h-5 ${config.color}`} />
+            <span className={`font-semibold ${config.color}`}>{config.label}</span>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-white/50 rounded">
+            <X className="w-4 h-4 text-gray-600" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-4 space-y-3">
+          {/* Timestamp */}
+          <div className="flex items-center gap-2 text-sm">
+            <Clock className="w-4 h-4 text-gray-400" />
+            <span className="text-gray-600">
+              {new Date(event.timestamp).toLocaleString("tr-TR")}
+            </span>
+          </div>
+
+          {/* Product */}
+          {event.productId && (
+            <div className="flex items-start gap-2 text-sm">
+              <Package className="w-4 h-4 text-gray-400 mt-0.5" />
+              <div>
+                <p className="text-gray-900 font-medium">{event.productName || "Ürün"}</p>
+                <p className="text-xs text-gray-500 font-mono">{event.productId}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Shop */}
+          {event.shopId && (
+            <div className="flex items-center gap-2 text-sm">
+              <Store className="w-4 h-4 text-gray-400" />
+              <span className="text-gray-600 font-mono text-xs">{event.shopId}</span>
+            </div>
+          )}
+
+          {/* Category */}
+          {event.category && (
+            <div className="flex items-center gap-2 text-sm">
+              <Tag className="w-4 h-4 text-gray-400" />
+              <span className="text-gray-600">
+                {event.category}
+                {event.subcategory && ` → ${event.subcategory}`}
+              </span>
+            </div>
+          )}
+
+          {/* Brand */}
+          {event.brand && (
+            <div className="flex items-center gap-2 text-sm">
+              <Hash className="w-4 h-4 text-gray-400" />
+              <span className="text-gray-600">{event.brand}</span>
+            </div>
+          )}
+
+          {/* Search Query */}
+          {event.searchQuery && (
+            <div className="flex items-center gap-2 text-sm">
+              <SearchIcon className="w-4 h-4 text-gray-400" />
+              <span className="text-gray-600">&quot;{event.searchQuery}&quot;</span>
+            </div>
+          )}
+
+          {/* Price & Quantity */}
+          {event.price !== undefined && (
+            <div className="flex items-center gap-4 text-sm pt-2 border-t">
+              <div>
+                <span className="text-gray-500">Fiyat: </span>
+                <span className="font-semibold text-gray-900">{formatCurrency(event.price)}</span>
+              </div>
+              {event.quantity && event.quantity > 1 && (
+                <div>
+                  <span className="text-gray-500">Adet: </span>
+                  <span className="font-semibold text-gray-900">{event.quantity}</span>
+                </div>
+              )}
+              {event.totalValue && event.totalValue !== event.price && (
+                <div>
+                  <span className="text-gray-500">Toplam: </span>
+                  <span className="font-semibold text-emerald-600">{formatCurrency(event.totalValue)}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Weight */}
+          <div className="flex items-center justify-between pt-2 border-t">
+            <span className="text-sm text-gray-500">Puan Etkisi</span>
+            <span className={`text-sm font-bold px-2 py-1 rounded ${
+              event.weight > 0 
+                ? "bg-green-100 text-green-700" 
+                : event.weight < 0 
+                ? "bg-red-100 text-red-700"
+                : "bg-gray-100 text-gray-600"
+            }`}>
+              {event.weight > 0 ? "+" : ""}{event.weight} puan
+            </span>
+          </div>
+
+          {/* Date Shard (debug info) */}
+          {event.dateShard && (
+            <div className="text-[10px] text-gray-400 pt-2 border-t">
+              Shard: {event.dateShard}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CompactStatsBar({ profile }: { profile: UserProfile }) {
   const stats = profile.stats || {};
   const preferences = profile.preferences || {};
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-3 mb-4">
+      <div className="flex items-center justify-between gap-4">
+        {/* User Info */}
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg flex items-center justify-center flex-shrink-0">
+            <User className="w-4 h-4 text-white" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="font-semibold text-gray-900 text-sm truncate">
+              {profile.displayName || "İsimsiz"}
+            </h3>
+            <p className="text-xs text-gray-500 truncate">{profile.email || profile.id}</p>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="flex items-center gap-4 flex-shrink-0">
+          <div className="text-center px-3 py-1 bg-blue-50 rounded-lg">
+            <p className="text-lg font-bold text-blue-600">{stats.totalEvents || 0}</p>
+            <p className="text-[10px] text-blue-600/70">Etkinlik</p>
+          </div>
+          <div className="text-center px-3 py-1 bg-green-50 rounded-lg">
+            <p className="text-lg font-bold text-green-600">{stats.totalPurchases || 0}</p>
+            <p className="text-[10px] text-green-600/70">Satın Alma</p>
+          </div>
+          <div className="text-center px-3 py-1 bg-emerald-50 rounded-lg">
+            <p className="text-lg font-bold text-emerald-600">
+              {stats.totalSpent ? formatCurrency(stats.totalSpent) : "₺0"}
+            </p>
+            <p className="text-[10px] text-emerald-600/70">Harcama</p>
+          </div>
+          <div className="text-center px-3 py-1 bg-purple-50 rounded-lg">
+            <p className="text-lg font-bold text-purple-600">
+              {preferences.avgPurchasePrice ? formatCurrency(preferences.avgPurchasePrice) : "—"}
+            </p>
+            <p className="text-[10px] text-purple-600/70">Ort. Sepet</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Top Categories & Brands - Compact */}
+      {(preferences.topCategories?.length || preferences.topBrands?.length) && (
+        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100">
+          {preferences.topCategories && preferences.topCategories.length > 0 && (
+            <div className="flex items-center gap-1 flex-1 min-w-0">
+              <Tag className="w-3 h-3 text-gray-400 flex-shrink-0" />
+              <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+                {preferences.topCategories.slice(0, 4).map((cat, idx) => (
+                  <span 
+                    key={idx}
+                    className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded whitespace-nowrap"
+                  >
+                    {cat.category}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {preferences.topBrands && preferences.topBrands.length > 0 && (
+            <div className="flex items-center gap-1 flex-1 min-w-0">
+              <Hash className="w-3 h-3 text-gray-400 flex-shrink-0" />
+              <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+                {preferences.topBrands.slice(0, 4).map((brand, idx) => (
+                  <span 
+                    key={idx}
+                    className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded whitespace-nowrap"
+                  >
+                    {brand.brand}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActivityTypeFilter({
+  selectedTypes,
+  onToggle,
+  activityCounts,
+}: {
+  selectedTypes: Set<string>;
+  onToggle: (type: string) => void;
+  activityCounts: Record<string, number>;
+}) {
+  const allTypes = Object.keys(ACTIVITY_CONFIG);
   
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-5 mb-6">
-      <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
-        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-500 rounded-xl flex items-center justify-center">
-          <User className="w-6 h-6 text-white" />
-        </div>
-        <div>
-          <h3 className="font-bold text-gray-900">{profile.displayName || "İsimsiz Kullanıcı"}</h3>
-          <p className="text-sm text-gray-500">{profile.email || profile.id}</p>
-        </div>
-      </div>
-      
-      {/* Stats Grid */}
-      <div className="grid grid-cols-4 gap-4 mb-4">
-        <div className="text-center p-3 bg-blue-50 rounded-lg">
-          <Activity className="w-5 h-5 text-blue-600 mx-auto mb-1" />
-          <p className="text-2xl font-bold text-gray-900">{stats.totalEvents || 0}</p>
-          <p className="text-xs text-gray-600">Toplam Etkinlik</p>
-        </div>
-        <div className="text-center p-3 bg-green-50 rounded-lg">
-          <Package className="w-5 h-5 text-green-600 mx-auto mb-1" />
-          <p className="text-2xl font-bold text-gray-900">{stats.totalPurchases || 0}</p>
-          <p className="text-xs text-gray-600">Satın Alma</p>
-        </div>
-        <div className="text-center p-3 bg-emerald-50 rounded-lg">
-          <CreditCard className="w-5 h-5 text-emerald-600 mx-auto mb-1" />
-          <p className="text-2xl font-bold text-gray-900">
-            {stats.totalSpent ? formatCurrency(stats.totalSpent) : "₺0"}
-          </p>
-          <p className="text-xs text-gray-600">Toplam Harcama</p>
-        </div>
-        <div className="text-center p-3 bg-purple-50 rounded-lg">
-          <TrendingUp className="w-5 h-5 text-purple-600 mx-auto mb-1" />
-          <p className="text-2xl font-bold text-gray-900">
-            {preferences.avgPurchasePrice ? formatCurrency(preferences.avgPurchasePrice) : "—"}
-          </p>
-          <p className="text-xs text-gray-600">Ort. Sepet</p>
-        </div>
-      </div>
-      
-      {/* Top Categories & Brands */}
-      <div className="grid grid-cols-2 gap-4">
-        {preferences.topCategories && preferences.topCategories.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase mb-2">En Çok İlgilenilen Kategoriler</p>
-            <div className="flex flex-wrap gap-1">
-              {preferences.topCategories.slice(0, 5).map((cat, idx) => (
-                <span 
-                  key={idx}
-                  className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full"
-                >
-                  {cat.category} ({cat.score})
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+    <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-hide">
+      <button
+        onClick={() => onToggle("all")}
+        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${
+          selectedTypes.size === 0 
+            ? "bg-gray-900 text-white" 
+            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+        }`}
+      >
+        <Filter className="w-3 h-3" />
+        Tümü
+      </button>
+      {allTypes.map((type) => {
+        const config = ACTIVITY_CONFIG[type];
+        const Icon = config.icon;
+        const isSelected = selectedTypes.has(type);
+        const count = activityCounts[type] || 0;
         
-        {preferences.topBrands && preferences.topBrands.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase mb-2">En Çok İlgilenilen Markalar</p>
-            <div className="flex flex-wrap gap-1">
-              {preferences.topBrands.slice(0, 5).map((brand, idx) => (
-                <span 
-                  key={idx}
-                  className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded-full"
-                >
-                  {brand.brand} ({brand.score})
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-      
-      {profile.lastActivityAt && (
-        <p className="text-xs text-gray-400 mt-4 pt-4 border-t border-gray-100">
-          Son aktivite: {formatTimestamp(profile.lastActivityAt)}
-        </p>
-      )}
+        return (
+          <button
+            key={type}
+            onClick={() => onToggle(type)}
+            className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${
+              isSelected 
+                ? `${config.bgColor} ${config.color} border ${config.borderColor}` 
+                : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+            }`}
+          >
+            <Icon className="w-3 h-3" />
+            {config.label}
+            {count > 0 && (
+              <span className={`text-[10px] ${isSelected ? "opacity-70" : "text-gray-400"}`}>
+                {count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -402,20 +577,33 @@ function UserStatsCard({ profile }: { profile: UserProfile }) {
 
 export default function UserActivityPage() {
   const router = useRouter();
+  const activitiesContainerRef = useRef<HTMLDivElement>(null);
   
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   
   // Selected user state
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [isLoadingActivities, setIsLoadingActivities] = useState(false);
-  const [lastActivityDoc, setLastActivityDoc] = useState<DocumentSnapshot | null>(null);
-  const [hasMoreActivities, setHasMoreActivities] = useState(true);
   const [activitiesError, setActivitiesError] = useState<string | null>(null);
+  
+  // Pagination state
+  const [pagination, setPagination] = useState<PaginationState>({
+    lastTimestamp: null,
+    lastDateShard: null,
+    hasMore: true,
+  });
+  
+  // Filter state
+  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
+  const [activityCounts, setActivityCounts] = useState<Record<string, number>>({});
+  
+  // Detail modal
+  const [selectedEvent, setSelectedEvent] = useState<ActivityEvent | null>(null);
 
   // Search users by displayName
   const searchUsers = useCallback(async (queryStr: string) => {
@@ -425,30 +613,28 @@ export default function UserActivityPage() {
     }
 
     setIsSearching(true);
-    setSearchError(null);
 
     try {
-      // Search in users collection with prefix matching
       const usersRef = collection(db, "users");
       const q = query(
         usersRef,
         where("displayName", ">=", queryStr),
         where("displayName", "<=", queryStr + "\uf8ff"),
-        limit(10)
+        limit(8)
       );
 
       const snapshot = await getDocs(q);
-
-      const results: SearchResult[] = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        displayName: doc.data().displayName || "İsimsiz",
-        email: doc.data().email,
+      const results: SearchResult[] = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        displayName: docSnap.data().displayName || "İsimsiz",
+        email: docSnap.data().email,
+        photoURL: docSnap.data().photoURL,
       }));
 
       setSearchResults(results);
+      setShowSearchDropdown(true);
     } catch (error) {
       console.error("Search error:", error);
-      setSearchError("Arama sırasında bir hata oluştu");
       setSearchResults([]);
     } finally {
       setIsSearching(false);
@@ -459,7 +645,7 @@ export default function UserActivityPage() {
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults([]);
-      setSearchError(null);
+      setShowSearchDropdown(false);
       return;
     }
 
@@ -470,310 +656,416 @@ export default function UserActivityPage() {
     return () => clearTimeout(timer);
   }, [searchQuery, searchUsers]);
 
-  // Load activities with pagination
+  // Load activities with cross-shard pagination
   const loadActivities = useCallback(async (
     userId: string,
-    lastDoc: DocumentSnapshot | null
+    paginationState: PaginationState,
+    append: boolean = false
   ) => {
     setIsLoadingActivities(true);
     setActivitiesError(null);
 
     try {
-      // Get today's date shard (most recent first)
-      const today = new Date().toISOString().split("T")[0];
+      const allActivities: ActivityEvent[] = [];
+      const counts: Record<string, number> = append ? { ...activityCounts } : {};
+      
+      let currentDateShard = paginationState.lastDateShard || getDateShard(new Date());
+      let lastTimestamp = paginationState.lastTimestamp;
+      const cutoffDateShard = getCutoffDateShard();
+      
+      let shardsChecked = 0;
+      let remainingToFetch = PAGE_SIZE;
 
-      // Query activity events for this user
-      // Note: This queries the date-sharded collection
-      const eventsRef = collection(db, "activity_events", today, "events");
+      // Query across multiple date shards
+      while (remainingToFetch > 0 && currentDateShard >= cutoffDateShard && shardsChecked < MAX_SHARDS_PER_LOAD) {
+        try {
+          const eventsRef = collection(db, "activity_events", currentDateShard, "events");
+          
+          let q;
+          if (lastTimestamp && shardsChecked === 0) {
+            // First shard with pagination - get events BEFORE the last timestamp
+            q = query(
+              eventsRef,
+              where("userId", "==", userId),
+              where("timestamp", "<", lastTimestamp),
+              orderBy("timestamp", "desc"),
+              limit(remainingToFetch)
+            );
+          } else {
+            // New shard or initial load
+            q = query(
+              eventsRef,
+              where("userId", "==", userId),
+              orderBy("timestamp", "desc"),
+              limit(remainingToFetch)
+            );
+          }
 
-      let q = query(
-        eventsRef,
-        where("userId", "==", userId),
-        orderBy("timestamp", "desc"),
-        limit(PAGE_SIZE + 1)
-      );
+          const snapshot = await getDocs(q);
+          
+          for (const docSnap of snapshot.docs) {
+            if (allActivities.length < remainingToFetch) {
+              const data = docSnap.data();
+              const event: ActivityEvent = {
+                id: docSnap.id,
+                ...data,
+                dateShard: currentDateShard,
+              } as ActivityEvent;
+              
+              allActivities.push(event);
+              
+              // Count by type
+              counts[event.type] = (counts[event.type] || 0) + 1;
+            }
+          }
 
-      if (lastDoc) {
-        q = query(
-          eventsRef,
-          where("userId", "==", userId),
-          orderBy("timestamp", "desc"),
-          startAfter(lastDoc),
-          limit(PAGE_SIZE + 1)
-        );
+          remainingToFetch = PAGE_SIZE - allActivities.length;
+        } catch (shardError) {
+          // Shard might not exist, continue to previous day
+          console.log(`No data in shard ${currentDateShard}`);
+        }
+
+        // Move to previous day
+        currentDateShard = getPreviousDateShard(currentDateShard);
+        lastTimestamp = null; // Reset for new shard
+        shardsChecked++;
       }
 
-      const snapshot = await getDocs(q);
+      // Sort all activities by timestamp descending
+      allActivities.sort((a, b) => b.timestamp - a.timestamp);
 
-      const newActivities: ActivityEvent[] = [];
-      let hasMore = false;
-      let lastVisible: DocumentSnapshot | null = null;
-
-      snapshot.docs.forEach((doc, index) => {
-        if (index < PAGE_SIZE) {
-          newActivities.push({
-            id: doc.id,
-            ...doc.data(),
-          } as ActivityEvent);
-          lastVisible = doc;
-        } else {
-          hasMore = true;
-        }
+      // Update state
+      if (append) {
+        setActivities(prev => [...prev, ...allActivities]);
+      } else {
+        setActivities(allActivities);
+      }
+      
+      setActivityCounts(counts);
+      
+      // Update pagination state
+      const lastActivity = allActivities[allActivities.length - 1];
+      setPagination({
+        lastTimestamp: lastActivity?.timestamp || null,
+        lastDateShard: lastActivity?.dateShard || currentDateShard,
+        hasMore: allActivities.length === PAGE_SIZE && currentDateShard >= cutoffDateShard,
       });
 
-      if (lastDoc) {
-        setActivities((prev) => [...prev, ...newActivities]);
-      } else {
-        setActivities(newActivities);
-      }
-
-      setLastActivityDoc(lastVisible);
-      setHasMoreActivities(hasMore);
     } catch (error) {
       console.error("Error loading activities:", error);
-      setActivitiesError("Aktiviteler yüklenirken bir hata oluştu");
+      setActivitiesError("Aktiviteler yüklenirken hata oluştu");
     } finally {
       setIsLoadingActivities(false);
     }
-  }, []);
+  }, [activityCounts]);
 
-  // Load user profile and activities
-  const selectUser = useCallback(async (userId: string, displayName: string) => {
-    setSelectedUser({ id: userId, displayName });
-    setActivities([]);
-    setLastActivityDoc(null);
-    setHasMoreActivities(true);
-    setActivitiesError(null);
-    setSearchQuery("");
-    setSearchResults([]);
-
-    // Load user profile from user_profiles collection
+  // Load user profile
+  const loadUserProfile = useCallback(async (userId: string): Promise<UserProfile | null> => {
     try {
-      const profileRef = collection(db, "user_profiles");
-      const profileQuery = query(profileRef, where("__name__", "==", userId));
-      const profileSnapshot = await getDocs(profileQuery);
-
-      if (!profileSnapshot.empty) {
-        const profileData = profileSnapshot.docs[0].data();
-        setSelectedUser({
-          id: userId,
-          displayName,
-          ...profileData,
-        } as UserProfile);
+      const profileDoc = await getDoc(doc(db, "user_profiles", userId));
+      if (profileDoc.exists()) {
+        return { id: userId, ...profileDoc.data() } as UserProfile;
       }
+      return null;
     } catch (error) {
       console.error("Error loading profile:", error);
+      return null;
+    }
+  }, []);
+
+  // Select user
+  const selectUser = useCallback(async (userId: string, displayName: string, email?: string) => {
+    setSearchQuery("");
+    setSearchResults([]);
+    setShowSearchDropdown(false);
+    setActivities([]);
+    setActivityCounts({});
+    setSelectedTypes(new Set());
+    
+    // Set initial user data
+    setSelectedUser({ id: userId, displayName, email });
+    
+    // Reset pagination
+    const initialPagination: PaginationState = {
+      lastTimestamp: null,
+      lastDateShard: null,
+      hasMore: true,
+    };
+    setPagination(initialPagination);
+
+    // Load profile in background
+    const profile = await loadUserProfile(userId);
+    if (profile) {
+      setSelectedUser(prev => ({ ...prev, ...profile }));
     }
 
     // Load initial activities
-    await loadActivities(userId, null);
-  }, [loadActivities]);
+    await loadActivities(userId, initialPagination, false);
+  }, [loadActivities, loadUserProfile]);
 
   // Load more activities
   const loadMore = useCallback(() => {
-    if (selectedUser && lastActivityDoc && hasMoreActivities && !isLoadingActivities) {
-      loadActivities(selectedUser.id, lastActivityDoc);
+    if (selectedUser && pagination.hasMore && !isLoadingActivities) {
+      loadActivities(selectedUser.id, pagination, true);
     }
-  }, [selectedUser, lastActivityDoc, hasMoreActivities, isLoadingActivities, loadActivities]);
+  }, [selectedUser, pagination, isLoadingActivities, loadActivities]);
 
   // Refresh activities
   const refreshActivities = useCallback(() => {
     if (selectedUser) {
-      setActivities([]);
-      setLastActivityDoc(null);
-      setHasMoreActivities(true);
-      loadActivities(selectedUser.id, null);
+      const initialPagination: PaginationState = {
+        lastTimestamp: null,
+        lastDateShard: null,
+        hasMore: true,
+      };
+      setPagination(initialPagination);
+      setActivityCounts({});
+      loadActivities(selectedUser.id, initialPagination, false);
     }
   }, [selectedUser, loadActivities]);
 
+  // Toggle filter type
+  const toggleFilterType = useCallback((type: string) => {
+    if (type === "all") {
+      setSelectedTypes(new Set());
+    } else {
+      setSelectedTypes(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(type)) {
+          newSet.delete(type);
+        } else {
+          newSet.add(type);
+        }
+        return newSet;
+      });
+    }
+  }, []);
+
+  // Filtered activities
+  const filteredActivities = selectedTypes.size > 0
+    ? activities.filter(a => selectedTypes.has(a.type))
+    : activities;
+
+  // Close search dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setShowSearchDropdown(false);
+    document.addEventListener("click", handleClickOutside);
+    return () => document.removeEventListener("click", handleClickOutside);
+  }, []);
+
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-        {/* Header */}
-        <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-          <div className="max-w-6xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => router.push("/")}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <ArrowLeft className="w-5 h-5 text-gray-600" />
-                </button>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <Activity className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h1 className="text-xl font-bold text-gray-900">
-                      Kullanıcı Aktiviteleri
-                    </h1>
-                    <p className="text-xs text-gray-500">
-                      Kullanıcı davranışlarını takip edin
-                    </p>
-                  </div>
+      <div className="min-h-screen bg-gray-50">
+        {/* Compact Header */}
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+          <div className="max-w-7xl mx-auto px-4 py-2">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => router.push("/")}
+                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4 text-gray-600" />
+              </button>
+              
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
+                  <BarChart3 className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-sm font-bold text-gray-900">Kullanıcı Aktiviteleri</h1>
+                  <p className="text-[10px] text-gray-500">Son {RETENTION_DAYS} gün</p>
                 </div>
               </div>
+
+              {/* Search Bar - Inline in Header */}
+              <div className="flex-1 max-w-md ml-4 relative" onClick={(e) => e.stopPropagation()}>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Kullanıcı ara..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onFocus={() => searchResults.length > 0 && setShowSearchDropdown(true)}
+                    className="w-full pl-9 pr-4 py-1.5 bg-gray-100 border border-transparent rounded-lg text-sm focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                  {isSearching && (
+                    <RefreshCw className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 animate-spin" />
+                  )}
+                </div>
+
+                {/* Search Dropdown */}
+                {showSearchDropdown && searchResults.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-50">
+                    {searchResults.map((result) => (
+                      <button
+                        key={result.id}
+                        onClick={() => selectUser(result.id, result.displayName, result.email)}
+                        className="w-full px-3 py-2 flex items-center gap-2 hover:bg-gray-50 transition-colors text-left"
+                      >
+                        <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center">
+                          <User className="w-3.5 h-3.5 text-blue-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{result.displayName}</p>
+                          {result.email && (
+                            <p className="text-xs text-gray-500 truncate">{result.email}</p>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Refresh Button */}
+              {selectedUser && (
+                <button
+                  onClick={refreshActivities}
+                  disabled={isLoadingActivities}
+                  className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                  title="Yenile"
+                >
+                  <RefreshCw className={`w-4 h-4 text-gray-600 ${isLoadingActivities ? "animate-spin" : ""}`} />
+                </button>
+              )}
             </div>
           </div>
         </header>
 
         {/* Main Content */}
-        <main className="max-w-6xl mx-auto px-6 py-6">
-          {/* Search Section */}
-          <div className="bg-white rounded-xl border border-gray-100 p-5 mb-6 shadow-sm">
-            <div className="flex items-center gap-2 mb-4">
-              <Search className="w-5 h-5 text-gray-600" />
-              <h2 className="font-semibold text-gray-900">Kullanıcı Ara</h2>
-            </div>
-            
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Kullanıcı adı ile ara..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-              />
-              
-              {isSearching && (
-                <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                  <RefreshCw className="w-4 h-4 text-gray-400 animate-spin" />
-                </div>
-              )}
-              
-              {/* Search Results Dropdown */}
-              {searchResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-10">
-                  {searchResults.map((result) => (
-                    <button
-                      key={result.id}
-                      onClick={() => selectUser(result.id, result.displayName)}
-                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors text-left"
-                    >
-                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                        <User className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{result.displayName}</p>
-                        {result.email && (
-                          <p className="text-xs text-gray-500">{result.email}</p>
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-              
-              {searchError && (
-                <p className="text-sm text-red-500 mt-2">{searchError}</p>
-              )}
-              
-              {searchQuery.length >= 2 && !isSearching && searchResults.length === 0 && (
-                <p className="text-sm text-gray-500 mt-2">
-                  &quot;{searchQuery}&quot; için sonuç bulunamadı
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Selected User Section */}
+        <main className="max-w-7xl mx-auto px-4 py-4">
           {selectedUser ? (
             <>
-              {/* User Stats */}
-              <UserStatsCard profile={selectedUser} />
+              {/* Compact Stats Bar */}
+              <CompactStatsBar profile={selectedUser} />
               
-              {/* Activities Header */}
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-gray-900 flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-gray-600" />
-                  Son Aktiviteler
-                </h2>
-                <button
-                  onClick={refreshActivities}
-                  disabled={isLoadingActivities}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-4 h-4 ${isLoadingActivities ? "animate-spin" : ""}`} />
-                  Yenile
-                </button>
+              {/* Filters */}
+              <div className="bg-white border border-gray-200 rounded-lg p-2 mb-4">
+                <ActivityTypeFilter
+                  selectedTypes={selectedTypes}
+                  onToggle={toggleFilterType}
+                  activityCounts={activityCounts}
+                />
               </div>
-              
+
               {/* Activities List */}
               {activitiesError ? (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
-                  <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-2" />
-                  <p className="text-red-700">{activitiesError}</p>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+                  <AlertCircle className="w-6 h-6 text-red-500 mx-auto mb-2" />
+                  <p className="text-red-700 text-sm">{activitiesError}</p>
                   <button
                     onClick={refreshActivities}
-                    className="mt-3 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition-colors text-sm"
+                    className="mt-2 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs"
                   >
                     Tekrar Dene
                   </button>
                 </div>
-              ) : activities.length > 0 ? (
-                <div className="space-y-3">
-                  {activities.map((activity) => (
-                    <ActivityCard key={activity.id} event={activity} />
-                  ))}
-                  
-                  {/* Load More Button */}
-                  {hasMoreActivities && (
-                    <button
-                      onClick={loadMore}
-                      disabled={isLoadingActivities}
-                      className="w-full py-3 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl text-gray-700 font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      {isLoadingActivities ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          Yükleniyor...
-                        </>
-                      ) : (
-                        <>
-                          <ChevronDown className="w-4 h-4" />
-                          Daha Fazla Yükle
-                        </>
-                      )}
-                    </button>
-                  )}
-                  
-                  {!hasMoreActivities && activities.length > 0 && (
-                    <p className="text-center text-sm text-gray-500 py-4">
-                      Tüm aktiviteler yüklendi
-                    </p>
-                  )}
-                </div>
-              ) : isLoadingActivities ? (
-                <div className="bg-white rounded-xl border border-gray-100 p-12 text-center">
-                  <RefreshCw className="w-8 h-8 text-gray-400 animate-spin mx-auto mb-3" />
-                  <p className="text-gray-500">Aktiviteler yükleniyor...</p>
-                </div>
               ) : (
-                <div className="bg-white rounded-xl border border-gray-100 p-12 text-center">
-                  <Activity className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-500">Bu kullanıcı için aktivite bulunamadı</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Aktiviteler son 90 gün içinde kaydedilir
-                  </p>
+                <div 
+                  ref={activitiesContainerRef}
+                  className="bg-white border border-gray-200 rounded-lg overflow-hidden"
+                >
+                  {/* Activity Count Header */}
+                  <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Activity className="w-4 h-4 text-gray-500" />
+                      <span className="text-xs font-medium text-gray-700">
+                        {filteredActivities.length} aktivite
+                        {selectedTypes.size > 0 && ` (filtrelenmiş)`}
+                      </span>
+                    </div>
+                    {pagination.lastDateShard && (
+                      <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        Son: {pagination.lastDateShard}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Activities */}
+                  <div className="divide-y divide-gray-100">
+                    {filteredActivities.length > 0 ? (
+                      <>
+                        {filteredActivities.map((activity) => (
+                          <div key={`${activity.dateShard}-${activity.id}`} className="px-2 py-1">
+                            <CompactActivityRow 
+                              event={activity} 
+                              onClick={() => setSelectedEvent(activity)}
+                            />
+                          </div>
+                        ))}
+                        
+                        {/* Load More */}
+                        {pagination.hasMore && (
+                          <div className="p-3">
+                            <button
+                              onClick={loadMore}
+                              disabled={isLoadingActivities}
+                              className="w-full py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-gray-700 text-xs font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                              {isLoadingActivities ? (
+                                <>
+                                  <RefreshCw className="w-3 h-3 animate-spin" />
+                                  Yükleniyor...
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronDown className="w-3 h-3" />
+                                  Daha Fazla ({PAGE_SIZE})
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+                        
+                        {!pagination.hasMore && filteredActivities.length > 0 && (
+                          <p className="text-center text-[10px] text-gray-400 py-3">
+                            Tüm aktiviteler yüklendi
+                          </p>
+                        )}
+                      </>
+                    ) : isLoadingActivities ? (
+                      <div className="p-8 text-center">
+                        <RefreshCw className="w-6 h-6 text-gray-400 animate-spin mx-auto mb-2" />
+                        <p className="text-xs text-gray-500">Yükleniyor...</p>
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center">
+                        <Activity className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                        <p className="text-sm text-gray-500">Aktivite bulunamadı</p>
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          Son {RETENTION_DAYS} gün içinde kayıt yok
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </>
           ) : (
             /* Empty State */
-            <div className="bg-white rounded-xl border border-gray-100 p-12 text-center">
-              <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Search className="w-8 h-8 text-gray-400" />
+            <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
+              <div className="w-14 h-14 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-4">
+                <Search className="w-7 h-7 text-gray-400" />
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              <h3 className="text-base font-semibold text-gray-900 mb-1">
                 Kullanıcı Seçin
               </h3>
-              <p className="text-gray-500 max-w-sm mx-auto">
-                Aktivitelerini görüntülemek için yukarıdaki arama kutusunu kullanarak bir kullanıcı seçin
+              <p className="text-sm text-gray-500 max-w-xs mx-auto">
+                Aktiviteleri görüntülemek için yukarıdaki arama kutusunu kullanın
               </p>
             </div>
           )}
         </main>
+
+        {/* Detail Modal */}
+        {selectedEvent && (
+          <ActivityDetailModal
+            event={selectedEvent}
+            onClose={() => setSelectedEvent(null)}
+          />
+        )}
       </div>
     </ProtectedRoute>
   );
