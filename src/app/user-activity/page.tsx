@@ -170,7 +170,7 @@ const ACTIVITY_CONFIG: Record<string, {
 
 const PAGE_SIZE = 30;
 const RETENTION_DAYS = 90;
-const MAX_SHARDS_PER_LOAD = 7; // Query up to 7 days at a time for efficiency
+const MAX_SHARDS_PER_LOAD = 14; // Query up to 7 days at a time for efficiency
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -656,107 +656,133 @@ export default function UserActivityPage() {
     return () => clearTimeout(timer);
   }, [searchQuery, searchUsers]);
 
-  // Load activities with cross-shard pagination
-  const loadActivities = useCallback(async (
-    userId: string,
-    paginationState: PaginationState,
-    append: boolean = false
-  ) => {
-    setIsLoadingActivities(true);
-    setActivitiesError(null);
+ // Load activities with cross-shard pagination
+const loadActivities = useCallback(async (
+  userId: string,
+  paginationState: PaginationState,
+  append: boolean = false
+) => {
+  setIsLoadingActivities(true);
+  setActivitiesError(null);
 
-    try {
-      const allActivities: ActivityEvent[] = [];
-      const counts: Record<string, number> = append ? { ...activityCounts } : {};
-      
-      let currentDateShard = paginationState.lastDateShard || getDateShard(new Date());
-      let lastTimestamp = paginationState.lastTimestamp;
-      const cutoffDateShard = getCutoffDateShard();
-      
-      let shardsChecked = 0;
-      let remainingToFetch = PAGE_SIZE;
+  try {
+    const allActivities: ActivityEvent[] = [];
+    const counts: Record<string, number> = append ? { ...activityCounts } : {};
+    
+    let currentDateShard = paginationState.lastDateShard || getDateShard(new Date());
+    let lastTimestamp = paginationState.lastTimestamp;
+    const cutoffDateShard = getCutoffDateShard();
+    
+    let shardsChecked = 0;
+    let remainingToFetch = PAGE_SIZE;
+    let reachedCutoff = false;
 
-      // Query across multiple date shards
-      while (remainingToFetch > 0 && currentDateShard >= cutoffDateShard && shardsChecked < MAX_SHARDS_PER_LOAD) {
-        try {
-          const eventsRef = collection(db, "activity_events", currentDateShard, "events");
-          
-          let q;
-          if (lastTimestamp && shardsChecked === 0) {
-            // First shard with pagination - get events BEFORE the last timestamp
-            q = query(
-              eventsRef,
-              where("userId", "==", userId),
-              where("timestamp", "<", lastTimestamp),
-              orderBy("timestamp", "desc"),
-              limit(remainingToFetch)
-            );
-          } else {
-            // New shard or initial load
-            q = query(
-              eventsRef,
-              where("userId", "==", userId),
-              orderBy("timestamp", "desc"),
-              limit(remainingToFetch)
-            );
-          }
+    // Query across multiple date shards
+    while (remainingToFetch > 0 && !reachedCutoff && shardsChecked < MAX_SHARDS_PER_LOAD) {
+      // Check if we've gone past the cutoff
+      if (currentDateShard < cutoffDateShard) {
+        reachedCutoff = true;
+        break;
+      }
 
-          const snapshot = await getDocs(q);
-          
-          for (const docSnap of snapshot.docs) {
-            if (allActivities.length < remainingToFetch) {
-              const data = docSnap.data();
-              const event: ActivityEvent = {
-                id: docSnap.id,
-                ...data,
-                dateShard: currentDateShard,
-              } as ActivityEvent;
-              
-              allActivities.push(event);
-              
-              // Count by type
-              counts[event.type] = (counts[event.type] || 0) + 1;
-            }
-          }
-
-          remainingToFetch = PAGE_SIZE - allActivities.length;
-        } catch {
-          // Shard might not exist, continue to previous day
-          console.log(`No data in shard ${currentDateShard}`);
+      try {
+        const eventsRef = collection(db, "activity_events", currentDateShard, "events");
+        
+        let q;
+        if (lastTimestamp && shardsChecked === 0) {
+          // First shard with pagination - get events BEFORE the last timestamp
+          q = query(
+            eventsRef,
+            where("userId", "==", userId),
+            where("timestamp", "<", lastTimestamp),
+            orderBy("timestamp", "desc"),
+            limit(remainingToFetch)
+          );
+        } else {
+          // New shard or initial load
+          q = query(
+            eventsRef,
+            where("userId", "==", userId),
+            orderBy("timestamp", "desc"),
+            limit(remainingToFetch)
+          );
         }
-        // Move to previous day
-        currentDateShard = getPreviousDateShard(currentDateShard);
-        lastTimestamp = null; // Reset for new shard
-        shardsChecked++;
+
+        const snapshot = await getDocs(q);
+        
+        for (const docSnap of snapshot.docs) {
+          const data = docSnap.data();
+          const event: ActivityEvent = {
+            id: docSnap.id,
+            ...data,
+            dateShard: currentDateShard,
+          } as ActivityEvent;
+          
+          allActivities.push(event);
+          
+          // Count by type
+          counts[event.type] = (counts[event.type] || 0) + 1;
+        }
+
+        remainingToFetch = PAGE_SIZE - allActivities.length;
+      } catch {
+        // Shard might not exist, continue to previous day
+        console.log(`No data in shard ${currentDateShard}`);
       }
 
-      // Sort all activities by timestamp descending
-      allActivities.sort((a, b) => b.timestamp - a.timestamp);
-
-      // Update state
-      if (append) {
-        setActivities(prev => [...prev, ...allActivities]);
-      } else {
-        setActivities(allActivities);
-      }
-      
-      setActivityCounts(counts);
-      
-      // Update pagination state
-      const lastActivity = allActivities[allActivities.length - 1];
-      setPagination({
-        lastTimestamp: lastActivity?.timestamp || null,
-        lastDateShard: lastActivity?.dateShard || currentDateShard,
-        hasMore: allActivities.length === PAGE_SIZE && currentDateShard >= cutoffDateShard,
-      });
-
-    } catch (error) {
-      console.error("Error loading activities:", error);
-      setActivitiesError("Aktiviteler yüklenirken hata oluştu");
-    } finally {
-      setIsLoadingActivities(false);
+      // Move to previous day
+      currentDateShard = getPreviousDateShard(currentDateShard);
+      lastTimestamp = null; // Reset for new shard
+      shardsChecked++;
     }
-  }, [activityCounts]);
+
+    // Sort all activities by timestamp descending
+    allActivities.sort((a, b) => b.timestamp - a.timestamp);
+
+    // Update state
+    if (append) {
+      setActivities(prev => [...prev, ...allActivities]);
+    } else {
+      setActivities(allActivities);
+    }
+    
+    setActivityCounts(prev => {
+      // Merge counts properly when appending
+      if (append) {
+        const merged = { ...prev };
+        for (const [type, count] of Object.entries(counts)) {
+          merged[type] = (merged[type] || 0) + count;
+        }
+        return merged;
+      }
+      return counts;
+    });
+    
+    // Update pagination state
+    const lastActivity = allActivities[allActivities.length - 1];
+    
+    // hasMore is true if:
+    // 1. We haven't reached the cutoff date yet, AND
+    // 2. We either got activities OR there are more shards to check
+    const nextDateShard = lastActivity?.dateShard 
+      ? getPreviousDateShard(lastActivity.dateShard) 
+      : currentDateShard;
+    
+    const hasMoreToLoad = !reachedCutoff && nextDateShard >= cutoffDateShard;
+    
+    setPagination({
+      lastTimestamp: lastActivity?.timestamp || null,
+      lastDateShard: lastActivity?.dateShard || currentDateShard,
+      hasMore: hasMoreToLoad,
+    });
+
+  } catch (error) {
+    console.error("Error loading activities:", error);
+    setActivitiesError("Aktiviteler yüklenirken hata oluştu");
+  } finally {
+    setIsLoadingActivities(false);
+  }
+}, [activityCounts]);
 
   // Load user profile
   const loadUserProfile = useCallback(async (userId: string): Promise<UserProfile | null> => {
