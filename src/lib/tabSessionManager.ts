@@ -151,6 +151,7 @@ class TabSessionManager {
 
   /**
    * Register this tab in the system
+   * Note: Does NOT mark session as valid - that should only happen on explicit login
    */
   private registerTab(): void {
     this.registeredTabs.add(this.tabId);
@@ -162,8 +163,9 @@ class TabSessionManager {
     // Request count from other tabs
     this.broadcastMessage({ type: "TAB_COUNT_REQUEST", tabId: this.tabId });
 
-    // Mark session as valid
-    this.markSessionValid();
+    // DO NOT mark session as valid here!
+    // Session validity should only be set during explicit login
+    // This allows isFreshBrowserSession() to correctly detect when all tabs were closed
   }
 
   /**
