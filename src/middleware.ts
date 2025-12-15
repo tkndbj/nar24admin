@@ -17,6 +17,11 @@ const alwaysAccessible = [
   "/api/health", // Health check endpoint if needed
 ];
 
+// API routes that handle their own authentication (token in body, not header)
+const selfAuthenticatingApiRoutes = [
+  "/api/auth/verify", // Receives token in request body during login
+];
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -34,7 +39,12 @@ export function middleware(request: NextRequest) {
   // This is because Edge Runtime doesn't support firebase-admin
   // The API routes will verify the Bearer token server-side
   if (pathname.startsWith("/api/")) {
-    // Check if Authorization header is present for API routes
+    // Allow self-authenticating routes (they verify token from request body)
+    if (selfAuthenticatingApiRoutes.some((route) => pathname === route)) {
+      return NextResponse.next();
+    }
+
+    // Check if Authorization header is present for other API routes
     const authHeader = request.headers.get("Authorization");
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
