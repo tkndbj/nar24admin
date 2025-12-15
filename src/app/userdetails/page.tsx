@@ -22,6 +22,7 @@ import {
   Calendar,
   MapPin,
   Activity,
+  ClipboardList,
 } from "lucide-react";
 import {
   useState,
@@ -134,6 +135,21 @@ function UserDetailsContent() {
   const [hasMoreOrders, setHasMoreOrders] = useState(true);
   const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
   const ORDERS_PER_PAGE = 10;
+
+  // Admin Activity Logs Modal State
+  const [showActivityModal, setShowActivityModal] = useState(false);
+  const [activityLogs, setActivityLogs] = useState<Array<{
+    id: string;
+    time: Timestamp;
+    displayName: string;
+    email: string;
+    activity: string;
+  }>>([]);
+  const [activityLogsLastDoc, setActivityLogsLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMoreActivityLogs, setHasMoreActivityLogs] = useState(true);
+  const [loadingActivityLogs, setLoadingActivityLogs] = useState(false);
+  const ACTIVITY_LOGS_PER_PAGE = 20;
+  const activityLogsContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Active tab
   const [activeTab, setActiveTab] = useState<"products" | "shops" | "orders">(
@@ -317,6 +333,78 @@ function UserDetailsContent() {
       setLoadingMoreOrders(false);
     }
   }, [userId, ordersLastDoc, loadingMoreOrders, hasMoreOrders]);
+
+  // Fetch admin activity logs
+  const fetchActivityLogs = useCallback(async (isInitial = true) => {
+    if (loadingActivityLogs) return;
+    if (!isInitial && !hasMoreActivityLogs) return;
+
+    try {
+      setLoadingActivityLogs(true);
+
+      let logsQuery;
+      if (isInitial || !activityLogsLastDoc) {
+        logsQuery = query(
+          collection(db, "admin_activity_logs"),
+          firestoreOrderBy("time", "desc"),
+          limit(ACTIVITY_LOGS_PER_PAGE)
+        );
+      } else {
+        logsQuery = query(
+          collection(db, "admin_activity_logs"),
+          firestoreOrderBy("time", "desc"),
+          startAfter(activityLogsLastDoc),
+          limit(ACTIVITY_LOGS_PER_PAGE)
+        );
+      }
+
+      const snapshot = await getDocs(logsQuery);
+      const logs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Array<{
+        id: string;
+        time: Timestamp;
+        displayName: string;
+        email: string;
+        activity: string;
+      }>;
+
+      if (isInitial) {
+        setActivityLogs(logs);
+      } else {
+        setActivityLogs((prev) => [...prev, ...logs]);
+      }
+
+      if (snapshot.docs.length > 0) {
+        setActivityLogsLastDoc(snapshot.docs[snapshot.docs.length - 1]);
+      }
+      setHasMoreActivityLogs(snapshot.docs.length === ACTIVITY_LOGS_PER_PAGE);
+    } catch (error) {
+      console.error("Error fetching activity logs:", error);
+      toast.error("Aktivite logları yüklenemedi");
+    } finally {
+      setLoadingActivityLogs(false);
+    }
+  }, [loadingActivityLogs, hasMoreActivityLogs, activityLogsLastDoc, ACTIVITY_LOGS_PER_PAGE]);
+
+  // Open activity modal and fetch logs
+  const openActivityModal = useCallback(() => {
+    setShowActivityModal(true);
+    setActivityLogs([]);
+    setActivityLogsLastDoc(null);
+    setHasMoreActivityLogs(true);
+    fetchActivityLogs(true);
+  }, [fetchActivityLogs]);
+
+  // Handle scroll for infinite loading
+  const handleActivityScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLDivElement;
+    const bottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 100;
+    if (bottom && hasMoreActivityLogs && !loadingActivityLogs) {
+      fetchActivityLogs(false);
+    }
+  }, [hasMoreActivityLogs, loadingActivityLogs, fetchActivityLogs]);
 
   // Save individual field
   const saveIndividualField = async (
@@ -821,6 +909,15 @@ function UserDetailsContent() {
               <p className="text-xs text-gray-600 truncate">{user.email}</p>
             </div>
             <div className="flex items-center gap-2">
+              {authUser?.isAdmin && (
+                <button
+                  onClick={openActivityModal}
+                  className="px-2 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded text-xs transition-colors flex items-center gap-1"
+                >
+                  <ClipboardList className="w-3 h-3" />
+                  Aktivite
+                </button>
+              )}
               <button
                 onClick={handleResetPassword}
                 className="px-2 py-1 bg-green-100 hover:bg-green-200 text-green-700 rounded text-xs transition-colors"
@@ -1295,6 +1392,88 @@ function UserDetailsContent() {
           </div>
         </div>
       </main>
+
+      {/* Admin Activity Logs Modal */}
+      {showActivityModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-3 border-b border-gray-200 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="w-4 h-4 text-indigo-600" />
+                <h2 className="text-sm font-semibold text-gray-900">Admin Aktivite Logları</h2>
+                <span className="text-xs text-gray-500">({activityLogs.length})</span>
+              </div>
+              <button
+                onClick={() => setShowActivityModal(false)}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+              >
+                <X className="w-4 h-4 text-gray-600" />
+              </button>
+            </div>
+
+            {/* Modal Content - Scrollable */}
+            <div
+              ref={activityLogsContainerRef}
+              onScroll={handleActivityScroll}
+              className="flex-1 overflow-y-auto p-3"
+            >
+              {activityLogs.length > 0 ? (
+                <div className="space-y-1.5">
+                  {activityLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="p-2 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-gray-900 truncate">{log.activity}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] text-gray-600 truncate">{log.displayName}</span>
+                            <span className="text-[10px] text-gray-400">•</span>
+                            <span className="text-[10px] text-gray-500 truncate">{log.email}</span>
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-gray-500 whitespace-nowrap flex-shrink-0">
+                          {log.time?.toDate().toLocaleString("tr-TR", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Loading indicator */}
+                  {loadingActivityLogs && (
+                    <div className="flex items-center justify-center py-3">
+                      <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                      <span className="ml-2 text-xs text-gray-600">Yükleniyor...</span>
+                    </div>
+                  )}
+
+                  {/* End of list */}
+                  {!hasMoreActivityLogs && activityLogs.length > 0 && (
+                    <p className="text-center text-[10px] text-gray-400 py-2">Tüm loglar yüklendi</p>
+                  )}
+                </div>
+              ) : loadingActivityLogs ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
+                  <span className="ml-2 text-xs text-gray-600">Loglar yükleniyor...</span>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <ClipboardList className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-xs text-gray-600">Aktivite logu bulunamadı</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

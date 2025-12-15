@@ -32,7 +32,8 @@ import {
   Building2,
   Settings,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useActivityLog, createPageLogger } from "@/hooks/useActivityLog";
 import {
   collection,
   onSnapshot,
@@ -155,6 +156,30 @@ const generateDailyMetricData = (): MetricData[] => {
   return data;
 };
 
+// Navigation button configuration for activity logging
+const NAVIGATION_BUTTONS: Record<string, string> = {
+  orders: "Siparişler",
+  shipment: "Teslimat Yönetimi",
+  "pickup-points": "Gel-Al Noktaları",
+  refundforms: "İade Talepleri",
+  helpforms: "Destek Talepleri",
+  "ads-applications": "Reklam Başvuruları",
+  topbanner: "Büyük Banner",
+  thinbanner: "İnce Banner",
+  normalbanners: "Ana Bannerlar",
+  productapplications: "Ürün Başvuruları",
+  editproductapplications: "Ürün Güncellemeler",
+  shopapplications: "Dükkan Başvuruları",
+  notifications: "Bildirim Gönder",
+  "user-activity": "Kullanıcı Aktiviteleri",
+  marketscreenfilters: "Ana Ekran Filtreleri",
+  createcampaing: "Özel Gün Kampanyaları",
+  marketscreenhorizontallist: "Yatay Ürün Listesi",
+  marketlayout: "Ana Ekran Layout",
+  "listproduct-flowmanagement": "Ürün Akış Yönetimi",
+  cloudfunctionmonitoring: "Cloud Functions Takibi",
+};
+
 export default function Dashboard() {
   const { user, logout } = useAuth();
   const router = useRouter();
@@ -166,6 +191,10 @@ export default function Dashboard() {
   const [metricsData, setMetricsData] = useState<MetricData[]>([]);
   const [dailyMetricsData, setDailyMetricsData] = useState<MetricData[]>([]);
   const [, setMetricsLoading] = useState(true);
+
+  // Initialize activity logging
+  const { logActivity } = useActivityLog();
+  const logger = createPageLogger(logActivity, "Dashboard");
 
   // Fetch metrics data from the API
   useEffect(() => {
@@ -242,18 +271,34 @@ export default function Dashboard() {
     };
   }, []);
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     try {
+      logger.action("Logged out");
       await logout();
       router.push("/login");
     } catch (error) {
       console.error("Logout error:", error);
     }
-  };
+  }, [logout, router, logger]);
 
-  const handleNavigation = (path: string) => {
-    router.push(`/${path}`);
-  };
+  const handleNavigation = useCallback(
+    (path: string) => {
+      const buttonName = NAVIGATION_BUTTONS[path] || path;
+      logger.navigate(buttonName, { path });
+      router.push(`/${path}`);
+    },
+    [router, logger]
+  );
+
+  const handleSearch = useCallback(
+    (query: string) => {
+      if (query.trim()) {
+        logger.search(query.trim());
+        router.push(`/searchresults?q=${encodeURIComponent(query.trim())}`);
+      }
+    },
+    [router, logger]
+  );
 
   const dayCosts = calculateCosts(dailyMetricsData);
 
@@ -410,7 +455,7 @@ export default function Dashboard() {
               </div>
               <div className="space-y-2">
                 <button
-                  onClick={() => router.push("/refundforms")}
+                  onClick={() => handleNavigation("refundforms")}
                   className="w-full p-2.5 bg-red-50 hover:bg-red-100 rounded-lg text-left transition-colors group"
                 >
                   <div className="flex items-center gap-2">
@@ -421,7 +466,7 @@ export default function Dashboard() {
                   </div>
                 </button>
                 <button
-                  onClick={() => router.push("/helpforms")}
+                  onClick={() => handleNavigation("helpforms")}
                   className="w-full p-2.5 bg-red-50 hover:bg-red-100 rounded-lg text-left transition-colors group"
                 >
                   <div className="flex items-center gap-2">
@@ -672,12 +717,8 @@ export default function Dashboard() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && searchTerm.trim()) {
-                    router.push(
-                      `/searchresults?q=${encodeURIComponent(
-                        searchTerm.trim()
-                      )}`
-                    );
+                  if (e.key === "Enter") {
+                    handleSearch(searchTerm);
                   }
                 }}
                 className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
