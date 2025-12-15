@@ -1,5 +1,5 @@
 // app/api/algolia-monitoring/_utils.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { verifyAdminAuth, AuthResponse } from "@/lib/auth";
 
 const BASE_URL = "https://status.algolia.com";
