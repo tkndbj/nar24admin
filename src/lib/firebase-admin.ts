@@ -52,6 +52,13 @@ function initializeAdminApp(): App {
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 
+  // Log which env vars are present (not their values for security)
+  console.log("Firebase Admin init - checking env vars:", {
+    hasClientEmail: !!clientEmail,
+    hasProjectId: !!projectId,
+    hasPrivateKey: !!process.env.FIREBASE_PRIVATE_KEY,
+  });
+
   if (!clientEmail) {
     throw new Error("FIREBASE_CLIENT_EMAIL environment variable is not set");
   }

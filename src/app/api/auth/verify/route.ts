@@ -53,8 +53,22 @@ export async function POST(request: NextRequest): Promise<NextResponse<VerifyAut
 
     // Verify the ID token using Firebase Admin SDK
     let decodedToken: DecodedIdToken;
+    let auth;
     try {
-      const auth = getAdminAuth();
+      auth = getAdminAuth();
+    } catch (initError) {
+      console.error("Firebase Admin initialization failed:", initError);
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Server configuration error. Please contact administrator.",
+          code: "SERVER_ERROR",
+        },
+        { status: 500 }
+      );
+    }
+
+    try {
       decodedToken = await auth.verifyIdToken(idToken);
     } catch (tokenError) {
       console.error("Token verification failed:", tokenError);
