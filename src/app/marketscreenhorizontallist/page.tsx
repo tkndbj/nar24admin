@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import {
   Plus,
@@ -14,11 +14,15 @@ import {
   Eye,
   EyeOff,
   Search,
-  CheckCircle,  
-  Clock,  
-  List,  
+  CheckCircle,
+  Clock,
+  List,
   ArrowLeft,
   Building,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Filter,
 } from "lucide-react";
 import {
   collection,
@@ -34,6 +38,10 @@ import {
   where,
   Timestamp,
   FieldValue,
+  limit as firestoreLimit,
+  startAfter,
+  DocumentSnapshot,
+  QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import {
@@ -45,6 +53,11 @@ import {
   DraggableStateSnapshot,
 } from "@hello-pangea/dnd";
 import type { DropResult } from "@hello-pangea/dnd";
+import { AllInOneCategoryData } from "@/constants/categoryData";
+
+// Constants
+const PRODUCTS_PER_PAGE = 20;
+const SHOP_SEARCH_DEBOUNCE_MS = 300;
 
 interface ProductListConfig {
   id: string;
@@ -71,6 +84,8 @@ interface Product {
   price?: number;
   isActive?: boolean;
   category?: string;
+  subcategory?: string;
+  subsubcategory?: string;
   brandModel?: string;
   description?: string;
 }
@@ -84,12 +99,11 @@ interface Shop {
   coverImageUrls?: string[];
 }
 
-// Selection mode types
-type SelectionMode = 'all_products' | 'shop_all' | 'shop_specific';
+// Selection mode types - removed 'shop_all'
+type SelectionMode = "all_products" | "shop_specific";
 
 export default function MarketScreenHorizontalProductList() {
   const [lists, setLists] = useState<ProductListConfig[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [shops, setShops] = useState<Shop[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -97,114 +111,311 @@ export default function MarketScreenHorizontalProductList() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
-  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
-  const [searchFocused, setSearchFocused] = useState(false);
 
-  // New state for shop-specific selection
-  const [selectionMode, setSelectionMode] = useState<SelectionMode>('all_products');
+  // Category selection state
+  const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string>("");
+  const [selectedSubSubcategory, setSelectedSubSubcategory] = useState<string>("");
+
+  // Products with pagination
+  const [categoryProducts, setCategoryProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [lastProductDoc, setLastProductDoc] = useState<DocumentSnapshot | null>(null);
+  const [hasMoreProducts, setHasMoreProducts] = useState(true);
+  const [totalProductsLoaded, setTotalProductsLoaded] = useState(0);
+
+  // Shop search state
+  const [shopSearchTerm, setShopSearchTerm] = useState("");
+  const [shopSearchResults, setShopSearchResults] = useState<Shop[]>([]);
+  const [searchingShops, setSearchingShops] = useState(false);
+  const shopSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Selection mode state
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>("all_products");
   const [selectedShopForProducts, setSelectedShopForProducts] = useState<string>("");
   const [shopProducts, setShopProducts] = useState<Product[]>([]);
   const [loadingShopProducts, setLoadingShopProducts] = useState(false);
+  const [lastShopProductDoc, setLastShopProductDoc] = useState<DocumentSnapshot | null>(null);
+  const [hasMoreShopProducts, setHasMoreShopProducts] = useState(true);
 
-  // Form state for creating/editing lists
+  // Form state
   const [formData, setFormData] = useState<Partial<ProductListConfig>>({
     title: "",
     selectedProductIds: [],
     selectedShopId: "",
-    gradientStart: "#FF6B35",
-    gradientEnd: "#FF8A65",
+    gradientStart: "#6366f1",
+    gradientEnd: "#8b5cf6",
     isActive: true,
     limit: 10,
     showViewAllButton: true,
   });
 
-  // Load shop products when a shop is selected
-  const loadShopProducts = useCallback(async (shopId: string) => {
-    if (!shopId) {
-      setShopProducts([]);
+  // Get categories, subcategories, and subsubcategories from categoryData
+  const categories = useMemo(() => {
+    return AllInOneCategoryData.kCategories.map((c) => c.key);
+  }, []);
+
+  const subcategories = useMemo(() => {
+    if (!selectedCategory) return [];
+    return AllInOneCategoryData.kSubcategories[selectedCategory] || [];
+  }, [selectedCategory]);
+
+  const subSubcategories = useMemo(() => {
+    if (!selectedCategory || !selectedSubcategory) return [];
+    return AllInOneCategoryData.kSubSubcategories[selectedCategory]?.[selectedSubcategory] || [];
+  }, [selectedCategory, selectedSubcategory]);
+
+  // Load products from selected category with pagination
+  const loadProductsByCategory = useCallback(
+    async (isInitial: boolean = true) => {
+      if (!selectedCategory) {
+        setCategoryProducts([]);
+        setLastProductDoc(null);
+        setHasMoreProducts(true);
+        return;
+      }
+
+      if (!isInitial && !hasMoreProducts) return;
+
+      setLoadingProducts(true);
+      try {
+        let q = query(
+          collection(db, "shop_products"),
+          where("category", "==", selectedCategory)
+        );
+
+        // Add subcategory filter if selected
+        if (selectedSubcategory) {
+          q = query(
+            collection(db, "shop_products"),
+            where("category", "==", selectedCategory),
+            where("subcategory", "==", selectedSubcategory)
+          );
+        }
+
+        // Add subsubcategory filter if selected
+        if (selectedSubSubcategory) {
+          q = query(
+            collection(db, "shop_products"),
+            where("category", "==", selectedCategory),
+            where("subcategory", "==", selectedSubcategory),
+            where("subsubcategory", "==", selectedSubSubcategory)
+          );
+        }
+
+        // Add pagination
+        if (!isInitial && lastProductDoc) {
+          q = query(q, startAfter(lastProductDoc), firestoreLimit(PRODUCTS_PER_PAGE));
+        } else {
+          q = query(q, firestoreLimit(PRODUCTS_PER_PAGE));
+        }
+
+        const snapshot = await getDocs(q);
+        const productsData = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            shopName: data.sellerName || "Bilinmeyen Mağaza",
+            isActive: true,
+          };
+        }) as Product[];
+
+        if (isInitial) {
+          setCategoryProducts(productsData);
+          setTotalProductsLoaded(productsData.length);
+        } else {
+          setCategoryProducts((prev) => [...prev, ...productsData]);
+          setTotalProductsLoaded((prev) => prev + productsData.length);
+        }
+
+        const lastDoc = snapshot.docs[snapshot.docs.length - 1];
+        setLastProductDoc(lastDoc || null);
+        setHasMoreProducts(snapshot.docs.length === PRODUCTS_PER_PAGE);
+      } catch (error) {
+        console.error("Error loading products by category:", error);
+      } finally {
+        setLoadingProducts(false);
+      }
+    },
+    [selectedCategory, selectedSubcategory, selectedSubSubcategory, lastProductDoc, hasMoreProducts]
+  );
+
+  // Reset products when category selection changes
+  useEffect(() => {
+    setCategoryProducts([]);
+    setLastProductDoc(null);
+    setHasMoreProducts(true);
+    setTotalProductsLoaded(0);
+
+    if (selectedCategory) {
+      loadProductsByCategory(true);
+    }
+  }, [selectedCategory, selectedSubcategory, selectedSubSubcategory]);
+
+  // Shop search with debounce
+  const searchShops = useCallback(async (term: string) => {
+    if (!term || term.length < 2) {
+      setShopSearchResults([]);
       return;
     }
 
-    setLoadingShopProducts(true);
+    setSearchingShops(true);
     try {
-      console.log('Loading products for shop:', shopId);
-      
-      const shopProductsQuery = query(
-        collection(db, "shop_products"),
-        where("shopId", "==", shopId)
-      );
-      
-      const snapshot = await getDocs(shopProductsQuery);
-      const shopProductsData = snapshot.docs.map((doc) => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          shopName: data.sellerName || shops.find(s => s.id === data.shopId)?.name || "Bilinmeyen Mağaza",
-          isActive: true
-        };
-      }) as Product[];
+      // Search by name using where queries
+      // Note: Firestore doesn't support native full-text search, so we use prefix matching
+      const searchLower = term.toLowerCase();
 
-      console.log(`Loaded ${shopProductsData.length} products for shop ${shopId}`);
-      setShopProducts(shopProductsData);
+      // Get all shops and filter client-side for better search experience
+      const shopsSnapshot = await getDocs(collection(db, "shops"));
+      const allShops = shopsSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Shop[];
+
+      const filtered = allShops.filter(
+        (shop) =>
+          shop.name?.toLowerCase().includes(searchLower) ||
+          shop.category?.toLowerCase().includes(searchLower)
+      );
+
+      setShopSearchResults(filtered.slice(0, 10)); // Limit to 10 results
     } catch (error) {
-      console.error("Error loading shop products:", error);
-      setShopProducts([]);
+      console.error("Error searching shops:", error);
+      setShopSearchResults([]);
     } finally {
-      setLoadingShopProducts(false);
+      setSearchingShops(false);
     }
-  }, [shops]);
+  }, []);
+
+  // Debounced shop search
+  useEffect(() => {
+    if (shopSearchTimeoutRef.current) {
+      clearTimeout(shopSearchTimeoutRef.current);
+    }
+
+    shopSearchTimeoutRef.current = setTimeout(() => {
+      searchShops(shopSearchTerm);
+    }, SHOP_SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      if (shopSearchTimeoutRef.current) {
+        clearTimeout(shopSearchTimeoutRef.current);
+      }
+    };
+  }, [shopSearchTerm, searchShops]);
+
+  // Load shop products with pagination
+  const loadShopProducts = useCallback(
+    async (shopId: string, isInitial: boolean = true) => {
+      if (!shopId) {
+        setShopProducts([]);
+        setLastShopProductDoc(null);
+        setHasMoreShopProducts(true);
+        return;
+      }
+
+      if (!isInitial && !hasMoreShopProducts) return;
+
+      setLoadingShopProducts(true);
+      try {
+        let q = query(
+          collection(db, "shop_products"),
+          where("shopId", "==", shopId),
+          firestoreLimit(PRODUCTS_PER_PAGE)
+        );
+
+        if (!isInitial && lastShopProductDoc) {
+          q = query(
+            collection(db, "shop_products"),
+            where("shopId", "==", shopId),
+            startAfter(lastShopProductDoc),
+            firestoreLimit(PRODUCTS_PER_PAGE)
+          );
+        }
+
+        const snapshot = await getDocs(q);
+        const shopProductsData = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            shopName: data.sellerName || "Bilinmeyen Mağaza",
+            isActive: true,
+          };
+        }) as Product[];
+
+        if (isInitial) {
+          setShopProducts(shopProductsData);
+        } else {
+          setShopProducts((prev) => [...prev, ...shopProductsData]);
+        }
+
+        const lastDoc = snapshot.docs[snapshot.docs.length - 1];
+        setLastShopProductDoc(lastDoc || null);
+        setHasMoreShopProducts(snapshot.docs.length === PRODUCTS_PER_PAGE);
+      } catch (error) {
+        console.error("Error loading shop products:", error);
+      } finally {
+        setLoadingShopProducts(false);
+      }
+    },
+    [lastShopProductDoc, hasMoreShopProducts]
+  );
 
   // Handle selection mode change
   const handleSelectionModeChange = useCallback((mode: SelectionMode) => {
-    console.log('Selection mode changed to:', mode);
-    
     setSelectionMode(mode);
-    
-    // Clear previous selections
     setSelectedProducts([]);
     setSelectedShopForProducts("");
     setShopProducts([]);
     setSearchTerm("");
-    setShowSearchSuggestions(false);
-    setSearchFocused(false);
+    setShopSearchTerm("");
+    setShopSearchResults([]);
+    setSelectedCategory("");
+    setSelectedSubcategory("");
+    setSelectedSubSubcategory("");
+    setCategoryProducts([]);
+    setLastProductDoc(null);
+    setHasMoreProducts(true);
+    setLastShopProductDoc(null);
+    setHasMoreShopProducts(true);
 
-    // Update form data based on mode
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       selectedProductIds: [],
-      selectedShopId: mode === 'shop_all' ? prev.selectedShopId : "",
+      selectedShopId: "",
     }));
   }, []);
 
   // Handle shop selection for specific product selection
-  const handleShopSelectionForProducts = useCallback(async (shopId: string) => {
-    console.log('Shop selected for product selection:', shopId);
-    
-    setSelectedShopForProducts(shopId);
-    setSelectedProducts([]);
-    
-    // Clear shop selection from form data since we're selecting specific products
-    setFormData(prev => ({
-      ...prev,
-      selectedShopId: "",
-      selectedProductIds: [],
-    }));
+  const handleShopSelectionForProducts = useCallback(
+    async (shop: Shop) => {
+      setSelectedShopForProducts(shop.id);
+      setSelectedProducts([]);
+      setShopSearchTerm("");
+      setShopSearchResults([]);
+      setLastShopProductDoc(null);
+      setHasMoreShopProducts(true);
 
-    if (shopId) {
-      await loadShopProducts(shopId);
-    } else {
-      setShopProducts([]);
-    }
-  }, [loadShopProducts]);
+      setFormData((prev) => ({
+        ...prev,
+        selectedShopId: "",
+        selectedProductIds: [],
+      }));
 
-  // Data loading - Enhanced with better error handling
+      await loadShopProducts(shop.id, true);
+    },
+    [loadShopProducts]
+  );
+
+  // Data loading - Only load lists initially (shops loaded on search)
   useEffect(() => {
     let unsubscribeLists: (() => void) | undefined;
 
     const loadData = async () => {
       setLoading(true);
-      
+
       try {
         // Load product lists with real-time listener
         const listsQuery = query(
@@ -213,13 +424,12 @@ export default function MarketScreenHorizontalProductList() {
         );
 
         unsubscribeLists = onSnapshot(
-          listsQuery, 
+          listsQuery,
           (snapshot) => {
             const listsData = snapshot.docs.map((doc) => ({
               id: doc.id,
               ...doc.data(),
             })) as ProductListConfig[];
-
             setLists(listsData);
           },
           (error) => {
@@ -227,41 +437,13 @@ export default function MarketScreenHorizontalProductList() {
           }
         );
 
-        // Load all shops
-        console.log('Loading shops...');
+        // Load shops for display purposes (for showing shop names in lists)
         const shopsSnapshot = await getDocs(collection(db, "shops"));
-        
         const shopsData = shopsSnapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
         })) as Shop[];
-
-        console.log('Shops loaded:', shopsData.length);
         setShops(shopsData);
-
-        // Create a map for quick shop lookup
-        const shopMap = new Map();
-        shopsData.forEach(shop => {
-          shopMap.set(shop.id, shop.name);
-        });
-
-        // Load all products
-        console.log('Loading products...');
-        const productsSnapshot = await getDocs(collection(db, "shop_products"));
-
-        const productsData = productsSnapshot.docs.map((doc) => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            ...data,
-            shopName: data.sellerName || shopMap.get(data.shopId) || "Bilinmeyen Mağaza",
-            isActive: true
-          };
-        }) as Product[];
-
-        console.log('Products loaded:', productsData.length);
-        setProducts(productsData);
-        
       } catch (error) {
         console.error("Error loading data:", error);
       } finally {
@@ -271,7 +453,6 @@ export default function MarketScreenHorizontalProductList() {
 
     loadData();
 
-    // Cleanup function
     return () => {
       if (unsubscribeLists) {
         unsubscribeLists();
@@ -282,92 +463,28 @@ export default function MarketScreenHorizontalProductList() {
   // Get products to display based on selection mode
   const displayProducts = useMemo(() => {
     switch (selectionMode) {
-      case 'all_products':
-        return products;
-      case 'shop_specific':
+      case "all_products":
+        return categoryProducts;
+      case "shop_specific":
         return shopProducts;
       default:
         return [];
     }
-  }, [selectionMode, products, shopProducts]);
+  }, [selectionMode, categoryProducts, shopProducts]);
 
-  // Filtered products logic
+  // Filtered products by search term
   const filteredProducts = useMemo(() => {
     if (!searchTerm.trim()) return displayProducts;
-    
+
     const term = searchTerm.toLowerCase().trim();
-    console.log('Filtering products with term:', term);
-    
-    const filtered = displayProducts.filter((product) => {
+    return displayProducts.filter((product) => {
       const nameMatch = product.productName?.toLowerCase().includes(term);
       const shopMatch = product.shopName?.toLowerCase().includes(term);
       const sellerMatch = product.sellerName?.toLowerCase().includes(term);
       const brandMatch = product.brandModel?.toLowerCase().includes(term);
       return nameMatch || shopMatch || sellerMatch || brandMatch;
     });
-    
-    console.log('Filtered products count:', filtered.length);
-    return filtered;
   }, [displayProducts, searchTerm]);
-
-  // Search suggestions
-  const searchSuggestions = useMemo(() => {
-    if (!searchTerm.trim() || searchTerm.length < 2) {
-      return { products: [], shops: [] };
-    }
-    
-    const term = searchTerm.toLowerCase().trim();
-    
-    // For shop_specific mode, only suggest from shop products
-    const searchProducts = selectionMode === 'shop_specific' ? shopProducts : products;
-    
-    const suggestedProducts = searchProducts
-      .filter((product) => {
-        return product.productName?.toLowerCase().includes(term) ||
-               product.shopName?.toLowerCase().includes(term) ||
-               product.sellerName?.toLowerCase().includes(term) ||
-               product.brandModel?.toLowerCase().includes(term);
-      })
-      .slice(0, 5);
-    
-    // Only show shop suggestions in appropriate modes
-    const suggestedShops = (selectionMode === 'all_products' || selectionMode === 'shop_all') 
-      ? shops
-          .filter((shop) => {
-            return shop.name?.toLowerCase().includes(term) ||
-                   shop.category?.toLowerCase().includes(term);
-          })
-          .slice(0, 3)
-      : [];
-    
-    return { products: suggestedProducts, shops: suggestedShops };
-  }, [products, shopProducts, shops, searchTerm, selectionMode]);
-
-  // Handle search suggestion selection
-  const handleSuggestionSelect = useCallback((type: 'product' | 'shop', item: Product | Shop) => {
-    console.log('Suggestion selected:', type, item);
-    
-    if (type === 'product') {
-      const product = item as Product;
-      toggleProductSelection(product.id);
-    } else {
-      const shop = item as Shop;
-      if (selectionMode === 'shop_all') {
-        setFormData((prev) => ({
-          ...prev,
-          selectedShopId: shop.id,
-          selectedProductIds: [],
-        }));
-        setSelectedProducts([]);
-      } else if (selectionMode === 'shop_specific') {
-        handleShopSelectionForProducts(shop.id);
-      }
-    }
-    
-    setSearchTerm('');
-    setShowSearchSuggestions(false);
-    setSearchFocused(false);
-  }, [selectionMode, handleShopSelectionForProducts]);
 
   // Create new list
   const handleCreateList = async () => {
@@ -378,12 +495,11 @@ export default function MarketScreenHorizontalProductList() {
         return;
       }
 
-      // Validation based on selection mode
       const hasProducts = formData.selectedProductIds && formData.selectedProductIds.length > 0;
       const hasShop = formData.selectedShopId;
 
       if (!hasProducts && !hasShop) {
-        alert("En az bir ürün veya bir mağaza seçmelisiniz");
+        alert("En az bir ürün seçmelisiniz");
         return;
       }
 
@@ -398,7 +514,6 @@ export default function MarketScreenHorizontalProductList() {
 
       await addDoc(collection(db, "dynamic_product_lists"), newList);
 
-      // Reset form
       resetForm();
       setShowCreateModal(false);
     } catch (error) {
@@ -415,19 +530,27 @@ export default function MarketScreenHorizontalProductList() {
       title: "",
       selectedProductIds: [],
       selectedShopId: "",
-      gradientStart: "#FF6B35",
-      gradientEnd: "#FF8A65",
+      gradientStart: "#6366f1",
+      gradientEnd: "#8b5cf6",
       isActive: true,
       limit: 10,
       showViewAllButton: true,
     });
     setSelectedProducts([]);
     setSearchTerm("");
-    setShowSearchSuggestions(false);
-    setSearchFocused(false);
-    setSelectionMode('all_products');
+    setSelectionMode("all_products");
     setSelectedShopForProducts("");
     setShopProducts([]);
+    setShopSearchTerm("");
+    setShopSearchResults([]);
+    setSelectedCategory("");
+    setSelectedSubcategory("");
+    setSelectedSubSubcategory("");
+    setCategoryProducts([]);
+    setLastProductDoc(null);
+    setHasMoreProducts(true);
+    setLastShopProductDoc(null);
+    setHasMoreShopProducts(true);
   }, []);
 
   // Update list
@@ -438,7 +561,6 @@ export default function MarketScreenHorizontalProductList() {
         ...updates,
         updatedAt: serverTimestamp(),
       });
-
       setEditingList(null);
     } catch (error) {
       console.error("Error updating list:", error);
@@ -492,20 +614,16 @@ export default function MarketScreenHorizontalProductList() {
 
   // Toggle product selection
   const toggleProductSelection = useCallback((productId: string) => {
-    console.log('Toggling product selection:', productId);
-    
     setSelectedProducts((prev) => {
       const newSelection = prev.includes(productId)
         ? prev.filter((id) => id !== productId)
         : [...prev, productId];
-      
-      console.log('New product selection:', newSelection);
-      
+
       setFormData((prevForm) => ({
         ...prevForm,
         selectedProductIds: newSelection,
       }));
-      
+
       return newSelection;
     });
   }, []);
@@ -514,42 +632,35 @@ export default function MarketScreenHorizontalProductList() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      <div className="min-h-screen bg-gray-50">
         {/* Header */}
-        <header className="backdrop-blur-xl bg-white/10 border-b border-white/20 sticky top-0 z-50">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center py-4">
+            <div className="flex justify-between items-center h-14">
               <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-r from-orange-500 to-pink-600 rounded-lg">
-                  <List className="w-6 h-6 text-white" />
+                <div className="flex items-center justify-center w-8 h-8 bg-indigo-100 rounded-lg">
+                  <List className="w-4 h-4 text-indigo-600" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-white">
-                    Yatay Ürün Listeleri
-                  </h1>
-                  <p className="text-sm text-gray-300">
-                    Market ekranında gösterilecek ürün listelerini yönetin
-                  </p>
+                  <h1 className="text-lg font-semibold text-gray-900">Yatay Ürün Listeleri</h1>
                 </div>
               </div>
 
               <div className="flex items-center gap-4">
-                <div className="flex items-center gap-6 text-sm">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                    <span className="text-gray-300">Aktif: {totalActiveLists}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Package className="w-4 h-4 text-blue-400" />
-                    <span className="text-gray-300">
-                      Toplam Liste: {lists.length}
-                    </span>
-                  </div>
+                <div className="flex items-center gap-4 text-xs">
+                  <span className="flex items-center gap-1.5 text-gray-600">
+                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                    Aktif: {totalActiveLists}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-gray-600">
+                    <Package className="w-3.5 h-3.5" />
+                    Toplam: {lists.length}
+                  </span>
                 </div>
 
                 <button
                   onClick={() => setShowCreateModal(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-medium rounded-xl transition-all duration-200"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   Yeni Liste
@@ -560,93 +671,79 @@ export default function MarketScreenHorizontalProductList() {
         </header>
 
         {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+              <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
             </div>
           ) : (
             <DragDropContext onDragEnd={handleDragEnd}>
               <Droppable droppableId="lists">
                 {(provided: DroppableProvided) => (
-                  <div
-                    {...provided.droppableProps}
-                    ref={provided.innerRef}
-                    className="space-y-4"
-                  >
+                  <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
                     {lists.map((list, index) => (
                       <Draggable key={list.id} draggableId={list.id} index={index}>
-                        {(
-                          provided: DraggableProvided,
-                          snapshot: DraggableStateSnapshot
-                        ) => (
+                        {(provided: DraggableProvided, snapshot: DraggableStateSnapshot) => (
                           <div
                             ref={provided.innerRef}
                             {...provided.draggableProps}
-                            className={`backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6 transition-all duration-200 ${
-                              snapshot.isDragging ? "scale-105 shadow-2xl" : ""
+                            className={`bg-white border border-gray-200 rounded-lg px-4 py-3 transition-all ${
+                              snapshot.isDragging ? "shadow-lg scale-[1.02]" : "hover:border-gray-300"
                             }`}
                           >
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-4 flex-1">
+                              <div className="flex items-center gap-3 flex-1">
                                 <div
                                   {...provided.dragHandleProps}
-                                  className="cursor-grab active:cursor-grabbing"
+                                  className="cursor-grab active:cursor-grabbing p-1 -m-1 text-gray-400 hover:text-gray-600"
                                 >
-                                  <GripVertical className="w-5 h-5 text-gray-400" />
+                                  <GripVertical className="w-4 h-4" />
                                 </div>
 
-                                <div className="flex items-center gap-3">
-                                  {/* Gradient Preview */}
-                                  <div
-                                    className="w-8 h-8 rounded-lg border border-white/20"
-                                    style={{
-                                      background: `linear-gradient(90deg, ${list.gradientStart}, ${list.gradientEnd})`,
-                                    }}
-                                  ></div>
-                                  
-                                  <div>
-                                    <h3 className="text-lg font-semibold text-white">
-                                      {list.title}
-                                    </h3>
-                                    <div className="flex items-center gap-4 text-sm text-gray-300">
-                                      <span>Sıra: {list.order}</span>
-                                      {list.selectedProductIds && list.selectedProductIds.length > 0 && (
-                                        <span>{list.selectedProductIds.length} özel ürün</span>
-                                      )}
-                                      {list.selectedShopId && (
-                                        <span>
-                                          Mağaza: {shops.find(s => s.id === list.selectedShopId)?.name || "Bilinmeyen"}
-                                        </span>
-                                      )}
-                                      <span>Limit: {list.limit}</span>
-                                    </div>
+                                <div
+                                  className="w-6 h-6 rounded border border-gray-200 flex-shrink-0"
+                                  style={{
+                                    background: `linear-gradient(90deg, ${list.gradientStart}, ${list.gradientEnd})`,
+                                  }}
+                                ></div>
+
+                                <div className="min-w-0 flex-1">
+                                  <h3 className="text-sm font-medium text-gray-900 truncate">
+                                    {list.title}
+                                  </h3>
+                                  <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
+                                    <span>#{list.order}</span>
+                                    {list.selectedProductIds && list.selectedProductIds.length > 0 && (
+                                      <span>{list.selectedProductIds.length} ürün</span>
+                                    )}
+                                    {list.selectedShopId && (
+                                      <span className="truncate max-w-[150px]">
+                                        {shops.find((s) => s.id === list.selectedShopId)?.name ||
+                                          "Mağaza"}
+                                      </span>
+                                    )}
+                                    <span>Limit: {list.limit}</span>
                                   </div>
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-3">
-                                {/* Status indicator */}
-                                <div className="flex items-center gap-2 px-3 py-1 bg-black/20 rounded-lg">
-                                  {list.isActive ? (
-                                    <CheckCircle className="w-4 h-4 text-green-400" />
-                                  ) : (
-                                    <Clock className="w-4 h-4 text-gray-400" />
-                                  )}
-                                  <span className="text-sm text-gray-300">
-                                    {list.isActive ? "Aktif" : "Pasif"}
-                                  </span>
-                                </div>
-
-                                {/* Active Toggle */}
-                                <button
-                                  onClick={() =>
-                                    handleUpdateList(list.id, { isActive: !list.isActive })
-                                  }
-                                  className={`p-2 rounded-lg transition-colors ${
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className={`px-2 py-0.5 text-xs font-medium rounded-full ${
                                     list.isActive
-                                      ? "bg-green-600/20 text-green-400 hover:bg-green-600/30"
-                                      : "bg-gray-600/20 text-gray-400 hover:bg-gray-600/30"
+                                      ? "bg-green-50 text-green-700"
+                                      : "bg-gray-100 text-gray-600"
+                                  }`}
+                                >
+                                  {list.isActive ? "Aktif" : "Pasif"}
+                                </span>
+
+                                <button
+                                  onClick={() => handleUpdateList(list.id, { isActive: !list.isActive })}
+                                  className={`p-1.5 rounded-md transition-colors ${
+                                    list.isActive
+                                      ? "text-green-600 hover:bg-green-50"
+                                      : "text-gray-400 hover:bg-gray-100"
                                   }`}
                                 >
                                   {list.isActive ? (
@@ -656,18 +753,16 @@ export default function MarketScreenHorizontalProductList() {
                                   )}
                                 </button>
 
-                                {/* Edit Button */}
                                 <button
                                   onClick={() => setEditingList(list)}
-                                  className="p-2 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 rounded-lg transition-colors"
+                                  className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
                                 >
                                   <Edit3 className="w-4 h-4" />
                                 </button>
 
-                                {/* Delete Button */}
                                 <button
                                   onClick={() => handleDeleteList(list.id)}
-                                  className="p-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors"
+                                  className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>
@@ -678,6 +773,19 @@ export default function MarketScreenHorizontalProductList() {
                       </Draggable>
                     ))}
                     {provided.placeholder}
+
+                    {lists.length === 0 && (
+                      <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
+                        <List className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                        <p className="text-sm text-gray-500">Henüz liste oluşturulmamış</p>
+                        <button
+                          onClick={() => setShowCreateModal(true)}
+                          className="mt-3 text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+                        >
+                          İlk listeyi oluştur
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </Droppable>
@@ -687,531 +795,590 @@ export default function MarketScreenHorizontalProductList() {
 
         {/* Create List Modal */}
         {showCreateModal && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-800 border border-white/20 rounded-xl p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-white">Yeni Liste Oluştur</h2>
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-gray-50">
+                <h2 className="text-base font-semibold text-gray-900">Yeni Liste Oluştur</h2>
                 <button
                   onClick={() => {
                     setShowCreateModal(false);
                     resetForm();
                   }}
-                  className="p-2 text-gray-400 hover:text-white"
+                  className="p-1 text-gray-400 hover:text-gray-600 rounded-md"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="space-y-6">
-                {/* Basic Settings */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Liste Başlığı
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.title || ""}
-                    onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, title: e.target.value }))
-                    }
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Özel Ürünler"
-                  />
-                </div>
-
-                {/* Selection Mode */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-3">
-                    Seçim Modu
-                  </label>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <button
-                      onClick={() => handleSelectionModeChange('all_products')}
-                      className={`p-4 rounded-lg border transition-all ${
-                        selectionMode === 'all_products'
-                          ? 'border-blue-500 bg-blue-600/20 text-blue-300'
-                          : 'border-white/20 bg-white/5 text-gray-300 hover:bg-white/10'
-                      }`}
-                    >
-                      <Package className="w-6 h-6 mx-auto mb-2" />
-                      <div className="text-sm font-medium">Tüm Ürünlerden Seç</div>
-                      <div className="text-xs opacity-75 mt-1">Herhangi bir üründen seçim yap</div>
-                    </button>
-
-                    <button
-                      onClick={() => handleSelectionModeChange('shop_all')}
-                      className={`p-4 rounded-lg border transition-all ${
-                        selectionMode === 'shop_all'
-                          ? 'border-green-500 bg-green-600/20 text-green-300'
-                          : 'border-white/20 bg-white/5 text-gray-300 hover:bg-white/10'
-                      }`}
-                    >
-                      <Store className="w-6 h-6 mx-auto mb-2" />
-                      <div className="text-sm font-medium">Mağaza - Tüm Ürünler</div>
-                      <div className="text-xs opacity-75 mt-1">Bir mağazanın tüm ürünlerini al</div>
-                    </button>
-
-                    <button
-                      onClick={() => handleSelectionModeChange('shop_specific')}
-                      className={`p-4 rounded-lg border transition-all ${
-                        selectionMode === 'shop_specific'
-                          ? 'border-purple-500 bg-purple-600/20 text-purple-300'
-                          : 'border-white/20 bg-white/5 text-gray-300 hover:bg-white/10'
-                      }`}
-                    >
-                      <Building className="w-6 h-6 mx-auto mb-2" />
-                      <div className="text-sm font-medium">Mağaza - Belirli Ürünler</div>
-                      <div className="text-xs opacity-75 mt-1">Bir mağazadan belirli ürünleri seç</div>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Shop Selection for shop_specific mode */}
-                {selectionMode === 'shop_specific' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-3">
-                      Mağaza Seçimi
-                    </label>
-                    
-                    {!selectedShopForProducts ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-48 overflow-y-auto">
-                        {shops.map((shop) => (
-                          <button
-                            key={shop.id}
-                            onClick={() => handleShopSelectionForProducts(shop.id)}
-                            className="p-3 text-left border border-white/20 bg-white/5 hover:bg-white/10 rounded-lg transition-all"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center justify-center w-10 h-10 bg-purple-600/20 rounded-lg">
-                                <Store className="w-5 h-5 text-purple-400" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium text-white truncate">{shop.name}</div>
-                                <div className="text-xs text-gray-400 truncate">
-                                  {shop.category || "Kategori yok"}
-                                </div>
-                              </div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="p-4 bg-purple-600/10 border border-purple-500/20 rounded-lg">
-                        <div className="flex items-center gap-3 mb-3">
-                          <CheckCircle className="w-5 h-5 text-purple-400" />
-                          <span className="text-purple-300 font-medium">
-                            {shops.find(s => s.id === selectedShopForProducts)?.name || "Mağaza bulunamadı"}
-                          </span>
-                          <button
-                            onClick={() => handleShopSelectionForProducts("")}
-                            className="ml-auto p-1 text-gray-400 hover:text-white"
-                          >
-                            <ArrowLeft className="w-4 h-4" />
-                          </button>
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          Bu mağazadan istediğiniz ürünleri aşağıdan seçebilirsiniz
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Shop Selection for shop_all mode */}
-                {selectionMode === 'shop_all' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-3">
-                      Mağaza Seçimi (Tüm Ürünler)
-                    </label>
-                    
-                    {formData.selectedShopId ? (
-                      <div className="p-4 bg-green-600/10 border border-green-500/20 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <CheckCircle className="w-5 h-5 text-green-400" />
-                          <span className="text-green-300 font-medium">
-                            {shops.find(s => s.id === formData.selectedShopId)?.name || "Mağaza bulunamadı"}
-                          </span>
-                          <button
-                            onClick={() => {
-                              setFormData(prev => ({ ...prev, selectedShopId: "" }));
-                            }}
-                            className="ml-auto p-1 text-red-400 hover:text-red-300"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                        <div className="text-xs text-gray-400 mt-2">
-                          Bu mağazadaki tüm aktif ürünler listeye dahil edilecek
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-48 overflow-y-auto">
-                        {shops.map((shop) => (
-                          <button
-                            key={shop.id}
-                            onClick={() => {
-                              setFormData(prev => ({ ...prev, selectedShopId: shop.id }));
-                            }}
-                            className="p-3 text-left border border-white/20 bg-white/5 hover:bg-white/10 rounded-lg transition-all"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center justify-center w-10 h-10 bg-green-600/20 rounded-lg">
-                                <Store className="w-5 h-5 text-green-400" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium text-white truncate">{shop.name}</div>
-                                <div className="text-xs text-gray-400 truncate">
-                                  {shop.category || "Kategori yok"}
-                                </div>
-                              </div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Gradient Colors */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Gradient Başlangıç Rengi
-                    </label>
-                    <input
-                      type="color"
-                      value={formData.gradientStart || "#FF6B35"}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, gradientStart: e.target.value }))
-                      }
-                      className="w-full h-10 bg-white/10 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Gradient Bitiş Rengi
-                    </label>
-                    <input
-                      type="color"
-                      value={formData.gradientEnd || "#FF8A65"}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, gradientEnd: e.target.value }))
-                      }
-                      className="w-full h-10 bg-white/10 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Gradient Preview */}
-                <div className="flex items-center gap-4">
-                  <span className="text-sm text-gray-300">Önizleme:</span>
-                  <div
-                    className="w-32 h-8 rounded-lg border border-white/20"
-                    style={{
-                      background: `linear-gradient(90deg, ${formData.gradientStart || "#FF6B35"}, ${formData.gradientEnd || "#FF8A65"})`,
-                    }}
-                  ></div>
-                </div>
-
-                {/* Settings */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Ürün Limiti
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.limit || 10}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, limit: parseInt(e.target.value) || 10 }))
-                      }
-                      className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      min="1"
-                      max="20"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      id="showViewAll"
-                      checked={formData.showViewAllButton || false}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, showViewAllButton: e.target.checked }))
-                      }
-                      className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor="showViewAll" className="text-sm text-gray-300">
-                      &quot;Tümünü Gör&quot; Butonu Göster
-                    </label>
-                  </div>
-                </div>
-
-                {/* Product Selection - Only show for relevant modes */}
-                {(selectionMode === 'all_products' || (selectionMode === 'shop_specific' && selectedShopForProducts)) && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Ürün Seçimi
-                      {selectedProducts.length > 0 && (
-                        <span className="ml-2 text-blue-400">({selectedProducts.length} ürün seçili)</span>
-                      )}
-                    </label>
-                    
-                    {/* Debug Info - Only in development */}
-                    {process.env.NODE_ENV === 'development' && (
-                      <div className="mb-4 p-3 bg-gray-800/50 rounded-lg text-xs">
-                        <div className="text-gray-400 mb-2">Debug Info:</div>
-                        <div>Selection Mode: {selectionMode}</div>
-                        <div>Display Products: {displayProducts.length}</div>
-                        <div>Shop Products: {shopProducts.length}</div>
-                        <div>Total Products: {products.length}</div>
-                        <div>Loading Shop Products: {loadingShopProducts.toString()}</div>
-                        <div>Selected Shop: {selectedShopForProducts}</div>
-                        <div>Search Term: &quot;{searchTerm}&quot; (length: {searchTerm.length})</div>
-                        <div>Filtered Products: {filteredProducts.length}</div>
-                      </div>
-                    )}
-                      
-                    {/* Search */}
-                    <div className="relative mb-4">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              {/* Modal Body */}
+              <div className="flex-1 overflow-y-auto p-5">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                  {/* Left Column - Settings */}
+                  <div className="space-y-4">
+                    {/* Title */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Liste Başlığı
+                      </label>
                       <input
                         type="text"
-                        value={searchTerm}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setSearchTerm(value);
-                          setShowSearchSuggestions(value.length >= 2);
-                        }}
-                        onFocus={() => {
-                          setSearchFocused(true);
-                          setShowSearchSuggestions(searchTerm.length >= 2);
-                        }}
-                        onBlur={() => {
-                          setTimeout(() => {
-                            setShowSearchSuggestions(false);
-                            setSearchFocused(false);
-                          }, 200);
-                        }}
-                        placeholder={
-                          selectionMode === 'shop_specific' 
-                            ? "Seçili mağazadan ürün ara..." 
-                            : "Ürün veya mağaza ara... (en az 2 karakter)"
-                        }
-                        className={`w-full pl-10 pr-4 py-2 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                          searchTerm.length >= 2 ? 'border-blue-500' : 'border-white/20'
-                        }`}
+                        value={formData.title || ""}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        placeholder="Özel Ürünler"
                       />
-                      
-                      {/* Search Status */}
-                      {searchTerm.length > 0 && searchTerm.length < 2 && (
-                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-yellow-400">
-                          {2 - searchTerm.length} more
-                        </div>
-                      )}
-                      
-                      {/* Search Suggestions */}
-                      {showSearchSuggestions && searchFocused && searchTerm.length >= 2 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-slate-700 border border-white/20 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
-                          {searchSuggestions.products.length === 0 && searchSuggestions.shops.length === 0 && (
-                            <div className="p-4 text-center text-gray-400">
-                              <div className="text-sm">&quot;{searchTerm}&quot; için sonuç bulunamadı</div>
-                            </div>
-                          )}
-                          
-                          {/* Shop Suggestions */}
-                          {searchSuggestions.shops.length > 0 && (
-                            <div className="p-2 border-b border-white/10">
-                              <div className="text-xs font-medium text-gray-300 mb-2 px-2">Mağazalar</div>
-                              {searchSuggestions.shops.map((shop) => (
-                                <div
-                                  key={`shop-${shop.id}`}
-                                  className="flex items-center gap-3 p-2 hover:bg-white/10 rounded-lg cursor-pointer transition-colors"
-                                  onClick={() => handleSuggestionSelect('shop', shop)}
-                                >
-                                  <div className="flex items-center justify-center w-8 h-8 bg-green-600/20 rounded-lg">
-                                    <Store className="w-4 h-4 text-green-400" />
-                                  </div>
-                                  <div className="flex-1">
-                                    <div className="text-sm font-medium text-white">{shop.name}</div>
-                                    <div className="text-xs text-gray-400">
-                                      {selectionMode === 'all_products' ? 'Mağaza • Tüm ürünleri seç' : 'Mağaza • Belirli ürünleri seç'}
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          
-                          {/* Product Suggestions */}
-                          {searchSuggestions.products.length > 0 && (
-                            <div className="p-2">
-                              <div className="text-xs font-medium text-gray-300 mb-2 px-2">Ürünler</div>
-                              {searchSuggestions.products.map((product) => (
-                                <div
-                                  key={`product-${product.id}`}
-                                  className="flex items-center gap-3 p-2 hover:bg-white/10 rounded-lg cursor-pointer transition-colors"
-                                  onClick={() => handleSuggestionSelect('product', product)}
-                                >
-                                  <div className="flex-shrink-0">
-                                    {product.imageUrls && product.imageUrls.length > 0 ? (
-                                      <img
-                                        src={product.imageUrls[0]}
-                                        alt={product.productName}
-                                        className="w-8 h-8 object-cover rounded-lg"
-                                      />
-                                    ) : (
-                                      <div className="w-8 h-8 bg-blue-600/20 rounded-lg flex items-center justify-center">
-                                        <Package className="w-4 h-4 text-blue-400" />
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium text-white truncate">{product.productName}</div>
-                                    <div className="text-xs text-gray-400 truncate">
-                                      {product.sellerName || product.shopName || "Mağaza bilgisi yok"}
-                                      {product.price && ` • ₺${product.price.toLocaleString()}`}
-                                    </div>
-                                  </div>
-                                  {selectedProducts.includes(product.id) && (
-                                    <CheckCircle className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </div>
 
-                    {/* Loading indicator for shop products */}
-                    {selectionMode === 'shop_specific' && loadingShopProducts && (
-                      <div className="flex items-center justify-center py-8">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-400"></div>
-                        <span className="ml-2 text-gray-400">Mağaza ürünleri yükleniyor...</span>
+                    {/* Selection Mode */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-2">
+                        Seçim Modu
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => handleSelectionModeChange("all_products")}
+                          className={`p-2.5 rounded-lg border text-left transition-all ${
+                            selectionMode === "all_products"
+                              ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
+                              : "border-gray-200 hover:border-gray-300 bg-white"
+                          }`}
+                        >
+                          <Filter
+                            className={`w-4 h-4 mb-1 ${
+                              selectionMode === "all_products" ? "text-indigo-600" : "text-gray-400"
+                            }`}
+                          />
+                          <div
+                            className={`text-xs font-medium ${
+                              selectionMode === "all_products" ? "text-indigo-900" : "text-gray-700"
+                            }`}
+                          >
+                            Kategoriden Seç
+                          </div>
+                          <div className="text-[10px] text-gray-500 mt-0.5">
+                            Kategori bazlı seçim
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() => handleSelectionModeChange("shop_specific")}
+                          className={`p-2.5 rounded-lg border text-left transition-all ${
+                            selectionMode === "shop_specific"
+                              ? "border-purple-500 bg-purple-50 ring-1 ring-purple-500"
+                              : "border-gray-200 hover:border-gray-300 bg-white"
+                          }`}
+                        >
+                          <Building
+                            className={`w-4 h-4 mb-1 ${
+                              selectionMode === "shop_specific" ? "text-purple-600" : "text-gray-400"
+                            }`}
+                          />
+                          <div
+                            className={`text-xs font-medium ${
+                              selectionMode === "shop_specific" ? "text-purple-900" : "text-gray-700"
+                            }`}
+                          >
+                            Mağazadan Seç
+                          </div>
+                          <div className="text-[10px] text-gray-500 mt-0.5">
+                            Belirli mağaza ürünleri
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Gradient Colors */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Başlangıç Rengi
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={formData.gradientStart || "#6366f1"}
+                            onChange={(e) =>
+                              setFormData((prev) => ({ ...prev, gradientStart: e.target.value }))
+                            }
+                            className="w-8 h-8 rounded border border-gray-300 cursor-pointer"
+                          />
+                          <input
+                            type="text"
+                            value={formData.gradientStart || "#6366f1"}
+                            onChange={(e) =>
+                              setFormData((prev) => ({ ...prev, gradientStart: e.target.value }))
+                            }
+                            className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Bitiş Rengi
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={formData.gradientEnd || "#8b5cf6"}
+                            onChange={(e) =>
+                              setFormData((prev) => ({ ...prev, gradientEnd: e.target.value }))
+                            }
+                            className="w-8 h-8 rounded border border-gray-300 cursor-pointer"
+                          />
+                          <input
+                            type="text"
+                            value={formData.gradientEnd || "#8b5cf6"}
+                            onChange={(e) =>
+                              setFormData((prev) => ({ ...prev, gradientEnd: e.target.value }))
+                            }
+                            className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Preview */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">Önizleme:</span>
+                      <div
+                        className="flex-1 h-6 rounded border border-gray-200"
+                        style={{
+                          background: `linear-gradient(90deg, ${formData.gradientStart || "#6366f1"}, ${formData.gradientEnd || "#8b5cf6"})`,
+                        }}
+                      ></div>
+                    </div>
+
+                    {/* Limit & View All */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Ürün Limiti
+                        </label>
+                        <input
+                          type="number"
+                          value={formData.limit || 10}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              limit: parseInt(e.target.value) || 10,
+                            }))
+                          }
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          min="1"
+                          max="20"
+                        />
+                      </div>
+                      <div className="flex items-end pb-1">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.showViewAllButton || false}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                showViewAllButton: e.target.checked,
+                              }))
+                            }
+                            className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                          />
+                          <span className="text-xs text-gray-700">Tümünü Gör</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Summary */}
+                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <h4 className="text-xs font-medium text-gray-700 mb-2">Özet</h4>
+                      <div className="text-xs text-gray-600 space-y-1">
+                        <div className="flex justify-between">
+                          <span>Mod:</span>
+                          <span className="font-medium">
+                            {selectionMode === "all_products"
+                              ? "Kategoriden Seçim"
+                              : "Mağazadan Seçim"}
+                          </span>
+                        </div>
+                        {selectedCategory && (
+                          <div className="flex justify-between">
+                            <span>Kategori:</span>
+                            <span className="font-medium truncate max-w-[120px]">
+                              {selectedCategory}
+                            </span>
+                          </div>
+                        )}
+                        {selectedShopForProducts && (
+                          <div className="flex justify-between">
+                            <span>Mağaza:</span>
+                            <span className="font-medium truncate max-w-[120px]">
+                              {shopSearchResults.find((s) => s.id === selectedShopForProducts)
+                                ?.name || shops.find((s) => s.id === selectedShopForProducts)?.name}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex justify-between">
+                          <span>Seçili Ürün:</span>
+                          <span className="font-medium text-indigo-600">
+                            {selectedProducts.length}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column - Product Selection */}
+                  <div className="lg:col-span-2 space-y-4">
+                    {/* Category Selection (for all_products mode) */}
+                    {selectionMode === "all_products" && (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-3 gap-3">
+                          {/* Category Dropdown */}
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Kategori
+                            </label>
+                            <div className="relative">
+                              <select
+                                value={selectedCategory}
+                                onChange={(e) => {
+                                  setSelectedCategory(e.target.value);
+                                  setSelectedSubcategory("");
+                                  setSelectedSubSubcategory("");
+                                }}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none bg-white pr-8"
+                              >
+                                <option value="">Seçiniz...</option>
+                                {categories.map((cat) => (
+                                  <option key={cat} value={cat}>
+                                    {cat}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            </div>
+                          </div>
+
+                          {/* Subcategory Dropdown */}
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Alt Kategori
+                            </label>
+                            <div className="relative">
+                              <select
+                                value={selectedSubcategory}
+                                onChange={(e) => {
+                                  setSelectedSubcategory(e.target.value);
+                                  setSelectedSubSubcategory("");
+                                }}
+                                disabled={!selectedCategory || subcategories.length === 0}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none bg-white pr-8 disabled:bg-gray-100 disabled:text-gray-400"
+                              >
+                                <option value="">Tümü</option>
+                                {subcategories.map((sub) => (
+                                  <option key={sub} value={sub}>
+                                    {sub}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            </div>
+                          </div>
+
+                          {/* Sub-subcategory Dropdown */}
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Alt Alt Kategori
+                            </label>
+                            <div className="relative">
+                              <select
+                                value={selectedSubSubcategory}
+                                onChange={(e) => setSelectedSubSubcategory(e.target.value)}
+                                disabled={
+                                  !selectedSubcategory || subSubcategories.length === 0
+                                }
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none bg-white pr-8 disabled:bg-gray-100 disabled:text-gray-400"
+                              >
+                                <option value="">Tümü</option>
+                                {subSubcategories.map((subsub) => (
+                                  <option key={subsub} value={subsub}>
+                                    {subsub}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {selectedCategory && (
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <span className="flex items-center gap-1">
+                              <Package className="w-3 h-3" />
+                              {totalProductsLoaded} ürün yüklendi
+                            </span>
+                            {hasMoreProducts && (
+                              <span className="text-indigo-600">• Daha fazla mevcut</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Shop Search (for shop_specific mode) */}
+                    {selectionMode === "shop_specific" && !selectedShopForProducts && (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Mağaza Ara
+                          </label>
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                              type="text"
+                              value={shopSearchTerm}
+                              onChange={(e) => setShopSearchTerm(e.target.value)}
+                              className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              placeholder="Mağaza adı yazın... (en az 2 karakter)"
+                            />
+                            {searchingShops && (
+                              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-purple-500 animate-spin" />
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Shop Search Results */}
+                        {shopSearchResults.length > 0 && (
+                          <div className="border border-gray-200 rounded-lg overflow-hidden">
+                            {shopSearchResults.map((shop) => (
+                              <button
+                                key={shop.id}
+                                onClick={() => handleShopSelectionForProducts(shop)}
+                                className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors text-left"
+                              >
+                                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                  <Store className="w-5 h-5 text-purple-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium text-gray-900 truncate">
+                                    {shop.name}
+                                  </div>
+                                  <div className="text-xs text-gray-500 truncate">
+                                    {shop.category || "Kategori belirtilmemiş"}
+                                  </div>
+                                </div>
+                                <ChevronRight className="w-4 h-4 text-gray-400" />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {shopSearchTerm.length >= 2 &&
+                          !searchingShops &&
+                          shopSearchResults.length === 0 && (
+                            <div className="text-center py-8 text-gray-500">
+                              <Store className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                              <p className="text-sm">Mağaza bulunamadı</p>
+                            </div>
+                          )}
+
+                        {shopSearchTerm.length < 2 && (
+                          <div className="text-center py-8 text-gray-400">
+                            <Search className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                            <p className="text-sm">Mağaza aramak için en az 2 karakter girin</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Selected Shop Info */}
+                    {selectionMode === "shop_specific" && selectedShopForProducts && (
+                      <div className="flex items-center gap-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                        <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                          <Store className="w-4 h-4 text-purple-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-purple-900">
+                            {shops.find((s) => s.id === selectedShopForProducts)?.name ||
+                              "Mağaza"}
+                          </div>
+                          <div className="text-xs text-purple-600">
+                            {shopProducts.length} ürün yüklendi
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setSelectedShopForProducts("");
+                            setShopProducts([]);
+                            setLastShopProductDoc(null);
+                            setHasMoreShopProducts(true);
+                            setSelectedProducts([]);
+                          }}
+                          className="p-1 text-purple-400 hover:text-purple-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Product Search */}
+                    {((selectionMode === "all_products" && selectedCategory) ||
+                      (selectionMode === "shop_specific" && selectedShopForProducts)) && (
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          type="text"
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          placeholder="Ürün ara..."
+                        />
                       </div>
                     )}
 
                     {/* Products Grid */}
-                    {!loadingShopProducts && (
-                      <div className="max-h-64 overflow-y-auto bg-black/20 rounded-lg p-4">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {filteredProducts.map((product) => (
-                            <div
-                              key={product.id}
-                              className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                                selectedProducts.includes(product.id)
-                                  ? "border-blue-500 bg-blue-600/20"
-                                  : "border-white/20 bg-white/5 hover:bg-white/10"
-                              }`}
-                              onClick={() => toggleProductSelection(product.id)}
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="flex-shrink-0">
-                                  {product.imageUrls && product.imageUrls.length > 0 ? (
-                                    <img
-                                      src={product.imageUrls[0]}
-                                      alt={product.productName}
-                                      className="w-12 h-12 object-cover rounded-lg"
-                                    />
-                                  ) : (
-                                    <div className="w-12 h-12 bg-gray-600 rounded-lg flex items-center justify-center">
-                                      <Package className="w-6 h-6 text-gray-400" />
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <h4 className="text-sm font-medium text-white truncate">
-                                    {product.productName}
-                                  </h4>
-                                  <p className="text-xs text-gray-400 truncate">
-                                    {product.sellerName || product.shopName || "Mağaza bilgisi yok"}
-                                  </p>
-                                  {product.price && (
-                                    <p className="text-xs text-green-400">
-                                      ₺{product.price.toLocaleString()}
-                                    </p>
-                                  )}
-                                </div>
-                                {selectedProducts.includes(product.id) && (
-                                  <CheckCircle className="w-5 h-5 text-blue-400 flex-shrink-0" />
-                                )}
-                              </div>
+                    {((selectionMode === "all_products" && selectedCategory) ||
+                      (selectionMode === "shop_specific" && selectedShopForProducts)) && (
+                      <div className="border border-gray-200 rounded-lg overflow-hidden">
+                        <div className="max-h-[340px] overflow-y-auto bg-gray-50 p-3">
+                          {loadingProducts || loadingShopProducts ? (
+                            <div className="flex items-center justify-center py-8">
+                              <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+                              <span className="ml-2 text-sm text-gray-500">
+                                Ürünler yükleniyor...
+                              </span>
                             </div>
-                          ))}
+                          ) : filteredProducts.length > 0 ? (
+                            <>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {filteredProducts.map((product) => (
+                                  <div
+                                    key={product.id}
+                                    onClick={() => toggleProductSelection(product.id)}
+                                    className={`p-2 rounded-lg border cursor-pointer transition-all ${
+                                      selectedProducts.includes(product.id)
+                                        ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
+                                        : "border-gray-200 bg-white hover:border-gray-300"
+                                    }`}
+                                  >
+                                    <div className="flex items-start gap-2">
+                                      <div className="flex-shrink-0">
+                                        {product.imageUrls && product.imageUrls.length > 0 ? (
+                                          <img
+                                            src={product.imageUrls[0]}
+                                            alt={product.productName}
+                                            className="w-10 h-10 object-cover rounded"
+                                          />
+                                        ) : (
+                                          <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center">
+                                            <Package className="w-5 h-5 text-gray-400" />
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <h4 className="text-xs font-medium text-gray-900 line-clamp-2">
+                                          {product.productName}
+                                        </h4>
+                                        <p className="text-[10px] text-gray-500 truncate mt-0.5">
+                                          {product.sellerName || product.shopName}
+                                        </p>
+                                        {product.price && (
+                                          <p className="text-[10px] font-medium text-green-600 mt-0.5">
+                                            ₺{product.price.toLocaleString()}
+                                          </p>
+                                        )}
+                                      </div>
+                                      {selectedProducts.includes(product.id) && (
+                                        <CheckCircle className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Load More Button */}
+                              {((selectionMode === "all_products" && hasMoreProducts) ||
+                                (selectionMode === "shop_specific" && hasMoreShopProducts)) && (
+                                <div className="mt-3 text-center">
+                                  <button
+                                    onClick={() => {
+                                      if (selectionMode === "all_products") {
+                                        loadProductsByCategory(false);
+                                      } else if (selectionMode === "shop_specific") {
+                                        loadShopProducts(selectedShopForProducts, false);
+                                      }
+                                    }}
+                                    disabled={loadingProducts || loadingShopProducts}
+                                    className="px-4 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors disabled:opacity-50"
+                                  >
+                                    {loadingProducts || loadingShopProducts ? (
+                                      <span className="flex items-center gap-1">
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                        Yükleniyor...
+                                      </span>
+                                    ) : (
+                                      "Daha Fazla Yükle"
+                                    )}
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="text-center py-8">
+                              <Package className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                              <p className="text-sm text-gray-500">
+                                {searchTerm
+                                  ? "Arama kriterine uygun ürün bulunamadı"
+                                  : "Bu kategoride ürün bulunamadı"}
+                              </p>
+                            </div>
+                          )}
                         </div>
-                        
-                        {/* Empty states */}
-                        {filteredProducts.length === 0 && searchTerm.trim() && (
-                          <div className="text-center py-8">
-                            <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                            <p className="text-gray-400 mb-2">
-                              Arama kriterine uygun ürün bulunamadı
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              Farklı arama terimleri deneyin
-                            </p>
-                          </div>
-                        )}
-                        
-                        {filteredProducts.length === 0 && !searchTerm.trim() && displayProducts.length === 0 && (
-                          <div className="text-center py-8">
-                            <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                            <p className="text-gray-400">
-                              {selectionMode === 'shop_specific' 
-                                ? "Bu mağazada ürün bulunamadı" 
-                                : "Ürün bulunamadı"
-                              }
-                            </p>
-                          </div>
-                        )}
+                      </div>
+                    )}
+
+                    {/* Empty State */}
+                    {selectionMode === "all_products" && !selectedCategory && (
+                      <div className="flex items-center justify-center py-16 border border-gray-200 rounded-lg bg-gray-50">
+                        <div className="text-center">
+                          <Filter className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                          <p className="text-sm text-gray-500">
+                            Ürünleri görüntülemek için kategori seçin
+                          </p>
+                        </div>
                       </div>
                     )}
                   </div>
-                )}
-
-                {/* Summary */}
-                <div className="p-4 bg-slate-700/50 rounded-lg">
-                  <h4 className="text-sm font-medium text-white mb-2">Özet</h4>
-                  <div className="text-sm text-gray-300 space-y-1">
-                    <div>Mod: {
-                      selectionMode === 'all_products' ? 'Tüm Ürünlerden Seçim' :
-                      selectionMode === 'shop_all' ? 'Mağaza - Tüm Ürünler' :
-                      'Mağaza - Belirli Ürünler'
-                    }</div>
-                    {formData.selectedShopId && (
-                      <div>Seçili Mağaza: {shops.find(s => s.id === formData.selectedShopId)?.name}</div>
-                    )}
-                    {selectedShopForProducts && (
-                      <div>Ürün Seçimi Yapılan Mağaza: {shops.find(s => s.id === selectedShopForProducts)?.name}</div>
-                    )}
-                    {selectedProducts.length > 0 && (
-                      <div>Seçili Ürün Sayısı: {selectedProducts.length}</div>
-                    )}
-                    <div>Görüntüleme Limiti: {formData.limit}</div>
-                  </div>
                 </div>
+              </div>
 
-                {/* Actions */}
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/20">
+              {/* Modal Footer */}
+              <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200 bg-gray-50">
+                <div className="text-xs text-gray-500">
+                  {selectedProducts.length > 0 && (
+                    <span className="flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3 text-green-500" />
+                      {selectedProducts.length} ürün seçildi
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => {
                       setShowCreateModal(false);
                       resetForm();
                     }}
-                    className="px-4 py-2 text-gray-300 hover:text-white transition-colors"
+                    className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 transition-colors"
                   >
                     İptal
                   </button>
                   <button
                     onClick={handleCreateList}
-                    disabled={saving}
-                    className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-gray-600 disabled:to-gray-600 text-white font-medium rounded-lg transition-all duration-200"
+                    disabled={saving || selectedProducts.length === 0 || !formData.title?.trim()}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
                   >
                     {saving ? (
                       <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        <Loader2 className="w-4 h-4 animate-spin" />
                         Oluşturuluyor...
                       </>
                     ) : (
@@ -1229,75 +1396,109 @@ export default function MarketScreenHorizontalProductList() {
 
         {/* Edit List Modal */}
         {editingList && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-800 border border-white/20 rounded-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-white">Liste Düzenle</h2>
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-gray-50">
+                <h2 className="text-base font-semibold text-gray-900">Liste Düzenle</h2>
                 <button
                   onClick={() => setEditingList(null)}
-                  className="p-2 text-gray-400 hover:text-white"
+                  className="p-1 text-gray-400 hover:text-gray-600 rounded-md"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="space-y-4">
-                {/* Basic Settings */}
+              {/* Modal Body */}
+              <div className="p-5 space-y-4">
+                {/* Title */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
                     Liste Başlığı
                   </label>
                   <input
                     type="text"
                     value={editingList.title}
                     onChange={(e) =>
-                      setEditingList((prev) =>
-                        prev ? { ...prev, title: e.target.value } : null
-                      )
+                      setEditingList((prev) => (prev ? { ...prev, title: e.target.value } : null))
                     }
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
 
                 {/* Gradient Colors */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Gradient Başlangıç Rengi
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Başlangıç Rengi
                     </label>
-                    <input
-                      type="color"
-                      value={editingList.gradientStart}
-                      onChange={(e) =>
-                        setEditingList((prev) =>
-                          prev ? { ...prev, gradientStart: e.target.value } : null
-                        )
-                      }
-                      className="w-full h-10 bg-white/10 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={editingList.gradientStart}
+                        onChange={(e) =>
+                          setEditingList((prev) =>
+                            prev ? { ...prev, gradientStart: e.target.value } : null
+                          )
+                        }
+                        className="w-8 h-8 rounded border border-gray-300 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={editingList.gradientStart}
+                        onChange={(e) =>
+                          setEditingList((prev) =>
+                            prev ? { ...prev, gradientStart: e.target.value } : null
+                          )
+                        }
+                        className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
+                      />
+                    </div>
                   </div>
-
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Gradient Bitiş Rengi
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Bitiş Rengi
                     </label>
-                    <input
-                      type="color"
-                      value={editingList.gradientEnd}
-                      onChange={(e) =>
-                        setEditingList((prev) =>
-                          prev ? { ...prev, gradientEnd: e.target.value } : null
-                        )
-                      }
-                      className="w-full h-10 bg-white/10 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={editingList.gradientEnd}
+                        onChange={(e) =>
+                          setEditingList((prev) =>
+                            prev ? { ...prev, gradientEnd: e.target.value } : null
+                          )
+                        }
+                        className="w-8 h-8 rounded border border-gray-300 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={editingList.gradientEnd}
+                        onChange={(e) =>
+                          setEditingList((prev) =>
+                            prev ? { ...prev, gradientEnd: e.target.value } : null
+                          )
+                        }
+                        className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
+                      />
+                    </div>
                   </div>
                 </div>
 
+                {/* Preview */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Önizleme:</span>
+                  <div
+                    className="flex-1 h-6 rounded border border-gray-200"
+                    style={{
+                      background: `linear-gradient(90deg, ${editingList.gradientStart}, ${editingList.gradientEnd})`,
+                    }}
+                  ></div>
+                </div>
+
                 {/* Settings */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
                       Ürün Limiti
                     </label>
                     <input
@@ -1308,56 +1509,54 @@ export default function MarketScreenHorizontalProductList() {
                           prev ? { ...prev, limit: parseInt(e.target.value) || 10 } : null
                         )
                       }
-                      className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       min="1"
                       max="20"
                     />
                   </div>
-
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      id="editShowViewAll"
-                      checked={editingList.showViewAllButton}
-                      onChange={(e) =>
-                        setEditingList((prev) =>
-                          prev ? { ...prev, showViewAllButton: e.target.checked } : null
-                        )
-                      }
-                      className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor="editShowViewAll" className="text-sm text-gray-300">
-                      &quot;Tümünü Gör&quot; Butonu Göster
+                  <div className="flex items-end pb-1">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editingList.showViewAllButton}
+                        onChange={(e) =>
+                          setEditingList((prev) =>
+                            prev ? { ...prev, showViewAllButton: e.target.checked } : null
+                          )
+                        }
+                        className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                      />
+                      <span className="text-xs text-gray-700">Tümünü Gör Butonu</span>
                     </label>
                   </div>
                 </div>
+              </div>
 
-                {/* Actions */}
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/20">
-                  <button
-                    onClick={() => setEditingList(null)}
-                    className="px-4 py-2 text-gray-300 hover:text-white transition-colors"
-                  >
-                    İptal
-                  </button>
-                  <button
-                    onClick={() => handleUpdateList(editingList.id, editingList)}
-                    disabled={saving}
-                    className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-600 text-white font-medium rounded-lg transition-all duration-200"
-                  >
-                    {saving ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        Güncelleniyor...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-4 h-4" />
-                        Güncelle
-                      </>
-                    )}
-                  </button>
-                </div>
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 bg-gray-50">
+                <button
+                  onClick={() => setEditingList(null)}
+                  className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 transition-colors"
+                >
+                  İptal
+                </button>
+                <button
+                  onClick={() => handleUpdateList(editingList.id, editingList)}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Güncelleniyor...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      Güncelle
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           </div>
