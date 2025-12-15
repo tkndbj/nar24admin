@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { logAdminActivity } from "@/services/activityLogService";
 import {
   collection,
   onSnapshot,
@@ -604,6 +605,11 @@ export default function EditProductApplicationsPage() {
       await sendNotifications(application, "approved");
       console.log("Notifications sent successfully");
 
+      // Log admin activity
+      logAdminActivity("Ürün düzenleme başvurusu onaylandı", {
+        productName: application.productName,
+      });
+
       setSelectedApplication(null);
       alert("Başvuru başarıyla onaylandı!");
     } catch (error) {
@@ -659,6 +665,11 @@ export default function EditProductApplicationsPage() {
       // Send notifications with rejection reason
       await sendNotifications(application, "rejected", rejectionReason);
       console.log("Rejection notifications sent successfully");
+
+      // Log admin activity
+      logAdminActivity("Ürün düzenleme başvurusu reddedildi", {
+        productName: application.productName,
+      });
 
       // Close modal and clear selection
       setRejectionModal({ isOpen: false, application: null });

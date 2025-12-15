@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { logAdminActivity } from "@/services/activityLogService";
 import {
   ArrowLeft,
   CheckCircle,
@@ -177,6 +178,12 @@ export default function AdsApplicationsPage() {
         }
       );
 
+      // Log admin activity
+      logAdminActivity("Reklam başvurusu onaylandı", {
+        shopName: submission.shopName,
+        adType: submission.adType,
+      });
+
       // Show success message
       alert(`✅ Başvuru onaylandı! Kullanıcıya bildirim gönderildi.`);
     } catch (error) {
@@ -236,6 +243,12 @@ export default function AdsApplicationsPage() {
           shopName: submission.shopName,
         }
       );
+
+      // Log admin activity
+      logAdminActivity("Reklam başvurusu reddedildi", {
+        shopName: submission.shopName,
+        adType: submission.adType,
+      });
 
       // Close modal and show success
       setRejectModal({ isOpen: false, submissionId: null, shopName: "" });

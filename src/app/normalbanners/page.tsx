@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { logAdminActivity } from "@/services/activityLogService";
 import {
   ArrowLeft,
   Plus,
@@ -393,6 +394,8 @@ export default function MarketBannerPage() {
         createdAt: serverTimestamp(),
       });
 
+      logAdminActivity("Market Banner yüklendi", { bannerType: "marketBanner" });
+
       setTimeout(() => setCompressionInfo(""), 5000);
     } catch (error) {
       console.error("Upload error:", error);
@@ -430,6 +433,8 @@ export default function MarketBannerPage() {
           activeAdId: null,
         });
       }
+
+      logAdminActivity("Market Banner silindi", { bannerType: "marketBanner" });
     } catch (error) {
       console.error("Delete error:", error);
       alert("Silme işlemi başarısız oldu.");
@@ -500,6 +505,11 @@ export default function MarketBannerPage() {
         status: "active" as AdStatus,
         activeAdId: adRef.id,
         activatedAt: serverTimestamp(),
+      });
+
+      logAdminActivity("Market Banner başvurusu onaylandı", {
+        shopName: submission.shopName,
+        bannerType: "marketBanner",
       });
     } catch (error) {
       console.error("Activate error:", error);

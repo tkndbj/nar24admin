@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { logAdminActivity } from "@/services/activityLogService";
 import {
   ArrowLeft,
   Plus,
@@ -633,6 +634,8 @@ export default function TopBannerPage() {
         `   With color: 0x${dominantColor.toString(16).toUpperCase()}`
       );
 
+      logAdminActivity("Büyük Banner yüklendi", { bannerType: "topBanner" });
+
       // DO NOT call triggerManualAdColorExtraction anymore!
       // We already have the color and created the document with it
 
@@ -671,6 +674,8 @@ export default function TopBannerPage() {
           activeAdId: null,
         });
       }
+
+      logAdminActivity("Büyük Banner silindi", { bannerType: "topBanner" });
     } catch (error) {
       console.error("Delete error:", error);
       alert("Silme işlemi başarısız oldu.");
@@ -740,6 +745,11 @@ export default function TopBannerPage() {
         activeAdId: adRef.id,
         activatedAt: serverTimestamp(),
       });
+
+      logAdminActivity("Büyük Banner başvurusu onaylandı", {
+        shopName: submission.shopName,
+        bannerType: "topBanner",
+      });
     } catch (error) {
       console.error("Activate error:", error);
       alert("Aktivasyon başarısız oldu.");
@@ -751,6 +761,8 @@ export default function TopBannerPage() {
 
     try {
       await deleteDoc(doc(db, SUBMISSIONS_COLLECTION, submissionId));
+
+      logAdminActivity("Büyük Banner başvurusu silindi", { bannerType: "topBanner" });
     } catch (error) {
       console.error("Delete submission error:", error);
       alert("Silme işlemi başarısız oldu.");

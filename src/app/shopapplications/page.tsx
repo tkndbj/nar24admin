@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { logAdminActivity } from "@/services/activityLogService";
 import {
   ArrowLeft,
   Phone,
@@ -440,7 +441,12 @@ export default function ShopApplicationsPage() {
         console.error("Error sending welcome email:", emailError);
         // Don't fail the whole approval if email fails
       }
-  
+
+      // Log admin activity
+      logAdminActivity("Mağaza başvurusu onaylandı", {
+        shopName: application.name,
+      });
+
       alert("Başvuru başarıyla onaylandı!");
     } catch (error) {
       console.error("Error approving application:", error);
@@ -480,6 +486,11 @@ export default function ShopApplicationsPage() {
           rejectionReason: rejectionReason,
         }
       );
+
+      // Log admin activity
+      logAdminActivity("Mağaza başvurusu reddedildi", {
+        shopName: application.name,
+      });
 
       setRejectionModal({ isOpen: false, application: null });
       alert("Başvuru başarıyla reddedildi!");

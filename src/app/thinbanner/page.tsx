@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { logAdminActivity } from "@/services/activityLogService";
 import {
   ArrowLeft,
   Plus,
@@ -394,6 +395,8 @@ export default function ThinBannerPage() {
         createdAt: serverTimestamp(),
       });
 
+      logAdminActivity("İnce Banner yüklendi", { bannerType: "thinBanner" });
+
       setTimeout(() => setCompressionInfo(""), 5000);
     } catch (error) {
       console.error("Upload error:", error);
@@ -431,6 +434,8 @@ export default function ThinBannerPage() {
           activeAdId: null,
         });
       }
+
+      logAdminActivity("İnce Banner silindi", { bannerType: "thinBanner" });
     } catch (error) {
       console.error("Delete error:", error);
       alert("Silme işlemi başarısız oldu.");
@@ -502,6 +507,11 @@ export default function ThinBannerPage() {
         activeAdId: adRef.id,
         activatedAt: serverTimestamp(),
       });
+
+      logAdminActivity("İnce Banner başvurusu onaylandı", {
+        shopName: submission.shopName,
+        bannerType: "thinBanner",
+      });
     } catch (error) {
       console.error("Activate error:", error);
       alert("Aktivasyon başarısız oldu.");
@@ -513,6 +523,8 @@ export default function ThinBannerPage() {
 
     try {
       await deleteDoc(doc(db, SUBMISSIONS_COLLECTION, submissionId));
+
+      logAdminActivity("İnce Banner başvurusu silindi", { bannerType: "thinBanner" });
     } catch (error) {
       console.error("Delete submission error:", error);
       alert("Silme işlemi başarısız oldu.");

@@ -2,6 +2,7 @@
 
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useState, useEffect } from "react";
+import { logAdminActivity } from "@/services/activityLogService";
 import {
   collection,
   onSnapshot,
@@ -1285,6 +1286,16 @@ export default function ProductApplications() {
 
       console.log(`✅ Product approved: ${newDocId} in ${collectionName}`);
 
+      // Log admin activity
+      const sellerDisplayName = application.shopId && shopNames[application.shopId]
+        ? shopNames[application.shopId]
+        : application.sellerName;
+      logAdminActivity("Ürün başvurusu onaylandı", {
+        productName: application.productName,
+        sellerName: sellerDisplayName,
+        productId: newDocId,
+      });
+
       // ✅ STEP 3: Update category index AFTER successful commit
       // This is non-critical - if it fails, product still exists
       if (isShopProduct) {
@@ -1357,6 +1368,15 @@ export default function ProductApplications() {
         status: "rejected",
         reviewedAt: Timestamp.now(),
         rejectionReason: "Başvuru reddedildi",
+      });
+
+      // Log admin activity
+      const sellerDisplayName = application.shopId && shopNames[application.shopId]
+        ? shopNames[application.shopId]
+        : application.sellerName;
+      logAdminActivity("Ürün başvurusu reddedildi", {
+        productName: application.productName,
+        sellerName: sellerDisplayName,
       });
 
       showNotification("Ürün başvurusu reddedildi");
