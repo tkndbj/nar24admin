@@ -144,6 +144,14 @@ function UserDetailsContent() {
     displayName: string;
     email: string;
     activity: string;
+    metadata?: {
+      productName?: string;
+      sellerName?: string;
+      shopName?: string;
+      bannerType?: string;
+      adType?: string;
+      path?: string;
+    };
   }>>([]);
   const [activityLogsLastDoc, setActivityLogsLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMoreActivityLogs, setHasMoreActivityLogs] = useState(true);
@@ -334,10 +342,11 @@ function UserDetailsContent() {
     }
   }, [userId, ordersLastDoc, loadingMoreOrders, hasMoreOrders]);
 
-  // Fetch admin activity logs
+  // Fetch admin activity logs for the specific user being viewed
   const fetchActivityLogs = useCallback(async (isInitial = true) => {
     if (loadingActivityLogs) return;
     if (!isInitial && !hasMoreActivityLogs) return;
+    if (!user?.email) return; // Need the user's email to filter
 
     try {
       setLoadingActivityLogs(true);
@@ -346,12 +355,14 @@ function UserDetailsContent() {
       if (isInitial || !activityLogsLastDoc) {
         logsQuery = query(
           collection(db, "admin_activity_logs"),
+          where("email", "==", user.email),
           firestoreOrderBy("time", "desc"),
           limit(ACTIVITY_LOGS_PER_PAGE)
         );
       } else {
         logsQuery = query(
           collection(db, "admin_activity_logs"),
+          where("email", "==", user.email),
           firestoreOrderBy("time", "desc"),
           startAfter(activityLogsLastDoc),
           limit(ACTIVITY_LOGS_PER_PAGE)
@@ -386,7 +397,7 @@ function UserDetailsContent() {
     } finally {
       setLoadingActivityLogs(false);
     }
-  }, [loadingActivityLogs, hasMoreActivityLogs, activityLogsLastDoc, ACTIVITY_LOGS_PER_PAGE]);
+  }, [loadingActivityLogs, hasMoreActivityLogs, activityLogsLastDoc, ACTIVITY_LOGS_PER_PAGE, user?.email]);
 
   // Open activity modal and fetch logs
   const openActivityModal = useCallback(() => {
@@ -1427,12 +1438,22 @@ function UserDetailsContent() {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-gray-900 truncate">{log.activity}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[10px] text-gray-600 truncate">{log.displayName}</span>
-                            <span className="text-[10px] text-gray-400">•</span>
-                            <span className="text-[10px] text-gray-500 truncate">{log.email}</span>
-                          </div>
+                          <p className="text-xs text-gray-900">{log.activity}</p>
+                          {/* Show metadata if exists */}
+                          {log.metadata && (log.metadata.productName || log.metadata.sellerName || log.metadata.shopName) && (
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                              {log.metadata.productName && (
+                                <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">
+                                  {log.metadata.productName}
+                                </span>
+                              )}
+                              {(log.metadata.sellerName || log.metadata.shopName) && (
+                                <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
+                                  {log.metadata.sellerName || log.metadata.shopName}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <span className="text-[10px] text-gray-500 whitespace-nowrap flex-shrink-0">
                           {log.time?.toDate().toLocaleString("tr-TR", {
