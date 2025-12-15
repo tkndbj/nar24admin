@@ -1,5 +1,6 @@
 // src/hooks/useIdleTimeout.ts
 // Tracks user activity and triggers logout after period of inactivity
+// Works with TabSessionManager for proper multi-tab support
 
 import { useEffect, useRef, useCallback, useState } from "react";
 
@@ -39,8 +40,6 @@ const ACTIVITY_EVENTS = [
 
 // Storage key for last activity timestamp (for cross-tab sync)
 const LAST_ACTIVITY_KEY = "nar24_last_activity";
-// Session marker key - uses sessionStorage which is cleared on browser/tab close
-const SESSION_MARKER_KEY = "nar24_session_active";
 
 export function useIdleTimeout({
   timeout,
@@ -102,10 +101,9 @@ export function useIdleTimeout({
     const now = Date.now();
     lastActivityRef.current = now;
 
-    // Store in localStorage for cross-tab sync and update session marker
+    // Store in localStorage for cross-tab sync
     try {
       localStorage.setItem(LAST_ACTIVITY_KEY, now.toString());
-      sessionStorage.setItem(SESSION_MARKER_KEY, "true");
     } catch {
       // Storage might not be available
     }
@@ -219,7 +217,6 @@ export function useIdleTimeout({
 export function clearLastActivity(): void {
   try {
     localStorage.removeItem(LAST_ACTIVITY_KEY);
-    sessionStorage.removeItem(SESSION_MARKER_KEY);
   } catch {
     // Storage might not be available
   }
@@ -229,8 +226,6 @@ export function clearLastActivity(): void {
 export function updateLastActivity(): void {
   try {
     localStorage.setItem(LAST_ACTIVITY_KEY, Date.now().toString());
-    // Set session marker - this gets cleared automatically when browser/tab closes
-    sessionStorage.setItem(SESSION_MARKER_KEY, "true");
   } catch {
     // Storage might not be available
   }
@@ -249,38 +244,19 @@ export function getLastActivity(): number | null {
   return null;
 }
 
-// Helper to check if session marker exists (indicates browser session is still active)
-export function hasActiveSessionMarker(): boolean {
-  try {
-    return sessionStorage.getItem(SESSION_MARKER_KEY) === "true";
-  } catch {
-    // sessionStorage might not be available
-    return false;
-  }
-}
-
 /**
- * Check if the session has expired based on:
- * 1. Browser/tab close - sessionStorage marker is cleared automatically
- * 2. Inactivity timeout - more than 30 minutes since last activity
+ * Check if the session has expired based on inactivity timeout
+ * Note: Browser/tab close detection is now handled by TabSessionManager
  *
  * @param timeoutMs - The timeout duration in milliseconds
- * @returns true if session has expired, false otherwise
+ * @returns true if session has expired due to inactivity, false otherwise
  */
 export function isSessionExpiredByInactivity(timeoutMs: number = DEFAULT_IDLE_TIMEOUT): boolean {
-  // Check 1: Session marker must exist (cleared on browser/tab close)
-  if (!hasActiveSessionMarker()) {
-    // No session marker = browser/tab was closed = session expired
-    return true;
-  }
-
-  // Check 2: Inactivity timeout
   const lastActivity = getLastActivity();
 
   if (lastActivity === null) {
-    // Session marker exists but no activity timestamp - shouldn't happen
-    // Treat as expired for safety
-    return true;
+    // No activity timestamp - new session, not expired
+    return false;
   }
 
   const elapsed = Date.now() - lastActivity;

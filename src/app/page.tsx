@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { updateLastActivity } from "@/hooks/useIdleTimeout";
+import { markSessionValid } from "@/lib/tabSessionManager";
 
 // Session message configuration based on logout reason
 const SESSION_MESSAGES: Record<string, { title: string; message: string; icon: "clock" | "shield" }> = {
@@ -88,6 +89,10 @@ export default function AdminLogin() {
     setSessionMessage(null);
 
     try {
+      // Step 0: Mark session as valid BEFORE Firebase auth
+      // This prevents the AuthContext from logging out immediately due to stale session data
+      markSessionValid();
+
       // Step 1: Firebase Authentication
       setVerificationStep("Kimlik bilgileri doğrulanıyor...");
       await signInWithEmailAndPassword(auth, email, password);

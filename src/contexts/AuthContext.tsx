@@ -18,6 +18,14 @@ import {
   isSessionExpiredByInactivity,
   DEFAULT_IDLE_TIMEOUT,
 } from "@/hooks/useIdleTimeout";
+import {
+  tabSessionManager,
+  isFreshBrowserSession,
+  markSessionValid,
+  markSessionInvalid,
+  broadcastLogout,
+  resetTabSession,
+} from "@/lib/tabSessionManager";
 
 interface UserData {
   uid: string;
@@ -141,10 +149,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   }, []);
 
   // Logout function
-  const logout = useCallback(async (reason: LogoutReason = "manual") => {
+  const logout = useCallback(async (reason: LogoutReason = "manual", broadcast: boolean = true) => {
     try {
       // Clear the idle timeout activity tracking
       clearLastActivity();
+
+      // Mark session as invalid and broadcast to other tabs
+      markSessionInvalid();
+      if (broadcast) {
+        broadcastLogout(reason);
+      }
 
       // Set the logout reason before signing out
       setLogoutReason(reason);
@@ -175,6 +189,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         setLogoutReason(null);
         // Update last activity on successful verification
         updateLastActivity();
+        // Reset tab session - mark as valid and register this tab
+        resetTabSession();
         return true;
       }
 
@@ -191,8 +207,27 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   }, [logout]);
 
-  // Handle auth state changes
+  // Initialize TabSessionManager and handle auth state changes
   useEffect(() => {
+    // Initialize tab session manager with callbacks
+    tabSessionManager.initialize({
+      onLastTabClosed: () => {
+        // Last tab was closed - session will be invalidated
+        // This is handled by beforeunload in TabSessionManager
+        console.log("Last tab closing - session will be invalidated");
+      },
+      onLogoutBroadcast: (reason: string) => {
+        // Another tab triggered logout
+        console.log("Logout broadcast received from another tab:", reason);
+        setLogoutReason("session_expired");
+        signOut(auth).then(() => {
+          firebaseUserRef.current = null;
+          setUser(null);
+          router.push("/");
+        });
+      },
+    });
+
     const unsubscribe = onAuthStateChanged(
       auth,
       async (firebaseUser: User | null) => {
@@ -200,11 +235,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         firebaseUserRef.current = firebaseUser;
 
         if (firebaseUser) {
-          // User has a Firebase session - need to verify server-side
+          // User has a Firebase session - need to verify
 
-          // First, check if session expired due to inactivity (browser was closed)
-          if (isSessionExpiredByInactivity(DEFAULT_IDLE_TIMEOUT)) {
-            console.log("Session expired due to inactivity (browser was closed)");
+          // Check 1: Was session invalidated (all tabs were closed)?
+          if (isFreshBrowserSession()) {
+            console.log("Session expired - all tabs were closed");
             setLogoutReason("session_expired");
             await signOut(auth);
             firebaseUserRef.current = null;
@@ -214,7 +249,20 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             return;
           }
 
-          // Session is valid time-wise, now verify admin status server-side
+          // Check 2: Inactivity timeout
+          if (isSessionExpiredByInactivity(DEFAULT_IDLE_TIMEOUT)) {
+            console.log("Session expired due to inactivity");
+            setLogoutReason("session_expired");
+            markSessionInvalid();
+            await signOut(auth);
+            firebaseUserRef.current = null;
+            setUser(null);
+            setLoading(false);
+            router.push("/");
+            return;
+          }
+
+          // Session is valid, now verify admin status server-side
           setIsVerifying(true);
 
           try {
@@ -226,6 +274,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
               setLogoutReason(null);
               // Update last activity on successful verification
               updateLastActivity();
+              // Mark session as valid and register this tab
+              markSessionValid();
             } else {
               // Server-side verification failed
               console.error("Server-side verification failed:", result.error);
@@ -259,7 +309,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       }
     );
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      // Note: Don't destroy tabSessionManager on cleanup as it needs to persist
+    };
   }, [router]);
 
   // Clear logout reason when user logs back in
