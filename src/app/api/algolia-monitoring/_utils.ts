@@ -1,7 +1,12 @@
 // app/api/algolia-monitoring/_utils.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { verifyAdminAuth, AuthResponse } from "@/lib/auth";
 
 const BASE_URL = "https://status.algolia.com";
+
+// Re-export verifyAdminAuth for use in route handlers
+export { verifyAdminAuth };
+export type { AuthResponse };
 
 export function requiredEnv(name: string): string {
   const v = process.env[name];

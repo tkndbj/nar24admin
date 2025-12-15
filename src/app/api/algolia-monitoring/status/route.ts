@@ -1,12 +1,17 @@
-import { NextResponse } from "next/server";
-import { monitorFetch, jsonError } from "../_utils";
+import { NextRequest, NextResponse } from "next/server";
+import { monitorFetch, jsonError, verifyAdminAuth } from "../_utils";
 import type { StatusResponse } from "../../../lib/types/algoliaMonitoring";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Verify admin authentication
+  const authResult = await verifyAdminAuth(request);
+  if (!authResult.success) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status });
+  }
+
   try {
-    // public endpoint, auth gerekmez
     const data = await monitorFetch<StatusResponse>("/1/status", false);
     return NextResponse.json(data);
   } catch (e) {

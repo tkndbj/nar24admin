@@ -44,6 +44,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
+import { authenticatedFetch } from "@/lib/api";
 
 interface UserData {
   id: string;
@@ -201,18 +202,13 @@ export default function Dashboard() {
     const fetchMetrics = async () => {
       try {
         setMetricsLoading(true);
-        const response = await fetch("/api/metrics");
-        if (response.ok) {
-          const data = await response.json();
-          // Handle the new API response format
-          setMetricsData(data.hourly || generateMetricData());
-          setDailyMetricsData(data.daily || generateDailyMetricData());
-        } else {
-          console.error("Failed to fetch metrics");
-          // Fallback to sample data if API fails
-          setMetricsData(generateMetricData());
-          setDailyMetricsData(generateDailyMetricData());
-        }
+        const data = await authenticatedFetch<{
+          hourly?: MetricData[];
+          daily?: MetricData[];
+        }>("/api/metrics");
+        // Handle the API response format
+        setMetricsData(data.hourly || generateMetricData());
+        setDailyMetricsData(data.daily || generateDailyMetricData());
       } catch (error) {
         console.error("Error fetching metrics:", error);
         // Fallback to sample data if API fails
@@ -223,11 +219,14 @@ export default function Dashboard() {
       }
     };
 
-    fetchMetrics();
-    // Refresh metrics every 5 minutes
-    const interval = setInterval(fetchMetrics, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
+    // Only fetch metrics if user is authenticated
+    if (user) {
+      fetchMetrics();
+      // Refresh metrics every 5 minutes
+      const interval = setInterval(fetchMetrics, 5 * 60 * 1000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
 
   useEffect(() => {
     const unsubscribeUsers = onSnapshot(

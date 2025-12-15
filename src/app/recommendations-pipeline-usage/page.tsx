@@ -25,6 +25,7 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import { authenticatedFetch } from "@/lib/api";
 
 interface FunctionMetric {
   name: string;
@@ -124,16 +125,13 @@ export default function RecommendationsPipelineUsage() {
   const fetchPipelineData = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/metrics");
-      if (response.ok) {
-        const data: ApiResponse = await response.json();
-        console.log("API Response:", data); // Debug log
-        console.log(
-          "Recommendation Pipeline Data:",
-          data.recommendationPipeline
-        ); // Debug log
-        processPipelineData(data);
-      }
+      const data = await authenticatedFetch<ApiResponse>("/api/metrics");
+      console.log("API Response:", data); // Debug log
+      console.log(
+        "Recommendation Pipeline Data:",
+        data.recommendationPipeline
+      ); // Debug log
+      processPipelineData(data);
     } catch (error) {
       console.error("Error fetching pipeline data:", error);
     } finally {

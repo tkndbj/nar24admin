@@ -1,6 +1,8 @@
 import { Logging } from "@google-cloud/logging";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { verifyAdminAuth } from "@/lib/auth";
+import { apiRateLimiter } from "@/lib/rate-limit";
 
 let loggingClient: Logging | null = null;
 
@@ -142,6 +144,18 @@ function extractMessage(jsonPayload: Record<string, unknown>): string | null {
 }
 
 export async function GET(request: NextRequest) {
+  // Apply rate limiting
+  const rateLimitResult = await apiRateLimiter.check(request);
+  if (!rateLimitResult.success && rateLimitResult.response) {
+    return rateLimitResult.response;
+  }
+
+  // Verify admin authentication
+  const authResult = await verifyAdminAuth(request);
+  if (!authResult.success) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const functionName = searchParams.get("name");

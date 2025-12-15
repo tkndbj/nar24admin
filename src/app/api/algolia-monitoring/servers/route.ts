@@ -1,6 +1,6 @@
 // app/api/algolia-monitoring/servers/route.ts
-import { NextResponse } from "next/server";
-import { monitorFetch, jsonError } from "../_utils";
+import { NextRequest, NextResponse } from "next/server";
+import { monitorFetch, jsonError, verifyAdminAuth } from "../_utils";
 import type { InventoryServersResponse } from "../../../lib/types/algoliaMonitoring";
 
 // Env üzerinden manuel cluster listesi üretici
@@ -23,7 +23,13 @@ function synthesizeFromEnv(envClusters: string): InventoryServersResponse {
   };
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Verify admin authentication
+  const authResult = await verifyAdminAuth(request);
+  if (!authResult.success) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status });
+  }
+
   try {
     // 1) Önce manuel ENV override var mı?
     const envClusters = process.env.ALGOLIA_CLUSTERS;

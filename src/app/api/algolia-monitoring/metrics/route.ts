@@ -1,6 +1,6 @@
 // app/api/algolia-monitoring/metrics/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { monitorFetch, jsonError } from "../_utils";
+import { monitorFetch, jsonError, verifyAdminAuth } from "../_utils";
 import type {
   InfrastructureMetricsResponse,
   MetricName,
@@ -8,6 +8,12 @@ import type {
 } from "../../../lib/types/algoliaMonitoring";
 
 export async function GET(req: NextRequest) {
+  // Verify admin authentication
+  const authResult = await verifyAdminAuth(req);
+  if (!authResult.success) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const metric = (searchParams.get("metric") ?? "*") as MetricName;

@@ -1,5 +1,7 @@
 import { MetricServiceClient } from "@google-cloud/monitoring";
 import { NextResponse } from "next/server";
+import { verifyAdminAuth } from "@/lib/auth";
+import { apiRateLimiter } from "@/lib/rate-limit";
 
 // Initialize the client with environment variables
 let client;
@@ -48,7 +50,19 @@ try {
   console.error("Error message:", error.message);
 }
 
-export async function GET() {
+export async function GET(request) {
+  // Apply rate limiting (30 requests per 60 seconds per IP)
+  const rateLimitResult = await apiRateLimiter.check(request);
+  if (!rateLimitResult.success && rateLimitResult.response) {
+    return rateLimitResult.response;
+  }
+
+  // Verify admin authentication
+  const authResult = await verifyAdminAuth(request);
+  if (!authResult.success) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status });
+  }
+
   try {
     // Check if client is initialized
     if (!client) {

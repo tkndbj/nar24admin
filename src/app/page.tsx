@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "./lib/firebase";
+import { auth } from "./lib/firebase";
 import { useRouter } from "next/navigation";
 import {
   Eye,
@@ -15,56 +14,140 @@ import {
   Loader2,
   CheckCircle,
   Zap,
+  Clock,
+  ShieldAlert,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { updateLastActivity } from "@/hooks/useIdleTimeout";
+
+// Session message configuration based on logout reason
+const SESSION_MESSAGES: Record<string, { title: string; message: string; icon: "clock" | "shield" }> = {
+  idle_timeout: {
+    title: "Oturum Zaman Aşımı",
+    message: "Güvenliğiniz için, 30 dakika hareketsizlik sonrası oturumunuz sonlandırıldı.",
+    icon: "clock",
+  },
+  session_expired: {
+    title: "Oturum Sona Erdi",
+    message: "Tarayıcı kapalıyken oturum süreniz doldu. Lütfen tekrar giriş yapın.",
+    icon: "clock",
+  },
+  not_admin: {
+    title: "Yetkisiz Erişim",
+    message: "Bu hesap yönetici yetkilerine sahip değil.",
+    icon: "shield",
+  },
+  verification_failed: {
+    title: "Doğrulama Hatası",
+    message: "Kimlik doğrulama başarısız oldu. Lütfen tekrar deneyin.",
+    icon: "shield",
+  },
+};
 
 export default function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [verificationStep, setVerificationStep] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [sessionMessage, setSessionMessage] = useState<{
+    title: string;
+    message: string;
+    icon: "clock" | "shield";
+  } | null>(null);
   const router = useRouter();
+  const { logoutReason, verifyAndLogin, user, isVerifying } = useAuth();
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (user && !isVerifying) {
+      router.push("/dashboard");
+    }
+  }, [user, isVerifying, router]);
+
+  // Show message based on logout reason
+  useEffect(() => {
+    if (logoutReason && SESSION_MESSAGES[logoutReason]) {
+      setSessionMessage(SESSION_MESSAGES[logoutReason]);
+    }
+  }, [logoutReason]);
+
+  // Clear session message when user starts typing
+  const handleInputChange = (setter: (value: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setter(e.target.value);
+    if (sessionMessage) {
+      setSessionMessage(null);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setSessionMessage(null);
 
     try {
-      const userCredential = await signInWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
-      const user = userCredential.user;
+      // Step 1: Firebase Authentication
+      setVerificationStep("Kimlik bilgileri doğrulanıyor...");
+      await signInWithEmailAndPassword(auth, email, password);
 
-      const userDoc = await getDoc(doc(db, "users", user.uid));
+      // Step 2: Server-side admin verification
+      setVerificationStep("Yönetici yetkileri kontrol ediliyor...");
+      const isVerified = await verifyAndLogin();
 
-      if (!userDoc.exists()) {
-        throw new Error("Kullanıcı profili bulunamadı");
+      if (!isVerified) {
+        // verifyAndLogin already handles the error and logout
+        setError("Yönetici yetkileri doğrulanamadı. Erişim reddedildi.");
+        return;
       }
 
-      const userData = userDoc.data();
-
-      if (!userData.isAdmin && !userData.isSemiAdmin) {
-        await auth.signOut();
-        throw new Error("Erişim reddedildi. Yönetici yetkileri gereklidir.");
-      }
-
+      // Step 3: Success - update activity and redirect
+      setVerificationStep("Giriş başarılı, yönlendiriliyorsunuz...");
+      updateLastActivity();
       router.push("/dashboard");
     } catch (error) {
       console.error("Login error:", error);
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Giriş başarısız. Lütfen tekrar deneyin."
-      );
 
+      // Parse Firebase auth errors
+      let errorMessage = "Giriş başarısız. Lütfen tekrar deneyin.";
+
+      if (error instanceof Error) {
+        const errorCode = (error as { code?: string }).code;
+
+        switch (errorCode) {
+          case "auth/user-not-found":
+            errorMessage = "Bu e-posta adresiyle kayıtlı kullanıcı bulunamadı.";
+            break;
+          case "auth/wrong-password":
+            errorMessage = "Şifre hatalı. Lütfen tekrar deneyin.";
+            break;
+          case "auth/invalid-email":
+            errorMessage = "Geçersiz e-posta adresi formatı.";
+            break;
+          case "auth/user-disabled":
+            errorMessage = "Bu hesap devre dışı bırakılmış.";
+            break;
+          case "auth/too-many-requests":
+            errorMessage = "Çok fazla başarısız deneme. Lütfen daha sonra tekrar deneyin.";
+            break;
+          case "auth/invalid-credential":
+            errorMessage = "E-posta veya şifre hatalı.";
+            break;
+          default:
+            errorMessage = error.message;
+        }
+      }
+
+      setError(errorMessage);
+
+      // Sign out if there's a current user (partial login state)
       if (auth.currentUser) {
         await auth.signOut();
       }
     } finally {
       setLoading(false);
+      setVerificationStep(null);
     }
   };
 
@@ -107,6 +190,33 @@ export default function AdminLogin() {
             </p>
           </div>
 
+          {/* Session Message (Timeout, Expired, Not Admin, etc.) */}
+          {sessionMessage && (
+            <div className={`mb-6 p-4 rounded-xl flex items-start gap-3 animate-in slide-in-from-top duration-300 ${
+              sessionMessage.icon === "shield"
+                ? "bg-red-50 border border-red-200"
+                : "bg-amber-50 border border-amber-200"
+            }`}>
+              {sessionMessage.icon === "shield" ? (
+                <ShieldAlert className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+              ) : (
+                <Clock className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              )}
+              <div>
+                <p className={`text-sm font-medium ${
+                  sessionMessage.icon === "shield" ? "text-red-800" : "text-amber-800"
+                }`}>
+                  {sessionMessage.title}
+                </p>
+                <p className={`text-sm ${
+                  sessionMessage.icon === "shield" ? "text-red-700" : "text-amber-700"
+                }`}>
+                  {sessionMessage.message}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Error Message */}
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 animate-in slide-in-from-top duration-300">
@@ -134,7 +244,7 @@ export default function AdminLogin() {
                   id="email"
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={handleInputChange(setEmail)}
                   className="w-full pl-12 pr-4 py-4 bg-gray-50/50 border border-gray-200 rounded-xl text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all duration-200 hover:border-gray-300"
                   placeholder="admin@nar24.com"
                   required
@@ -157,7 +267,7 @@ export default function AdminLogin() {
                   id="password"
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={handleInputChange(setPassword)}
                   className="w-full pl-12 pr-14 py-4 bg-gray-50/50 border border-gray-200 rounded-xl text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all duration-200 hover:border-gray-300"
                   placeholder="Şifrenizi girin"
                   required
@@ -191,7 +301,7 @@ export default function AdminLogin() {
                 {loading ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    <span>Erişim Doğrulanıyor...</span>
+                    <span>{verificationStep || "Erişim Doğrulanıyor..."}</span>
                   </>
                 ) : (
                   <>
