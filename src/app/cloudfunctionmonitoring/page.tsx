@@ -9,7 +9,7 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  Activity,  
+  Activity,
   SortAsc,
   SortDesc,
   ExternalLink,
@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   Info,
 } from "lucide-react";
+import { authenticatedFetch } from "@/lib/api";
 
 type FunctionStatus = "active" | "error" | "deploying" | "unknown";
 type SortField = "name" | "lastExecution" | "executions" | "errors" | "avgDuration";
@@ -112,21 +113,22 @@ export default function FunctionsMonitoring() {
         setLoading(true);
       }
 
-      const response = await fetch(
-        `/api/functions?page=${page}&pageSize=${pagination.pageSize}`
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        setFunctions(data.functions || []);
-        setPagination({
-          page: data.page || 1,
-          pageSize: data.pageSize || 50,
-          total: data.total || 0,
-          hasMore: data.hasMore || false,
-        });
-        setLastRefresh(new Date());
-      }
+      const data = await authenticatedFetch<{
+        functions: CloudFunction[];
+        page: number;
+        pageSize: number;
+        total: number;
+        hasMore: boolean;
+      }>(`/api/functions?page=${page}&pageSize=${pagination.pageSize}`);
+
+      setFunctions(data.functions || []);
+      setPagination({
+        page: data.page || 1,
+        pageSize: data.pageSize || 50,
+        total: data.total || 0,
+        hasMore: data.hasMore || false,
+      });
+      setLastRefresh(new Date());
     } catch (error) {
       console.error("Error fetching functions:", error);
     } finally {
@@ -140,33 +142,33 @@ export default function FunctionsMonitoring() {
       if (cursor) {
         setLogsState(prev => ({ ...prev, loadingMore: true }));
       } else {
-        setLogsState(prev => ({ 
-          ...prev, 
-          functionName, 
-          logs: [], 
+        setLogsState(prev => ({
+          ...prev,
+          functionName,
+          logs: [],
           loading: true,
           nextCursor: null,
           expandedLogs: new Set(),
         }));
       }
-  
-      const url = cursor 
+
+      const url = cursor
         ? `/api/functions/logs?name=${encodeURIComponent(functionName)}&before=${encodeURIComponent(cursor)}`
         : `/api/functions/logs?name=${encodeURIComponent(functionName)}`;
-  
-      const response = await fetch(url);
-      
-      if (response.ok) {
-        const data = await response.json();
-        setLogsState(prev => ({
-          ...prev,
-          logs: cursor ? [...prev.logs, ...data.logs] : data.logs,
-          hasMore: !!data.nextCursor,
-          nextCursor: data.nextCursor || null,
-          loading: false,
-          loadingMore: false,
-        }));
-      }
+
+      const data = await authenticatedFetch<{
+        logs: LogEntry[];
+        nextCursor: string | null;
+      }>(url);
+
+      setLogsState(prev => ({
+        ...prev,
+        logs: cursor ? [...prev.logs, ...data.logs] : data.logs,
+        hasMore: !!data.nextCursor,
+        nextCursor: data.nextCursor || null,
+        loading: false,
+        loadingMore: false,
+      }));
     } catch (error) {
       console.error("Error fetching logs:", error);
       setLogsState(prev => ({ ...prev, loading: false, loadingMore: false }));
