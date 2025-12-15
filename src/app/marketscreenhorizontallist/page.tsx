@@ -15,9 +15,9 @@ import {
   EyeOff,
   Search,
   CheckCircle,
-  Clock,
+ 
   List,
-  ArrowLeft,
+ 
   Building,
   ChevronDown,
   ChevronRight,
@@ -41,7 +41,7 @@ import {
   limit as firestoreLimit,
   startAfter,
   DocumentSnapshot,
-  QueryDocumentSnapshot,
+
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import {
