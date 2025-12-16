@@ -182,19 +182,25 @@ export default function DeliveredTab({ searchTerm }: DeliveredTabProps) {
     return `${diffMinutes} dakika`;
   };
 
+  // Helper function to check if an item is delivered
+  const isItemDelivered = (item: OrderItem): boolean => {
+    return (
+      item.gatheringStatus === "delivered" ||
+      item.deliveryStatus === "delivered" ||
+      item.deliveredInPartial === true
+    );
+  };
+
   const isPartialDelivery = (order: CombinedOrder): boolean => {
-    // Check if there are items at warehouse that haven't been delivered yet
-    const hasUndeliveredWarehouseItems = order.items.some(
-      (item) =>
-        item.gatheringStatus === "at_warehouse" && !item.deliveredInPartial
-    );
+    // If all items are delivered, it's NOT a partial delivery
+    const allDelivered = order.items.every(isItemDelivered);
+    if (allDelivered) {
+      return false;
+    }
 
-    // Check if there are items not yet at warehouse (still being gathered)
-    const hasItemsNotAtWarehouse = order.items.some(
-      (item) => item.gatheringStatus !== "at_warehouse"
-    );
-
-    return hasUndeliveredWarehouseItems || hasItemsNotAtWarehouse;
+    // If some items are delivered but not all, it IS a partial delivery
+    const someDelivered = order.items.some(isItemDelivered);
+    return someDelivered;
   };
 
   const renderOrderCard = (order: CombinedOrder) => {
@@ -297,22 +303,37 @@ export default function DeliveredTab({ searchTerm }: DeliveredTabProps) {
                       {item.productName}
                     </span>
                     {/* Show delivery status for all items */}
-                    {item.deliveredInPartial ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white bg-green-600">
-                        Teslim Edildi
-                      </span>
-                    ) : item.gatheringStatus === "at_warehouse" ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-blue-700 bg-blue-50">
-                        Teslimata Hazır
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-amber-700 bg-amber-50">
-                        {item.gatheringStatus === "pending" && "Toplanacak"}
-                        {item.gatheringStatus === "assigned" && "Toplanıyor"}
-                        {item.gatheringStatus === "gathered" && "Yolda"}
-                        {item.gatheringStatus === "failed" && "Başarısız"}
-                      </span>
-                    )}
+                    {(() => {
+                      // Check if item is delivered (any method)
+                      const isDelivered =
+                        item.gatheringStatus === "delivered" ||
+                        item.deliveryStatus === "delivered" ||
+                        item.deliveredInPartial;
+
+                      if (isDelivered) {
+                        return (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white bg-green-600">
+                            Teslim Edildi
+                          </span>
+                        );
+                      } else if (item.gatheringStatus === "at_warehouse") {
+                        return (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-blue-700 bg-blue-50">
+                            Teslimata Hazır
+                          </span>
+                        );
+                      } else {
+                        return (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-amber-700 bg-amber-50">
+                            {item.gatheringStatus === "pending" && "Toplanacak"}
+                            {item.gatheringStatus === "assigned" &&
+                              "Toplanıyor"}
+                            {item.gatheringStatus === "gathered" && "Yolda"}
+                            {item.gatheringStatus === "failed" && "Başarısız"}
+                          </span>
+                        );
+                      }
+                    })()}
                   </div>
                 </div>
                 <span className="text-sm font-medium text-gray-900">

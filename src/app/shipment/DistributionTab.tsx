@@ -77,6 +77,14 @@ export default function DistributionTab({
     });
   };
 
+  const isItemDelivered = (item: OrderItem): boolean => {
+    return (
+      item.gatheringStatus === "delivered" ||
+      item.deliveryStatus === "delivered" ||
+      item.deliveredInPartial === true
+    );
+  };
+
   const handleSaveNote = async () => {
     setSavingNote(true);
     try {
@@ -86,7 +94,6 @@ export default function DistributionTab({
         warehouseNoteUpdatedAt: Timestamp.now(),
       });
 
-      
       setNoteModal({
         show: false,
         orderId: "",
@@ -132,13 +139,21 @@ export default function DistributionTab({
   const isOrderIncomplete = (order: CombinedOrder): boolean => {
     if (order.orderHeader.allItemsGathered) return false;
 
-    // Check if any items are NOT at warehouse
-    return order.items.some((item) => item.gatheringStatus !== "at_warehouse");
+    // Check if any items are NOT at warehouse AND NOT delivered
+    return order.items.some(
+      (item) =>
+        item.gatheringStatus !== "at_warehouse" &&
+        item.gatheringStatus !== "delivered" &&
+        item.deliveryStatus !== "delivered" &&
+        !item.deliveredInPartial
+    );
   };
 
   const getIncompleteItemsCount = (order: CombinedOrder): number => {
-    return order.items.filter((item) => item.gatheringStatus !== "at_warehouse")
-      .length;
+    return order.items.filter(
+      (item) =>
+        item.gatheringStatus !== "at_warehouse" && !isItemDelivered(item)
+    ).length;
   };
 
   // Add this function after isOrderIncomplete
@@ -215,12 +230,12 @@ export default function DistributionTab({
           firestoreOrderBy("timestamp", "desc")
         ),
       ];
-  
+
       // Execute all queries in parallel with error resilience
       const snapshotResults = await Promise.allSettled(
-        queries.map(query => getDocs(query))
+        queries.map((query) => getDocs(query))
       );
-  
+
       // Extract snapshots with fallback to empty results
       const snapshots = snapshotResults.map((result, index) => {
         if (result.status === "fulfilled") {
@@ -228,10 +243,13 @@ export default function DistributionTab({
         } else {
           console.error(`Query ${index + 1} failed:`, result.reason);
           // Return empty snapshot structure
-          return { docs: [], empty: true } as unknown as QuerySnapshot<DocumentData>;
+          return {
+            docs: [],
+            empty: true,
+          } as unknown as QuerySnapshot<DocumentData>;
         }
       });
-  
+
       const [
         unassignedSnapshot,
         assignedSnapshot,
@@ -240,7 +258,7 @@ export default function DistributionTab({
         incompleteDeliveredSnapshot,
         completeDeliveredNoDistributorSnapshot,
       ] = snapshots;
-  
+
       // Optimized helper function with batching and robust error handling
       const processOrders = async (
         snapshot: QuerySnapshot<DocumentData>,
@@ -250,31 +268,39 @@ export default function DistributionTab({
         if (!snapshot || snapshot.empty || snapshot.docs.length === 0) {
           return [];
         }
-  
+
         const BATCH_SIZE = 15; // Process 15 orders at a time
         const allOrders: CombinedOrder[] = [];
         const totalDocs = snapshot.docs.length;
-  
+
         // Process orders in batches to avoid overwhelming Firestore
         for (let i = 0; i < totalDocs; i += BATCH_SIZE) {
-          const batch = snapshot.docs.slice(i, Math.min(i + BATCH_SIZE, totalDocs));
-          
+          const batch = snapshot.docs.slice(
+            i,
+            Math.min(i + BATCH_SIZE, totalDocs)
+          );
+
           // Use Promise.allSettled to handle individual failures gracefully
           const batchResults = await Promise.allSettled(
             batch.map(async (orderDoc) => {
               try {
-                const orderData = { ...orderDoc.data(), id: orderDoc.id } as OrderHeader;
-  
+                const orderData = {
+                  ...orderDoc.data(),
+                  id: orderDoc.id,
+                } as OrderHeader;
+
                 // Fetch items for this order
                 const itemsSnapshot = await getDocs(
                   collection(db, "orders", orderDoc.id, "items")
                 );
-  
-                const items: OrderItem[] = itemsSnapshot.docs.map((itemDoc) => ({
-                  id: itemDoc.id,
-                  ...itemDoc.data(),
-                })) as OrderItem[];
-  
+
+                const items: OrderItem[] = itemsSnapshot.docs.map(
+                  (itemDoc) => ({
+                    id: itemDoc.id,
+                    ...itemDoc.data(),
+                  })
+                ) as OrderItem[];
+
                 // For incomplete orders, only include if at least one item is at warehouse
                 if (isIncomplete) {
                   const hasWarehouseItems = items.some(
@@ -284,7 +310,7 @@ export default function DistributionTab({
                     return null;
                   }
                 }
-  
+
                 return { orderHeader: orderData, items };
               } catch (error) {
                 console.error(`Error processing order ${orderDoc.id}:`, error);
@@ -293,7 +319,7 @@ export default function DistributionTab({
               }
             })
           );
-  
+
           // Extract successful results from this batch
           for (const result of batchResults) {
             if (result.status === "fulfilled" && result.value !== null) {
@@ -303,10 +329,10 @@ export default function DistributionTab({
             }
           }
         }
-  
+
         return allOrders;
       };
-  
+
       // Process all snapshots in parallel with batching
       const processingResults = await Promise.allSettled([
         processOrders(unassignedSnapshot),
@@ -316,7 +342,7 @@ export default function DistributionTab({
         processOrders(incompleteDeliveredSnapshot, true),
         processOrders(completeDeliveredNoDistributorSnapshot),
       ]);
-  
+
       // Extract results with fallback to empty arrays
       const [
         unassignedOrdersData,
@@ -325,37 +351,36 @@ export default function DistributionTab({
         incompleteOrdersData,
         incompleteDeliveredOrdersData,
         completeDeliveredNoDistributorData,
-      ] = processingResults.map((result) => 
+      ] = processingResults.map((result) =>
         result.status === "fulfilled" ? result.value : []
       );
-  
+
       // Filter incomplete orders to only include unassigned ones
       const unassignedIncompleteOrders = incompleteOrdersData.filter(
         (order) =>
           !order.orderHeader.distributionStatus ||
           order.orderHeader.distributionStatus === "ready"
       );
-  
+
       // Filter complete delivered orders to only include those without distributor (need reassignment)
       const deliveredNeedingReassignment =
         completeDeliveredNoDistributorData.filter(
           (order) => !order.orderHeader.distributedBy
         );
-  
+
       // Combine for unassigned column: ready orders, incomplete unassigned, and delivered needing reassignment
       setUnassignedOrders([
         ...unassignedOrdersData,
         ...unassignedIncompleteOrders,
         ...deliveredNeedingReassignment,
       ]);
-  
+
       // Combine assigned, failed, and incomplete delivered for the right column
       setAssignedOrders([
         ...assignedOrdersData,
         ...failedOrdersData,
         ...incompleteDeliveredOrdersData,
       ]);
-  
     } catch (error) {
       console.error("Critical error loading distribution orders:", error);
       alert("Siparişler yüklenirken hata oluştu");
@@ -486,7 +511,6 @@ export default function DistributionTab({
 
       await Promise.all(assignPromises);
 
-      
       setSelectedOrders(new Set());
       loadDistributionOrders();
     } catch (error) {
@@ -525,31 +549,31 @@ export default function DistributionTab({
     ) {
       return;
     }
-  
+
     try {
       await Promise.all(
         orderIds.map(async (orderId) => {
           const orderData = unassignedOrders
             .concat(assignedOrders)
             .find((o) => o.orderHeader.id === orderId);
-  
+
           const orderRef = doc(db, "orders", orderId);
-  
+
           // Check if this order was PREVIOUSLY partially delivered
           const wasPreviouslyPartiallyDelivered =
             orderData?.orderHeader.deliveredAt &&
             !orderData?.orderHeader.distributedBy;
-  
+
           // Check if this is CURRENTLY an incomplete order
           const isCurrentlyIncomplete =
             orderData && isOrderIncomplete(orderData);
-  
+
           // Mark which items are being delivered RIGHT NOW
           if (orderData) {
             const itemsAtWarehouse = orderData.items.filter(
               (item) => item.gatheringStatus === "at_warehouse"
             );
-  
+
             // Mark each item at warehouse as delivered
             await Promise.all(
               itemsAtWarehouse.map(async (item) => {
@@ -561,7 +585,7 @@ export default function DistributionTab({
               })
             );
           }
-  
+
           // For orders that are currently incomplete OR were previously partially delivered
           if (isCurrentlyIncomplete || wasPreviouslyPartiallyDelivered) {
             await updateDoc(orderRef, {
@@ -579,43 +603,43 @@ export default function DistributionTab({
           }
         })
       );
-  
+
       // Calculate partial deliveries AFTER the updates
       const partialDeliveries = orderIds.filter((orderId) => {
         const orderData = unassignedOrders
           .concat(assignedOrders)
           .find((o) => o.orderHeader.id === orderId);
-  
+
         const wasPreviouslyPartial =
           orderData?.orderHeader.deliveredAt &&
           !orderData?.orderHeader.distributedBy;
-  
+
         return (
           (orderData && isOrderIncomplete(orderData)) || wasPreviouslyPartial
         );
       });
-  
+
       // NOW USE IT - Show different messages based on partial deliveries
       if (partialDeliveries.length > 0) {
         const completeDeliveries = orderIds.length - partialDeliveries.length;
-        
+
         if (completeDeliveries > 0) {
           alert(
             `Tamamlandı!\n\n` +
-            `✓ ${completeDeliveries} tam teslimat\n` +
-            `⚠ ${partialDeliveries.length} kısmi teslimat\n\n` +
-            `Kısmi teslimatlar kalan ürünler depoya ulaştığında yeniden atanabilir.`
+              `✓ ${completeDeliveries} tam teslimat\n` +
+              `⚠ ${partialDeliveries.length} kısmi teslimat\n\n` +
+              `Kısmi teslimatlar kalan ürünler depoya ulaştığında yeniden atanabilir.`
           );
         } else {
           alert(
             `${partialDeliveries.length} sipariş kısmi teslimat olarak işaretlendi.\n\n` +
-            `Bu siparişler kalan ürünler depoya ulaştığında yeniden atanabilir.`
+              `Bu siparişler kalan ürünler depoya ulaştığında yeniden atanabilir.`
           );
         }
       } else {
         alert(`${orderIds.length} sipariş başarıyla teslim edildi!`);
       }
-  
+
       loadDistributionOrders();
     } catch (error) {
       console.error("Error marking orders as delivered:", error);
@@ -795,70 +819,34 @@ export default function DistributionTab({
 
                       {/* Item status labels */}
                       {(() => {
-                        // For orders with delivery history
-                        if (order.orderHeader.deliveredAt) {
-                          const isPartialScenario =
-                            isOrderIncomplete(order) ||
-                            isPartialDeliveryNeedingCompletion(order) ||
-                            hasPartialDeliveryHistory(order);
-
-                          if (isPartialScenario) {
-                            if (item.gatheringStatus === "at_warehouse") {
-                              // Check if this item was marked as delivered in a partial delivery
-                              if (
-                                item.deliveredInPartial &&
-                                item.partialDeliveryAt
-                              ) {
-                                return (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white bg-green-600">
-                                    Teslim Edildi
-                                  </span>
-                                );
-                              } else {
-                                return (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-blue-700 bg-blue-50">
-                                    Teslimata Hazır
-                                  </span>
-                                );
-                              }
-                            }
-
-                            // Item NOT at warehouse
-                            if (
-                              (item.gatheringStatus as string) !==
-                              "at_warehouse"
-                            ) {
-                              return (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-amber-700 bg-amber-50">
-                                  {item.gatheringStatus === "pending" &&
-                                    "Toplanacak"}
-                                  {item.gatheringStatus === "assigned" &&
-                                    "Toplanıyor"}
-                                  {item.gatheringStatus === "gathered" &&
-                                    "Yolda"}
-                                  {item.gatheringStatus === "failed" &&
-                                    "Başarısız"}
-                                </span>
-                              );
-                            }
-                          }
-                        }
-
-                        // For orders without delivery history
-                        if (item.gatheringStatus !== "at_warehouse") {
+                        // First check if item is fully delivered
+                        if (isItemDelivered(item)) {
                           return (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-amber-700 bg-amber-50">
-                              {item.gatheringStatus === "pending" &&
-                                "Toplanacak"}
-                              {item.gatheringStatus === "assigned" &&
-                                "Toplanıyor"}
-                              {item.gatheringStatus === "gathered" && "Yolda"}
-                              {item.gatheringStatus === "failed" && "Başarısız"}
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white bg-green-600">
+                              Teslim Edildi
                             </span>
                           );
                         }
 
-                        return null;
+                        // Item at warehouse but not delivered
+                        if (item.gatheringStatus === "at_warehouse") {
+                          return (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-blue-700 bg-blue-50">
+                              Teslimata Hazır
+                            </span>
+                          );
+                        }
+
+                        // Item still in gathering phase
+                        return (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-amber-700 bg-amber-50">
+                            {item.gatheringStatus === "pending" && "Toplanacak"}
+                            {item.gatheringStatus === "assigned" &&
+                              "Toplanıyor"}
+                            {item.gatheringStatus === "gathered" && "Yolda"}
+                            {item.gatheringStatus === "failed" && "Başarısız"}
+                          </span>
+                        );
                       })()}
                     </div>
                     <p className="text-xs text-gray-500">
@@ -1124,7 +1112,13 @@ export default function DistributionTab({
                   Eksik Ürünler:
                 </h3>
                 {incompleteOrderModal.order.items
-                  .filter((item) => item.gatheringStatus !== "at_warehouse")
+                  .filter(
+                    (item) =>
+                      item.gatheringStatus !== "at_warehouse" &&
+                      item.gatheringStatus !== "delivered" &&
+                      item.deliveryStatus !== "delivered" &&
+                      !item.deliveredInPartial
+                  )
                   .map((item) => (
                     <div
                       key={item.id}

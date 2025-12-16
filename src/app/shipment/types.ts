@@ -25,11 +25,15 @@ export interface OrderItem {
     | "assigned"
     | "gathered"
     | "at_warehouse"
+    | "delivered"
     | "failed";
   gatheredBy?: string;
   gatheredByName?: string;
   gatheredAt?: Timestamp;
   arrivedAt?: Timestamp; // When item arrived at warehouse
+
+  deliveryStatus?: "delivered"; // ← ADD THIS
+  deliveredAt?: Timestamp;
 
   deliveredInPartial?: boolean;
   partialDeliveryAt?: Timestamp;
