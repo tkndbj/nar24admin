@@ -72,7 +72,6 @@ interface AuthProviderProps {
 
 /**
  * Verify user's admin status via server-side API
- * This ensures the isAdmin check cannot be bypassed client-side
  */
 async function verifyAdminStatusServerSide(idToken: string): Promise<{
   success: boolean;
@@ -130,8 +129,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   // Store the Firebase User reference for token retrieval
   const firebaseUserRef = useRef<User | null>(null);
 
-  // Track if initial verification is done
-  const initialVerificationDone = useRef(false);
+  // Track if we've done initial session check
+  const sessionCheckDone = useRef(false);
 
   // Get the current ID token for API calls
   const getIdToken = useCallback(async (): Promise<string | null> => {
@@ -209,11 +208,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   // Initialize TabSessionManager and handle auth state changes
   useEffect(() => {
-    // Initialize tab session manager with callbacks
+    // Initialize tab session manager FIRST with callbacks
     tabSessionManager.initialize({
       onLastTabClosed: () => {
-        // Last tab was closed - session will be invalidated
-        // This is handled by beforeunload in TabSessionManager
         console.log("Last tab closing - session will be invalidated");
       },
       onLogoutBroadcast: (reason: string) => {
@@ -237,29 +234,35 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         if (firebaseUser) {
           // User has a Firebase session - need to verify
 
-          // Check 1: Was session invalidated (all tabs were closed)?
-          if (isFreshBrowserSession()) {
-            console.log("Session expired - all tabs were closed");
-            setLogoutReason("session_expired");
-            await signOut(auth);
-            firebaseUserRef.current = null;
-            setUser(null);
-            setLoading(false);
-            router.push("/");
-            return;
-          }
+          // Only check session validity on first load (not on subsequent auth state changes)
+          if (!sessionCheckDone.current) {
+            sessionCheckDone.current = true;
 
-          // Check 2: Inactivity timeout
-          if (isSessionExpiredByInactivity(DEFAULT_IDLE_TIMEOUT)) {
-            console.log("Session expired due to inactivity");
-            setLogoutReason("session_expired");
-            markSessionInvalid();
-            await signOut(auth);
-            firebaseUserRef.current = null;
-            setUser(null);
-            setLoading(false);
-            router.push("/");
-            return;
+            // Check 1: Was session invalidated (all tabs were closed)?
+            // The tabSessionManager.isFreshBrowserSession() now properly handles refresh vs close
+            if (isFreshBrowserSession()) {
+              console.log("Session expired - all tabs were closed");
+              setLogoutReason("session_expired");
+              await signOut(auth);
+              firebaseUserRef.current = null;
+              setUser(null);
+              setLoading(false);
+              router.push("/");
+              return;
+            }
+
+            // Check 2: Inactivity timeout
+            if (isSessionExpiredByInactivity(DEFAULT_IDLE_TIMEOUT)) {
+              console.log("Session expired due to inactivity");
+              setLogoutReason("idle_timeout");
+              markSessionInvalid();
+              await signOut(auth);
+              firebaseUserRef.current = null;
+              setUser(null);
+              setLoading(false);
+              router.push("/");
+              return;
+            }
           }
 
           // Session is valid, now verify admin status server-side
@@ -302,18 +305,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         } else {
           // No Firebase user
           setUser(null);
+          // Reset session check flag when user logs out so it will check again on next login
+          sessionCheckDone.current = false;
         }
 
         setLoading(false);
-        initialVerificationDone.current = true;
       }
     );
 
     return () => {
       unsubscribe();
-      // Note: Don't destroy tabSessionManager on cleanup as it needs to persist
     };
-  }, [router]);
+  }, [router, logout]);
 
   // Clear logout reason when user logs back in
   useEffect(() => {

@@ -41,6 +41,9 @@ const ACTIVITY_EVENTS = [
 // Storage key for last activity timestamp (for cross-tab sync)
 const LAST_ACTIVITY_KEY = "nar24_last_activity";
 
+// Minimum throttle interval for activity updates (1 second)
+const ACTIVITY_THROTTLE_MS = 1000;
+
 export function useIdleTimeout({
   timeout,
   warningDuration,
@@ -135,8 +138,8 @@ export function useIdleTimeout({
   const handleActivity = useCallback(() => {
     // Throttle activity handling to avoid excessive resets
     const now = Date.now();
-    if (now - lastActivityRef.current < 1000) {
-      return; // Ignore if less than 1 second since last activity
+    if (now - lastActivityRef.current < ACTIVITY_THROTTLE_MS) {
+      return; // Ignore if less than throttle interval since last activity
     }
 
     resetTimer();

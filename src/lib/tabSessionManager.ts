@@ -1,19 +1,26 @@
 // src/lib/tabSessionManager.ts
-// Production-grade multi-tab session management using BroadcastChannel API
-// Only triggers logout when the LAST tab is closed
+// Production-grade multi-tab session management
+// Properly handles page refresh vs. tab close using sessionStorage
 
 const CHANNEL_NAME = "nar24_tab_session";
 const TAB_COUNT_KEY = "nar24_tab_count";
-const TAB_ID_KEY = "nar24_tab_id";
 const SESSION_VALID_KEY = "nar24_session_valid";
+const SESSION_TIMESTAMP_KEY = "nar24_session_timestamp";
+
+// SessionStorage keys (persist during refresh, clear on tab close)
+const TAB_ALIVE_KEY = "nar24_tab_alive";
+const TAB_ID_SESSION_KEY = "nar24_tab_id";
+
+// Grace period for detecting refresh vs close (in milliseconds)
+const REFRESH_GRACE_PERIOD = 3000;
 
 type MessageType =
   | { type: "TAB_OPENED"; tabId: string }
   | { type: "TAB_CLOSED"; tabId: string }
-  | { type: "TAB_COUNT_REQUEST"; tabId: string }
-  | { type: "TAB_COUNT_RESPONSE"; tabId: string; count: number }
+  | { type: "TAB_PING"; tabId: string }
+  | { type: "TAB_PONG"; tabId: string }
   | { type: "LOGOUT_ALL"; reason: string }
-  | { type: "SESSION_INVALIDATED" };
+  | { type: "SESSION_VALIDATED" };
 
 interface TabSessionManagerConfig {
   onLastTabClosed?: () => void;
@@ -27,19 +34,36 @@ class TabSessionManager {
   private onLastTabClosed?: () => void;
   private onLogoutBroadcast?: (reason: string) => void;
   private heartbeatInterval: NodeJS.Timeout | null = null;
-  private registeredTabs: Set<string> = new Set();
+  private activeTabs: Set<string> = new Set();
+  private isUnloading = false;
 
   constructor() {
-    this.tabId = this.generateTabId();
+    this.tabId = this.getOrCreateTabId();
   }
 
-  private generateTabId(): string {
-    return `tab_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  private getOrCreateTabId(): string {
+    if (typeof window === "undefined") {
+      return `tab_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    }
+
+    try {
+      // Check if we have an existing tab ID in sessionStorage (survives refresh)
+      const existingId = sessionStorage.getItem(TAB_ID_SESSION_KEY);
+      if (existingId) {
+        return existingId;
+      }
+
+      // Generate new ID for new tab
+      const newId = `tab_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      sessionStorage.setItem(TAB_ID_SESSION_KEY, newId);
+      return newId;
+    } catch {
+      return `tab_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    }
   }
 
   /**
    * Initialize the tab session manager
-   * Call this once when the app loads
    */
   initialize(config: TabSessionManagerConfig = {}): void {
     if (this.isInitialized) return;
@@ -48,36 +72,57 @@ class TabSessionManager {
     this.onLastTabClosed = config.onLastTabClosed;
     this.onLogoutBroadcast = config.onLogoutBroadcast;
 
+    // Mark this tab as alive in sessionStorage
+    // This key will PERSIST through refresh but CLEAR on actual tab close
+    this.markTabAlive();
+
     // Create BroadcastChannel for cross-tab communication
     try {
       this.channel = new BroadcastChannel(CHANNEL_NAME);
       this.channel.onmessage = this.handleMessage.bind(this);
     } catch {
-      // BroadcastChannel not supported, fallback to storage events
       console.warn("BroadcastChannel not supported, using storage events fallback");
       window.addEventListener("storage", this.handleStorageEvent.bind(this));
-    }
-
-    // Store this tab's ID
-    try {
-      sessionStorage.setItem(TAB_ID_KEY, this.tabId);
-    } catch {
-      // sessionStorage might not be available
     }
 
     // Register this tab
     this.registerTab();
 
-    // Listen for beforeunload to handle tab close
-    window.addEventListener("beforeunload", this.handleTabClose.bind(this));
+    // Use pagehide instead of beforeunload - more reliable and has persisted property
+    window.addEventListener("pagehide", this.handlePageHide.bind(this));
 
-    // Handle visibility changes (tab might be hidden but not closed)
+    // Also listen to beforeunload as backup
+    window.addEventListener("beforeunload", this.handleBeforeUnload.bind(this));
+
+    // Handle visibility changes
     document.addEventListener("visibilitychange", this.handleVisibilityChange.bind(this));
 
-    // Start heartbeat to maintain tab presence
+    // Start heartbeat
     this.startHeartbeat();
 
     this.isInitialized = true;
+  }
+
+  /**
+   * Mark this tab as alive in sessionStorage
+   */
+  private markTabAlive(): void {
+    try {
+      sessionStorage.setItem(TAB_ALIVE_KEY, Date.now().toString());
+    } catch {
+      // sessionStorage might not be available
+    }
+  }
+
+  /**
+   * Check if this tab was alive before (i.e., this is a refresh)
+   */
+  private wasTabAlive(): boolean {
+    try {
+      return sessionStorage.getItem(TAB_ALIVE_KEY) !== null;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -88,36 +133,31 @@ class TabSessionManager {
 
     switch (message.type) {
       case "TAB_OPENED":
-        this.registeredTabs.add(message.tabId);
+        this.activeTabs.add(message.tabId);
         this.updateTabCount();
         break;
 
       case "TAB_CLOSED":
-        this.registeredTabs.delete(message.tabId);
+        this.activeTabs.delete(message.tabId);
         this.updateTabCount();
         break;
 
-      case "TAB_COUNT_REQUEST":
-        // Respond with our presence
-        this.broadcastMessage({
-          type: "TAB_COUNT_RESPONSE",
-          tabId: this.tabId,
-          count: this.registeredTabs.size,
-        });
+      case "TAB_PING":
+        // Respond to ping from other tabs
+        this.broadcastMessage({ type: "TAB_PONG", tabId: this.tabId });
         break;
 
-      case "TAB_COUNT_RESPONSE":
-        this.registeredTabs.add(message.tabId);
+      case "TAB_PONG":
+        // Another tab is alive
+        this.activeTabs.add(message.tabId);
         break;
 
       case "LOGOUT_ALL":
-        // Another tab triggered logout, propagate to this tab
         this.onLogoutBroadcast?.(message.reason);
         break;
 
-      case "SESSION_INVALIDATED":
-        // Session was invalidated in another tab
-        this.markSessionInvalid();
+      case "SESSION_VALIDATED":
+        // Another tab validated the session
         break;
     }
   }
@@ -126,16 +166,11 @@ class TabSessionManager {
    * Fallback for browsers without BroadcastChannel support
    */
   private handleStorageEvent(event: StorageEvent): void {
-    if (event.key === TAB_COUNT_KEY) {
-      // Tab count changed in another tab
-      const newCount = parseInt(event.newValue || "0", 10);
-      if (newCount === 0) {
-        this.onLastTabClosed?.();
-      }
-    }
-
     if (event.key === SESSION_VALID_KEY && event.newValue === "false") {
-      this.onLogoutBroadcast?.("session_invalidated");
+      // Check if this was set by us during unload
+      if (!this.isUnloading) {
+        this.onLogoutBroadcast?.("session_invalidated");
+      }
     }
   }
 
@@ -144,72 +179,100 @@ class TabSessionManager {
    */
   private handleVisibilityChange(): void {
     if (document.visibilityState === "visible") {
-      // Tab became visible, re-register
-      this.registerTab();
+      // Tab became visible, ensure we're registered
+      this.markTabAlive();
+      this.activeTabs.add(this.tabId);
+      this.broadcastMessage({ type: "TAB_OPENED", tabId: this.tabId });
+      this.updateTabCount();
     }
   }
 
   /**
-   * Register this tab in the system
-   * Note: Does NOT mark session as valid - that should only happen on explicit login
+   * Handle pagehide event - fires when page is being unloaded
    */
-  private registerTab(): void {
-    this.registeredTabs.add(this.tabId);
-    this.updateTabCount();
+  private handlePageHide(event: PageTransitionEvent): void {
+    // If persisted is true, page is going into bfcache (back/forward cache)
+    // This is NOT a tab close, just navigation
+    if (event.persisted) {
+      return;
+    }
 
-    // Broadcast that this tab opened
-    this.broadcastMessage({ type: "TAB_OPENED", tabId: this.tabId });
-
-    // Request count from other tabs
-    this.broadcastMessage({ type: "TAB_COUNT_REQUEST", tabId: this.tabId });
-
-    // DO NOT mark session as valid here!
-    // Session validity should only be set during explicit login
-    // This allows isFreshBrowserSession() to correctly detect when all tabs were closed
+    this.handleUnload();
   }
 
   /**
-   * Handle tab close
+   * Handle beforeunload event as backup
    */
-  private handleTabClose(): void {
+  private handleBeforeUnload(): void {
+    this.handleUnload();
+  }
+
+  /**
+   * Common unload handling
+   */
+  private handleUnload(): void {
+    if (this.isUnloading) return;
+    this.isUnloading = true;
+
     // Broadcast that this tab is closing
     this.broadcastMessage({ type: "TAB_CLOSED", tabId: this.tabId });
+    this.activeTabs.delete(this.tabId);
 
-    // Remove from registered tabs
-    this.registeredTabs.delete(this.tabId);
+    // Check if sessionStorage marker exists
+    // If it exists, this MIGHT be a refresh (we can't be 100% sure yet)
+    // We'll store a timestamp and let the next page load decide
+    const wasAlive = this.wasTabAlive();
 
-    // Update tab count
-    const currentCount = this.getTabCount();
-    const newCount = Math.max(0, currentCount - 1);
+    // Get current tab count from other tabs
+    const otherTabs = this.activeTabs.size;
 
     try {
-      if (newCount === 0) {
-        // This is the last tab - mark session for invalidation
-        // Note: We can't do async operations in beforeunload reliably
-        // So we set a flag that will be checked on next load
-        localStorage.setItem(SESSION_VALID_KEY, "false");
+      if (otherTabs === 0) {
+        // This might be the last tab
+        // Store a close timestamp instead of immediately invalidating
+        // The next load will check this timestamp
+        localStorage.setItem(SESSION_TIMESTAMP_KEY, Date.now().toString());
+
+        // Only invalidate if this wasn't marked as alive (i.e., not a refresh)
+        // For refresh scenarios, sessionStorage will persist and we'll detect it on reload
+        if (!wasAlive) {
+          localStorage.setItem(SESSION_VALID_KEY, "false");
+        }
         localStorage.setItem(TAB_COUNT_KEY, "0");
       } else {
-        localStorage.setItem(TAB_COUNT_KEY, newCount.toString());
+        localStorage.setItem(TAB_COUNT_KEY, otherTabs.toString());
       }
     } catch {
       // Storage might not be available
     }
 
-    // Stop heartbeat
     this.stopHeartbeat();
   }
 
   /**
-   * Start heartbeat to maintain tab presence
+   * Register this tab in the system
+   */
+  private registerTab(): void {
+    this.activeTabs.add(this.tabId);
+
+    // Broadcast that this tab opened
+    this.broadcastMessage({ type: "TAB_OPENED", tabId: this.tabId });
+
+    // Ping other tabs to discover them
+    this.broadcastMessage({ type: "TAB_PING", tabId: this.tabId });
+
+    this.updateTabCount();
+  }
+
+  /**
+   * Start heartbeat to maintain tab presence and discover other tabs
    */
   private startHeartbeat(): void {
-    // Update tab count periodically to handle crashed tabs
     this.heartbeatInterval = setInterval(() => {
+      // Ping other tabs periodically
+      this.broadcastMessage({ type: "TAB_PING", tabId: this.tabId });
       this.updateTabCount();
-      // Request count from other tabs to verify
-      this.broadcastMessage({ type: "TAB_COUNT_REQUEST", tabId: this.tabId });
-    }, 5000); // Every 5 seconds
+    }, 5000);
   }
 
   /**
@@ -227,7 +290,7 @@ class TabSessionManager {
    */
   private updateTabCount(): void {
     try {
-      const count = Math.max(1, this.registeredTabs.size);
+      const count = Math.max(1, this.activeTabs.size);
       localStorage.setItem(TAB_COUNT_KEY, count.toString());
     } catch {
       // Storage might not be available
@@ -261,12 +324,10 @@ class TabSessionManager {
 
   /**
    * Check if session is valid
-   * Returns null if no session data exists (first time user)
    */
   isSessionValid(): boolean | null {
     try {
       const valid = localStorage.getItem(SESSION_VALID_KEY);
-      // If no value, return null to indicate no session data exists
       if (valid === null) return null;
       return valid === "true";
     } catch {
@@ -275,18 +336,20 @@ class TabSessionManager {
   }
 
   /**
-   * Mark session as valid (called on successful login)
+   * Mark session as valid
    */
   markSessionValid(): void {
     try {
       localStorage.setItem(SESSION_VALID_KEY, "true");
+      localStorage.removeItem(SESSION_TIMESTAMP_KEY);
+      this.broadcastMessage({ type: "SESSION_VALIDATED" });
     } catch {
       // Storage might not be available
     }
   }
 
   /**
-   * Mark session as invalid (called on logout)
+   * Mark session as invalid
    */
   markSessionInvalid(): void {
     try {
@@ -306,32 +369,51 @@ class TabSessionManager {
 
   /**
    * Check if this appears to be a fresh browser session
-   * (all tabs were closed and user is returning)
+   * (all tabs were closed and user is returning after grace period)
    *
-   * Returns true ONLY if:
-   * - Session was explicitly marked as invalid (user logged out or last tab was closed)
-   *
-   * Returns false if:
-   * - No session data exists (first time user - let them login)
-   * - Session is marked as valid
+   * Key insight: sessionStorage persists during refresh but clears on actual tab close
    */
   isFreshBrowserSession(): boolean {
-    const sessionValid = this.isSessionValid();
+    try {
+      // If sessionStorage has our alive marker, this tab was just refreshed, not closed
+      if (this.wasTabAlive()) {
+        // This is a refresh - NOT a fresh session
+        // Re-mark as alive and return false
+        this.markTabAlive();
+        return false;
+      }
 
-    // If no session data exists (null), this is a first-time user
-    // They haven't logged in before, so this is NOT a "fresh browser session" that needs logout
-    if (sessionValid === null) {
+      // Check if session was explicitly invalidated
+      const sessionValid = this.isSessionValid();
+
+      // If no session data exists, this is a first-time user
+      if (sessionValid === null) {
+        return false;
+      }
+
+      // If session is explicitly valid, not a fresh session
+      if (sessionValid === true) {
+        return false;
+      }
+
+      // Session is marked as invalid
+      // Check the timestamp to see if this is within the grace period
+      const closeTimestamp = localStorage.getItem(SESSION_TIMESTAMP_KEY);
+      if (closeTimestamp) {
+        const elapsed = Date.now() - parseInt(closeTimestamp, 10);
+        if (elapsed < REFRESH_GRACE_PERIOD) {
+          // Within grace period - likely a refresh or quick navigation
+          // Clear the timestamp and allow the session
+          localStorage.removeItem(SESSION_TIMESTAMP_KEY);
+          return false;
+        }
+      }
+
+      // Session is invalid and outside grace period
+      return true;
+    } catch {
       return false;
     }
-
-    // If session is explicitly marked as invalid, user closed all tabs
-    // and should be logged out
-    if (sessionValid === false) {
-      return true;
-    }
-
-    // Session is valid
-    return false;
   }
 
   /**
@@ -339,13 +421,15 @@ class TabSessionManager {
    */
   resetSession(): void {
     this.markSessionValid();
-    this.registeredTabs.clear();
-    this.registeredTabs.add(this.tabId);
+    this.markTabAlive();
+    this.activeTabs.clear();
+    this.activeTabs.add(this.tabId);
     this.updateTabCount();
+    this.isUnloading = false;
   }
 
   /**
-   * Cleanup when component unmounts
+   * Cleanup
    */
   destroy(): void {
     this.stopHeartbeat();
@@ -354,9 +438,6 @@ class TabSessionManager {
       this.channel.close();
       this.channel = null;
     }
-
-    window.removeEventListener("beforeunload", this.handleTabClose.bind(this));
-    document.removeEventListener("visibilitychange", this.handleVisibilityChange.bind(this));
 
     this.isInitialized = false;
   }
@@ -367,12 +448,25 @@ class TabSessionManager {
   getTabId(): string {
     return this.tabId;
   }
+
+  /**
+   * Force re-initialization (useful for testing)
+   */
+  reinitialize(): void {
+    this.isUnloading = false;
+    if (!this.isInitialized) {
+      this.initialize({
+        onLastTabClosed: this.onLastTabClosed,
+        onLogoutBroadcast: this.onLogoutBroadcast,
+      });
+    }
+  }
 }
 
 // Export singleton instance
 export const tabSessionManager = new TabSessionManager();
 
-// Export helper functions for convenience
+// Export helper functions
 export function initializeTabSession(config: TabSessionManagerConfig = {}): void {
   tabSessionManager.initialize(config);
 }
