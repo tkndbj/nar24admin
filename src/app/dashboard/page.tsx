@@ -430,10 +430,10 @@ export default function Dashboard() {
                 </button>
                 <button
                   onClick={() => handleNavigation("deliveryprice")}
-                  className="w-full p-2.5 bg-emerald-50 hover:bg-emerald-100 rounded-lg text-left transition-colors group"
+                  className="w-full p-2.5 bg-blue-50 hover:bg-blue-100 rounded-lg text-left transition-colors group"
                 >
                   <div className="flex items-center gap-2">
-                    <Truck className="w-3.5 h-3.5 text-emerald-600 group-hover:scale-110 transition-transform" />
+                    <Truck className="w-3.5 h-3.5 text-blue-600 group-hover:scale-110 transition-transform" />
                     <span className="text-xs font-medium text-gray-900">
                       Kargo Fiyatlandırma
                     </span>
