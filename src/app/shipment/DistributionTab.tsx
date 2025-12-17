@@ -24,6 +24,7 @@ import {
   Clock,
 } from "lucide-react";
 import { CombinedOrder, OrderHeader, OrderItem, CargoUser } from "./types";
+import { DistributionTabShimmer } from "./ShipmentShimmer";
 
 interface DistributionTabProps {
   cargoUsers: CargoUser[];
@@ -945,7 +946,7 @@ export default function DistributionTab({
   };
 
   if (loading) {
-    return <div className="text-center py-8 text-gray-500">Yükleniyor...</div>;
+    return <DistributionTabShimmer />;
   }
 
   return (

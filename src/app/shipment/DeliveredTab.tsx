@@ -18,6 +18,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { CombinedOrder, OrderHeader, OrderItem } from "./types";
+import { DeliveredTabShimmer } from "./ShipmentShimmer";
 
 interface DeliveredTabProps {
   searchTerm: string;
@@ -192,7 +193,7 @@ export default function DeliveredTab({ searchTerm }: DeliveredTabProps) {
   };
 
   if (loading) {
-    return <div className="text-center py-8 text-gray-500">Yükleniyor...</div>;
+    return <DeliveredTabShimmer />;
   }
 
   return (

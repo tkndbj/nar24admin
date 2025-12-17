@@ -25,6 +25,7 @@ import {
   Phone,
 } from "lucide-react";
 import { OrderItem, SellerGroup, CargoUser } from "./types";
+import { GatheringTabShimmer } from "./ShipmentShimmer";
 
 interface GatheringTabProps {
   cargoUsers: CargoUser[];
@@ -648,7 +649,7 @@ export default function GatheringTab({
   };
 
   if (loading) {
-    return <div className="text-center py-8 text-gray-500">Yükleniyor...</div>;
+    return <GatheringTabShimmer />;
   }
 
   return (
