@@ -12,12 +12,10 @@ import {
 import { db } from "@/app/lib/firebase";
 import {
   Package,
-  MapPin,
-  Phone,
-  CheckCircle,
   Calendar,
-  User,
   Clock,
+  CheckCircle,
+  AlertCircle,
 } from "lucide-react";
 import { CombinedOrder, OrderHeader, OrderItem } from "./types";
 
@@ -158,15 +156,6 @@ export default function DeliveredTab({ searchTerm }: DeliveredTabProps) {
     });
   };
 
-  const formatDateShort = (timestamp: Timestamp | undefined) => {
-    if (!timestamp) return "-";
-    return timestamp.toDate().toLocaleDateString("tr-TR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-    });
-  };
-
   const calculateDeliveryTime = (order: OrderHeader) => {
     if (!order.distributedAt || !order.deliveredAt) return "-";
 
@@ -192,183 +181,14 @@ export default function DeliveredTab({ searchTerm }: DeliveredTabProps) {
   };
 
   const isPartialDelivery = (order: CombinedOrder): boolean => {
-    // If all items are delivered, it's NOT a partial delivery
     const allDelivered = order.items.every(isItemDelivered);
-    if (allDelivered) {
-      return false;
-    }
-
-    // If some items are delivered but not all, it IS a partial delivery
+    if (allDelivered) return false;
     const someDelivered = order.items.some(isItemDelivered);
     return someDelivered;
   };
 
-  const renderOrderCard = (order: CombinedOrder) => {
-    const isPartial = isPartialDelivery(order);
-
-    // Determine colors based on delivery status
-    const headerBgColor = isPartial ? "bg-amber-50" : "bg-green-50";
-    const headerBorderColor = isPartial
-      ? "border-amber-200"
-      : "border-green-200";
-    const iconColor = isPartial ? "text-amber-600" : "text-green-600";
-    const textColor = isPartial ? "text-amber-600" : "text-green-600";
-    const deliveryLabel = isPartial ? "Kısmi Teslimat:" : "Teslim Edildi:";
-
-    return (
-      <div
-        key={order.orderHeader.id}
-        className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow"
-      >
-        {/* Order Header with Delivery Info */}
-        <div className={`${headerBgColor} p-3 border-b ${headerBorderColor}`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                {isPartial ? (
-                  <Clock className={`w-5 h-5 ${iconColor}`} />
-                ) : (
-                  <CheckCircle className={`w-5 h-5 ${iconColor}`} />
-                )}
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-gray-900">
-                      {order.orderHeader.buyerName || "Alıcı"}
-                    </p>
-                    {isPartial && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-amber-700 bg-amber-100">
-                        Kısmi Teslimat - Tamamlanması Gerekiyor
-                      </span>
-                    )}
-                  </div>
-                  <p className={`text-xs ${textColor}`}>
-                    {deliveryLabel}{" "}
-                    {formatDateTime(order.orderHeader.deliveredAt)}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-gray-500">
-                #{order.orderHeader.id.substring(0, 8)}
-              </p>
-              <p className="text-xs text-gray-600 mt-1">
-                Teslimat Süresi: {calculateDeliveryTime(order.orderHeader)}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Address and Contact Info */}
-        <div className="p-3 bg-gray-50 border-b border-gray-200">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex items-start gap-2">
-              <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-xs text-gray-500">Teslimat Adresi</p>
-                <p className="text-sm text-gray-700">
-                  {formatAddress(order.orderHeader)}
-                </p>
-              </div>
-            </div>
-            {order.orderHeader.address?.phoneNumber && (
-              <div className="flex items-start gap-2">
-                <Phone className="w-4 h-4 text-gray-400 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-xs text-gray-500">Telefon</p>
-                  <p className="text-sm text-gray-700">
-                    {order.orderHeader.address.phoneNumber}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Order Items */}
-        <div className="p-3">
-          <p className="text-xs text-gray-500 mb-2">
-            Ürünler ({order.items.length})
-          </p>
-          <div className="space-y-2">
-            {order.items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between py-1"
-              >
-                <div className="flex items-center gap-2">
-                  <Package className="w-3 h-3 text-gray-400" />
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-700">
-                      {item.productName}
-                    </span>
-                    {/* Show delivery status for all items */}
-                    {(() => {
-                      // Check if item is delivered (any method)
-                      const isDelivered =
-                        item.gatheringStatus === "delivered" ||
-                        item.deliveryStatus === "delivered" ||
-                        item.deliveredInPartial;
-
-                      if (isDelivered) {
-                        return (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white bg-green-600">
-                            Teslim Edildi
-                          </span>
-                        );
-                      } else if (item.gatheringStatus === "at_warehouse") {
-                        return (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-blue-700 bg-blue-50">
-                            Teslimata Hazır
-                          </span>
-                        );
-                      } else {
-                        return (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-amber-700 bg-amber-50">
-                            {item.gatheringStatus === "pending" && "Toplanacak"}
-                            {item.gatheringStatus === "assigned" &&
-                              "Toplanıyor"}
-                            {item.gatheringStatus === "gathered" && "Yolda"}
-                            {item.gatheringStatus === "failed" && "Başarısız"}
-                          </span>
-                        );
-                      }
-                    })()}
-                  </div>
-                </div>
-                <span className="text-sm font-medium text-gray-900">
-                  x{item.quantity}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Footer with Distributor Info */}
-        <div className="bg-gray-50 p-3 border-t border-gray-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <User className="w-4 h-4 text-blue-600" />
-              <div>
-                <p className="text-xs text-gray-500">Teslim Eden</p>
-                <p className="text-sm font-medium text-blue-900">
-                  {order.orderHeader.distributedByName || "-"}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-gray-400" />
-              <div>
-                <p className="text-xs text-gray-500">Sipariş Tarihi</p>
-                <p className="text-sm text-gray-700">
-                  {formatDateShort(order.orderHeader.timestamp)}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+  const formatProducts = (items: OrderItem[]): string => {
+    return items.map((item) => `${item.productName} (x${item.quantity})`).join(", ");
   };
 
   if (loading) {
@@ -449,14 +269,116 @@ export default function DeliveredTab({ searchTerm }: DeliveredTabProps) {
         </div>
       </div>
 
-      {/* Orders Grid */}
+      {/* Orders Table */}
       {filteredOrders.length === 0 ? (
         <div className="text-center py-8 text-gray-500 bg-white rounded-lg border border-gray-200">
           Teslim edilmiş sipariş bulunamadı
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filteredOrders.map((order) => renderOrderCard(order))}
+        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Durum
+                  </th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Sipariş No
+                  </th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Alıcı
+                  </th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Ürünler
+                  </th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Adres
+                  </th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Telefon
+                  </th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Teslim Eden
+                  </th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Teslim Tarihi
+                  </th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Süre
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredOrders.map((order) => {
+                  const isPartial = isPartialDelivery(order);
+                  return (
+                    <tr
+                      key={order.orderHeader.id}
+                      className={`hover:bg-gray-50 ${isPartial ? "bg-amber-50/50" : ""}`}
+                    >
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {isPartial ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                            <AlertCircle className="w-3 h-3" />
+                            Kısmi
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                            <CheckCircle className="w-3 h-3" />
+                            Teslim
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <span className="text-xs font-mono text-gray-600">
+                          #{order.orderHeader.id.substring(0, 8)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <span className="font-medium text-gray-900">
+                          {order.orderHeader.buyerName || "-"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span
+                          className="text-gray-700 max-w-xs truncate block"
+                          title={formatProducts(order.items)}
+                        >
+                          {formatProducts(order.items)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="text-gray-600 max-w-xs truncate block" title={formatAddress(order.orderHeader)}>
+                          {formatAddress(order.orderHeader)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <span className="text-gray-600">
+                          {order.orderHeader.address?.phoneNumber || "-"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <span className="text-blue-700 font-medium">
+                          {order.orderHeader.distributedByName || "-"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <span className="text-gray-600">
+                          {formatDateTime(order.orderHeader.deliveredAt)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <span className="text-gray-500 text-xs">
+                          {calculateDeliveryTime(order.orderHeader)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
