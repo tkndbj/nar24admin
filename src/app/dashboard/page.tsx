@@ -429,6 +429,17 @@ export default function Dashboard() {
                   </div>
                 </button>
                 <button
+                  onClick={() => handleNavigation("deliveryprice")}
+                  className="w-full p-2.5 bg-emerald-50 hover:bg-emerald-100 rounded-lg text-left transition-colors group"
+                >
+                  <div className="flex items-center gap-2">
+                    <Truck className="w-3.5 h-3.5 text-emerald-600 group-hover:scale-110 transition-transform" />
+                    <span className="text-xs font-medium text-gray-900">
+                      Kargo Fiyatlandırma
+                    </span>
+                  </div>
+                </button>
+                <button
                   onClick={() => handleNavigation("pickup-points")}
                   className="w-full p-2.5 bg-blue-50 hover:bg-blue-100 rounded-lg text-left transition-colors group"
                 >
@@ -654,7 +665,9 @@ export default function Dashboard() {
                     </div>
                   </button>
                   <button
-                    onClick={() => handleNavigation("marketscreenhorizontallist")}
+                    onClick={() =>
+                      handleNavigation("marketscreenhorizontallist")
+                    }
                     className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
                   >
                     <div className="flex items-center gap-2">
@@ -676,7 +689,9 @@ export default function Dashboard() {
                     </div>
                   </button>
                   <button
-                    onClick={() => handleNavigation("listproduct-flowmanagement")}
+                    onClick={() =>
+                      handleNavigation("listproduct-flowmanagement")
+                    }
                     className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
                   >
                     <div className="flex items-center gap-2">
