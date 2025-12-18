@@ -17,6 +17,7 @@ import {
   WriteBatch,
   deleteField,
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { db } from "../lib/firebase";
 import ProtectedRoute from "../../components/ProtectedRoute";
 import {
@@ -35,6 +36,7 @@ import {
   X,
   MessageSquare,
   FileEdit,
+  Archive,
 } from "lucide-react";
 
 interface ProductAttributes {
@@ -97,6 +99,9 @@ interface EditApplication {
   ibanOwnerName: string;
   ibanOwnerSurname: string;
   iban: string;
+  sourceCollection?: string;
+  archiveReason?: string;
+  needsUpdate?: boolean;
 }
 
 interface ShopMember {
@@ -171,7 +176,9 @@ const RejectionModal: React.FC<RejectionModalProps> = ({
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full border border-gray-200">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h3 className="text-base font-semibold text-gray-800">Reddetme Nedeni</h3>
+          <h3 className="text-base font-semibold text-gray-800">
+            Reddetme Nedeni
+          </h3>
           <button
             onClick={handleClose}
             disabled={isLoading}
@@ -183,7 +190,8 @@ const RejectionModal: React.FC<RejectionModalProps> = ({
 
         <form onSubmit={handleSubmit} className="p-5">
           <p className="text-sm text-gray-600 mb-3">
-            <span className="font-medium text-gray-800">{productName}</span> ürünü için düzenleme başvurusunu neden reddediyorsunuz?
+            <span className="font-medium text-gray-800">{productName}</span>{" "}
+            ürünü için düzenleme başvurusunu neden reddediyorsunuz?
           </p>
 
           <textarea
@@ -425,12 +433,59 @@ export default function EditProductApplicationsPage() {
     setProcessing(true);
     try {
       console.log("Approving application:", application.id);
+      console.log("Edit type:", application.editType);
       console.log("Original product ID:", application.originalProductId);
       console.log(
         "Shop ID:",
         application.shopId || application.originalProductData?.shopId || "None"
       );
 
+      // ✅ NEW: Check if this is an archived product update
+      if (application.editType === "archived_product_update") {
+        console.log("Processing archived product update...");
+        console.log("Source collection:", application.sourceCollection);
+
+        const functions = getFunctions(undefined, "europe-west3");
+        const approveArchivedEdit = httpsCallable(
+          functions,
+          "approveArchivedProductEdit"
+        );
+
+        const result = await approveArchivedEdit({
+          applicationId: application.id,
+        });
+
+        const data = result.data as {
+          success: boolean;
+          message?: string;
+          productId?: string;
+        };
+
+        if (data.success) {
+          console.log("Archived product update approved successfully");
+
+          // Send notifications
+          await sendNotifications(application, "approved");
+          console.log("Notifications sent successfully");
+
+          // Log admin activity
+          logAdminActivity("Arşivlenmiş ürün güncellemesi onaylandı", {
+            productName: application.productName,
+            productId: application.originalProductId,
+          });
+
+          setSelectedApplication(null);
+          alert(
+            "Arşivlenmiş ürün güncellemesi onaylandı ve ürün aktif edildi!"
+          );
+        } else {
+          throw new Error(data.message || "İşlem başarısız oldu");
+        }
+
+        return;
+      }
+
+      // ========== EXISTING CODE FOR REGULAR EDITS ==========
       // Determine the correct collection based on shopId
       const isShopProduct =
         application.shopId || application.originalProductData?.shopId;
@@ -491,8 +546,7 @@ export default function EditProductApplicationsPage() {
 
       // ✅ FIX: Check if colors were completely removed
       const hasColors =
-        application.availableColors &&
-        application.availableColors.length > 0;
+        application.availableColors && application.availableColors.length > 0;
 
       const hasColorQuantities =
         application.colorQuantities &&
@@ -508,7 +562,7 @@ export default function EditProductApplicationsPage() {
         hasColorImages,
         availableColors: application.availableColors,
         colorQuantities: application.colorQuantities,
-        colorImages: application.colorImages
+        colorImages: application.colorImages,
       });
 
       // Build update data with cleaning
@@ -524,11 +578,13 @@ export default function EditProductApplicationsPage() {
         subsubcategory: application.subsubcategory,
         quantity: application.quantity,
         deliveryOption: application.deliveryOption,
-        availableColors: hasColors && application.availableColors
-        ? application.availableColors
-        : [],
+        availableColors:
+          hasColors && application.availableColors
+            ? application.availableColors
+            : [],
         colorImages: hasColors && hasColorImages ? application.colorImages : {},
-        colorQuantities: hasColors && hasColorQuantities ? application.colorQuantities : {},
+        colorQuantities:
+          hasColors && hasColorQuantities ? application.colorQuantities : {},
         attributes: application.attributes,
         gender: (() => {
           // Priority 1: Root level from application
@@ -541,8 +597,11 @@ export default function EditProductApplicationsPage() {
           }
 
           // Priority 3: Attributes from original (Flutter products)
-          if (application.originalProductData?.attributes?.gender &&
-              typeof application.originalProductData.attributes.gender === "string") {
+          if (
+            application.originalProductData?.attributes?.gender &&
+            typeof application.originalProductData.attributes.gender ===
+              "string"
+          ) {
             console.log("⚠️ Preserving gender from original attributes");
             return application.originalProductData.attributes.gender;
           }
@@ -575,7 +634,10 @@ export default function EditProductApplicationsPage() {
         updateData.colorQuantities = {};
       } else {
         // ✅ ADD THIS: Ensure availableColors is explicitly set when colors exist
-        if (application.availableColors && application.availableColors.length > 0) {
+        if (
+          application.availableColors &&
+          application.availableColors.length > 0
+        ) {
           updateData.availableColors = application.availableColors;
         }
       }
@@ -584,22 +646,20 @@ export default function EditProductApplicationsPage() {
       updateData.modifiedAt = Timestamp.now();
 
       if (application.attributes?.clothingTypes) {
-        updateData['attributes.clothingType'] = deleteField();
+        updateData["attributes.clothingType"] = deleteField();
       }
       if (application.attributes?.pantFabricTypes) {
-        updateData['attributes.pantFabricType'] = deleteField();
+        updateData["attributes.pantFabricType"] = deleteField();
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await updateDoc(productRef, updateData as any);
-
 
       // Delete the edit application
       await updateDoc(doc(db, "product_edit_applications", application.id), {
         status: "approved",
         reviewedAt: Timestamp.now(),
       });
-
 
       // Send notifications based on product type
       await sendNotifications(application, "approved");
@@ -626,6 +686,8 @@ export default function EditProductApplicationsPage() {
         } else {
           alert(`Onaylama sırasında hata oluştu: ${error.message}`);
         }
+      } else if (error instanceof Error) {
+        alert(`Onaylama sırasında hata oluştu: ${error.message}`);
       } else {
         alert("Onaylama sırasında bilinmeyen bir hata oluştu.");
       }
@@ -854,24 +916,44 @@ export default function EditProductApplicationsPage() {
               {applications.map((app) => (
                 <div
                   key={app.id}
-                  className="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:border-blue-300 hover:shadow-sm transition-all"
+                  className={`bg-white border rounded-lg p-3 cursor-pointer hover:shadow-sm transition-all ${
+                    app.editType === "archived_product_update"
+                      ? "border-orange-300 hover:border-orange-400"
+                      : "border-gray-200 hover:border-blue-300"
+                  }`}
                   onClick={() => setSelectedApplication(app)}
                 >
                   <div className="flex items-start gap-2.5 mb-2.5">
-                    <div className="flex items-center justify-center w-9 h-9 bg-blue-50 rounded-lg flex-shrink-0">
-                      <Package className="w-4 h-4 text-blue-600" />
+                    <div
+                      className={`flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0 ${
+                        app.editType === "archived_product_update"
+                          ? "bg-orange-50"
+                          : "bg-blue-50"
+                      }`}
+                    >
+                      {app.editType === "archived_product_update" ? (
+                        <Archive className="w-4 h-4 text-orange-600" />
+                      ) : (
+                        <Package className="w-4 h-4 text-blue-600" />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="text-sm font-medium text-gray-900 truncate">
                         {app.productName}
                       </h3>
-                      <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <span className="text-xs text-gray-400">
                           {app.id.substring(0, 8)}...
                         </span>
                         {(app.shopId || app.originalProductData?.shopId) && (
                           <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium">
                             SHOP
+                          </span>
+                        )}
+                        {/* NEW: Archive Badge */}
+                        {app.editType === "archived_product_update" && (
+                          <span className="px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded text-[10px] font-medium">
+                            ARŞİVDEN
                           </span>
                         )}
                       </div>
@@ -893,6 +975,17 @@ export default function EditProductApplicationsPage() {
                     </span>
                   </div>
 
+                  {/* NEW: Show archive reason preview if exists */}
+                  {app.editType === "archived_product_update" &&
+                    app.archiveReason && (
+                      <div className="mb-2 p-2 bg-orange-50 rounded border border-orange-100">
+                        <p className="text-xs text-orange-700 line-clamp-2">
+                          <span className="font-medium">Admin notu:</span>{" "}
+                          {app.archiveReason}
+                        </p>
+                      </div>
+                    )}
+
                   <div className="flex items-center gap-3 text-xs text-gray-500 pt-2 border-t border-gray-100">
                     <div className="flex items-center gap-1">
                       <User className="w-3 h-3" />
@@ -908,7 +1001,9 @@ export default function EditProductApplicationsPage() {
                     </div>
                     <div className="flex items-center gap-1 ml-auto">
                       <DollarSign className="w-3 h-3" />
-                      <span className="font-medium text-gray-700">₺{app.price}</span>
+                      <span className="font-medium text-gray-700">
+                        ₺{app.price}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -922,16 +1017,33 @@ export default function EditProductApplicationsPage() {
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-hidden border border-gray-200">
               {/* Modal Header */}
-              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-gray-50">
+              <div
+                className={`flex items-center justify-between px-5 py-3 border-b bg-gray-50 ${
+                  selectedApplication.editType === "archived_product_update"
+                    ? "border-orange-200"
+                    : "border-gray-200"
+                }`}
+              >
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <Package className="w-5 h-5 text-blue-600" />
+                  <div
+                    className={`p-2 rounded-lg ${
+                      selectedApplication.editType === "archived_product_update"
+                        ? "bg-orange-100"
+                        : "bg-blue-100"
+                    }`}
+                  >
+                    {selectedApplication.editType ===
+                    "archived_product_update" ? (
+                      <Archive className="w-5 h-5 text-orange-600" />
+                    ) : (
+                      <Package className="w-5 h-5 text-blue-600" />
+                    )}
                   </div>
                   <div>
                     <h2 className="text-base font-semibold text-gray-900">
                       {selectedApplication.productName}
                     </h2>
-                    <div className="flex items-center gap-2 mt-0.5">
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       <p className="text-xs text-gray-500">
                         ID: {selectedApplication.originalProductId}
                       </p>
@@ -939,6 +1051,13 @@ export default function EditProductApplicationsPage() {
                         selectedApplication.originalProductData?.shopId) && (
                         <span className="px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded text-[10px] font-medium">
                           SHOP PRODUCT
+                        </span>
+                      )}
+                      {/* NEW: Archive badge in modal */}
+                      {selectedApplication.editType ===
+                        "archived_product_update" && (
+                        <span className="px-1.5 py-0.5 bg-orange-100 text-orange-600 rounded text-[10px] font-medium">
+                          ARŞİVDEN GÜNCELLEME
                         </span>
                       )}
                     </div>
@@ -976,6 +1095,61 @@ export default function EditProductApplicationsPage() {
 
               {/* Modal Content */}
               <div className="p-5 overflow-y-auto max-h-[calc(90vh-64px)]">
+                {/* NEW: Archive Information Banner */}
+                {selectedApplication.editType === "archived_product_update" && (
+                  <div className="mb-5 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-orange-100 rounded-lg flex-shrink-0">
+                        <Archive className="w-5 h-5 text-orange-600" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-sm font-semibold text-orange-800 mb-1">
+                          Arşivlenmiş Ürün Güncellemesi
+                        </h3>
+                        <p className="text-xs text-orange-700 mb-2">
+                          Bu ürün admin tarafından arşivlenmiş ve satıcı
+                          güncelleme yaparak tekrar onaya göndermiştir.
+                          Onaylandığında ürün{" "}
+                          <strong>paused_shop_products</strong> koleksiyonundan{" "}
+                          <strong>shop_products</strong> koleksiyonuna
+                          taşınacaktır.
+                        </p>
+
+                        {/* Source Collection Info */}
+                        <div className="flex items-center gap-4 text-xs text-orange-600 mb-2">
+                          <span>
+                            <strong>Kaynak:</strong>{" "}
+                            {selectedApplication.sourceCollection ||
+                              "paused_shop_products"}
+                          </span>
+                          <span>→</span>
+                          <span>
+                            <strong>Hedef:</strong>{" "}
+                            {selectedApplication.sourceCollection ===
+                            "paused_shop_products"
+                              ? "shop_products"
+                              : "products"}
+                          </span>
+                        </div>
+
+                        {/* Archive Reason */}
+                        {selectedApplication.archiveReason && (
+                          <div className="mt-3 p-3 bg-white border border-orange-200 rounded-md">
+                            <div className="flex items-center gap-2 mb-1">
+                              <MessageSquare className="w-3.5 h-3.5 text-orange-600" />
+                              <span className="text-xs font-semibold text-orange-800">
+                                Admin Arşivleme Nedeni:
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-700">
+                              {selectedApplication.archiveReason}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
                   {/* Left Column - Changes (3/5) */}
                   <div className="lg:col-span-3">
@@ -1029,17 +1203,21 @@ export default function EditProductApplicationsPage() {
                         <CompactComparisonField
                           label="Cinsiyet"
                           oldValue={(() => {
-                            const orig = selectedApplication.originalProductData;
-                            if (orig?.attributes?.gender) return orig.attributes.gender;
+                            const orig =
+                              selectedApplication.originalProductData;
+                            if (orig?.attributes?.gender)
+                              return orig.attributes.gender;
                             return orig?.gender;
                           })()}
                           newValue={(() => {
                             const app = selectedApplication;
                             if (app.gender) return app.gender;
-                            if (app.attributes?.gender) return app.attributes.gender;
+                            if (app.attributes?.gender)
+                              return app.attributes.gender;
                             const orig = app.originalProductData;
                             if (orig?.gender) return orig.gender;
-                            if (orig?.attributes?.gender) return orig.attributes.gender;
+                            if (orig?.attributes?.gender)
+                              return orig.attributes.gender;
                             return null;
                           })()}
                         />
@@ -1060,8 +1238,8 @@ export default function EditProductApplicationsPage() {
                         />
 
                         {/* Description */}
-                        {selectedApplication.originalProductData?.description !==
-                          selectedApplication.description && (
+                        {selectedApplication.originalProductData
+                          ?.description !== selectedApplication.description && (
                           <div className="py-2 border-b border-gray-100">
                             <div className="text-xs font-medium text-gray-700 mb-2">
                               Açıklama
@@ -1082,10 +1260,11 @@ export default function EditProductApplicationsPage() {
 
                         {/* Dynamic Attributes */}
                         {Object.keys({
-                          ...selectedApplication.originalProductData?.attributes,
+                          ...selectedApplication.originalProductData
+                            ?.attributes,
                           ...selectedApplication.attributes,
                         }).map((key) => {
-                          if (key === 'gender') return null;
+                          if (key === "gender") return null;
                           return (
                             <CompactComparisonField
                               key={key}
@@ -1103,7 +1282,9 @@ export default function EditProductApplicationsPage() {
 
                     {/* Images Section */}
                     <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 mt-4">
-                      <h3 className="text-sm font-semibold text-gray-900 mb-3">Medya Değişiklikleri</h3>
+                      <h3 className="text-sm font-semibold text-gray-900 mb-3">
+                        Medya Değişiklikleri
+                      </h3>
                       <ImageComparison
                         label="Ürün Resimleri"
                         oldImages={ensureArray(
@@ -1191,12 +1372,34 @@ export default function EditProductApplicationsPage() {
                         Başvuru Bilgileri
                       </h3>
                       <div className="space-y-2.5">
+                        {/* NEW: Edit Type */}
+                        <div className="flex items-center justify-between py-1.5 border-b border-gray-100">
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <FileEdit className="w-3.5 h-3.5" />
+                            <span>Düzenleme Tipi</span>
+                          </div>
+                          <span
+                            className={`text-xs font-medium px-2 py-0.5 rounded ${
+                              selectedApplication.editType ===
+                              "archived_product_update"
+                                ? "bg-orange-50 text-orange-700"
+                                : "bg-blue-50 text-blue-700"
+                            }`}
+                          >
+                            {selectedApplication.editType ===
+                            "archived_product_update"
+                              ? "Arşiv Güncellemesi"
+                              : "Normal Düzenleme"}
+                          </span>
+                        </div>
                         <div className="flex items-center justify-between py-1.5 border-b border-gray-100">
                           <div className="flex items-center gap-2 text-xs text-gray-500">
                             <User className="w-3.5 h-3.5" />
                             <span>Kullanıcı</span>
                           </div>
-                          <span className="text-xs text-gray-700 font-medium">{selectedApplication.userId.substring(0, 12)}...</span>
+                          <span className="text-xs text-gray-700 font-medium">
+                            {selectedApplication.userId.substring(0, 12)}...
+                          </span>
                         </div>
                         <div className="flex items-center justify-between py-1.5 border-b border-gray-100">
                           <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -1214,13 +1417,15 @@ export default function EditProductApplicationsPage() {
                             <Clock className="w-3.5 h-3.5" />
                             <span>Durum</span>
                           </div>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded ${
-                            selectedApplication.status === "pending"
-                              ? "bg-amber-50 text-amber-700"
-                              : selectedApplication.status === "approved"
-                              ? "bg-green-50 text-green-700"
-                              : "bg-red-50 text-red-700"
-                          }`}>
+                          <span
+                            className={`text-xs font-medium px-2 py-0.5 rounded ${
+                              selectedApplication.status === "pending"
+                                ? "bg-amber-50 text-amber-700"
+                                : selectedApplication.status === "approved"
+                                ? "bg-green-50 text-green-700"
+                                : "bg-red-50 text-red-700"
+                            }`}
+                          >
                             {selectedApplication.status === "pending"
                               ? "Beklemede"
                               : selectedApplication.status === "approved"
@@ -1233,7 +1438,13 @@ export default function EditProductApplicationsPage() {
                             <Package className="w-3.5 h-3.5" />
                             <span>Ürün ID</span>
                           </div>
-                          <span className="text-xs text-gray-700 font-mono">{selectedApplication.originalProductId.substring(0, 12)}...</span>
+                          <span className="text-xs text-gray-700 font-mono">
+                            {selectedApplication.originalProductId.substring(
+                              0,
+                              12
+                            )}
+                            ...
+                          </span>
                         </div>
                         {(selectedApplication.shopId ||
                           selectedApplication.originalProductData?.shopId) && (
@@ -1243,8 +1454,13 @@ export default function EditProductApplicationsPage() {
                               <span>Shop ID</span>
                             </div>
                             <span className="text-xs text-blue-600 font-mono">
-                              {(selectedApplication.shopId ||
-                                selectedApplication.originalProductData?.shopId || '').substring(0, 12)}...
+                              {(
+                                selectedApplication.shopId ||
+                                selectedApplication.originalProductData
+                                  ?.shopId ||
+                                ""
+                              ).substring(0, 12)}
+                              ...
                             </span>
                           </div>
                         )}
@@ -1260,11 +1476,15 @@ export default function EditProductApplicationsPage() {
                       <div className="space-y-2.5">
                         <div className="flex items-center gap-2 py-1.5 border-b border-gray-100">
                           <Phone className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="text-xs text-gray-700">{selectedApplication.phone}</span>
+                          <span className="text-xs text-gray-700">
+                            {selectedApplication.phone}
+                          </span>
                         </div>
                         <div className="flex items-center gap-2 py-1.5 border-b border-gray-100">
                           <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="text-xs text-gray-700">{selectedApplication.region}</span>
+                          <span className="text-xs text-gray-700">
+                            {selectedApplication.region}
+                          </span>
                         </div>
                         <div className="flex items-center gap-2 py-1.5 border-b border-gray-100">
                           <CreditCard className="w-3.5 h-3.5 text-gray-400" />
@@ -1274,12 +1494,18 @@ export default function EditProductApplicationsPage() {
                           </span>
                         </div>
                         <div className="py-1.5 border-b border-gray-100">
-                          <div className="text-xs text-gray-500 mb-1">Adres</div>
-                          <div className="text-xs text-gray-700">{selectedApplication.address}</div>
+                          <div className="text-xs text-gray-500 mb-1">
+                            Adres
+                          </div>
+                          <div className="text-xs text-gray-700">
+                            {selectedApplication.address}
+                          </div>
                         </div>
                         <div className="py-1.5">
                           <div className="text-xs text-gray-500 mb-1">IBAN</div>
-                          <div className="text-xs text-gray-700 font-mono">{selectedApplication.iban}</div>
+                          <div className="text-xs text-gray-700 font-mono">
+                            {selectedApplication.iban}
+                          </div>
                         </div>
                       </div>
                     </div>

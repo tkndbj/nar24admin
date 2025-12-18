@@ -111,6 +111,8 @@ interface ProductData {
   archivedByAdminAt?: Timestamp;
   archivedByAdminId?: string;
   adminArchiveReason?: string;
+  needsUpdate?: boolean;
+  archiveReason?: string;
 }
 
 interface ShopData {
