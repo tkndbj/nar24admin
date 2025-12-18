@@ -29,6 +29,9 @@ import {
   TrendingUp,
   Calendar,
 } from "lucide-react";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
+import { Pause, Play } from "lucide-react";
 
 interface OrderItem {
   id: string;
@@ -100,6 +103,11 @@ export default function OrdersPage() {
   const [hasMore, setHasMore] = useState(true);
   const [hasPrevious, setHasPrevious] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [salesPaused, setSalesPaused] = useState(false);
+const [pauseReason, setPauseReason] = useState("");
+const [loadingSalesConfig, setLoadingSalesConfig] = useState(true);
+const [togglingPause, setTogglingPause] = useState(false);
+const [showPauseModal, setShowPauseModal] = useState(false);
 
   // Server-side filters
   const [filters, setFilters] = useState<Filters>({
@@ -274,6 +282,27 @@ export default function OrdersPage() {
   };
 
   useEffect(() => {
+    const fetchSalesConfig = async () => {
+      try {
+        const docRef = doc(db, "settings", "salesConfig");
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setSalesPaused(data.salesPaused || false);
+          setPauseReason(data.pauseReason || "");
+        }
+      } catch (error) {
+        console.error("Error fetching sales config:", error);
+      } finally {
+        setLoadingSalesConfig(false);
+      }
+    };
+  
+    fetchSalesConfig();
+  }, []);
+
+  useEffect(() => {
     setCurrentPage(1);
     setLastVisible(null);
     setFirstVisible(null);
@@ -295,6 +324,31 @@ export default function OrdersPage() {
       )
     );
   }, [orders, appliedFilters.searchTerm]);
+
+  const handleToggleSalesPause = async (pause: boolean, reason?: string) => {
+    setTogglingPause(true);
+    try {
+      const auth = getAuth();
+      const user = auth.currentUser;
+  
+      await setDoc(doc(db, "settings", "salesConfig"), {
+        salesPaused: pause,
+        pausedAt: pause ? serverTimestamp() : null,
+        pausedBy: pause ? user?.uid : null,
+        pauseReason: pause ? (reason || "") : "",
+        updatedAt: serverTimestamp(),
+      });
+  
+      setSalesPaused(pause);
+      setPauseReason(pause ? (reason || "") : "");
+      setShowPauseModal(false);
+    } catch (error) {
+      console.error("Error toggling sales pause:", error);
+      alert("Satış durumu değiştirilemedi. Lütfen tekrar deneyin.");
+    } finally {
+      setTogglingPause(false);
+    }
+  };
 
   // Calculate statistics based on DISPLAYED orders
   const statistics = useMemo(() => {
@@ -598,7 +652,8 @@ export default function OrdersPage() {
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3">           
+
               <div className="flex items-center justify-center w-10 h-10 bg-blue-600 rounded-lg">
                 <Package className="w-6 h-6 text-white" />
               </div>
@@ -611,6 +666,35 @@ export default function OrdersPage() {
                 </p>
               </div>
             </div>
+             {/* Sales Pause Toggle */}
+  {loadingSalesConfig ? (
+    <div className="px-4 py-2 bg-gray-100 rounded-lg animate-pulse w-32 h-10" />
+  ) : (
+    <button
+      onClick={() => {
+        if (salesPaused) {
+          handleToggleSalesPause(false);
+        } else {
+          setShowPauseModal(true);
+        }
+      }}
+      disabled={togglingPause}
+      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 ${
+        salesPaused
+          ? "bg-red-100 text-red-700 border border-red-300 hover:bg-red-200"
+          : "bg-green-100 text-green-700 border border-green-300 hover:bg-green-200"
+      }`}
+    >
+      {togglingPause ? (
+        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+      ) : salesPaused ? (
+        <Play className="w-4 h-4" />
+      ) : (
+        <Pause className="w-4 h-4" />
+      )}
+      {salesPaused ? "Resume Sales" : "Pause Sales"}
+    </button>
+  )}
           </div>
 
           {/* Statistics Cards */}
@@ -988,6 +1072,66 @@ export default function OrdersPage() {
           </div>
         </div>
       </div>
+      {/* Pause Sales Modal */}
+{showPauseModal && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
+      <div className="bg-orange-50 px-6 py-4 border-b border-orange-100">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-10 h-10 bg-orange-100 rounded-full">
+            <Pause className="w-5 h-5 text-orange-600" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">
+              Satışları Durdur
+            </h3>
+            <p className="text-sm text-gray-600">
+              Tüm siparişler geçici olarak durdurulacak
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-6">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Durdurma Sebebi (İsteğe bağlı)
+        </label>
+        <textarea
+          value={pauseReason}
+          onChange={(e) => setPauseReason(e.target.value)}
+          placeholder="Örn: Sistem bakımı, stok sayımı..."
+          className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+          rows={3}
+        />
+        <p className="text-xs text-gray-500 mt-2">
+          Bu mesaj kullanıcılara gösterilecektir.
+        </p>
+      </div>
+
+      <div className="bg-gray-50 px-6 py-4 flex gap-3 justify-end">
+        <button
+          onClick={() => {
+            setShowPauseModal(false);
+            setPauseReason("");
+          }}
+          className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+        >
+          İptal
+        </button>
+        <button
+          onClick={() => handleToggleSalesPause(true, pauseReason)}
+          disabled={togglingPause}
+          className="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+        >
+          {togglingPause && (
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          )}
+          Satışları Durdur
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 }
