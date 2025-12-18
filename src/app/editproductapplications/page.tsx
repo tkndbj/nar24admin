@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { logAdminActivity } from "@/services/activityLogService";
 import {
   collection,
-  onSnapshot,
   query,
   orderBy,
   doc,
@@ -16,6 +15,12 @@ import {
   writeBatch,
   WriteBatch,
   deleteField,
+  getDocs,
+  limit,
+  startAfter,
+  where,
+  QueryDocumentSnapshot,
+  DocumentData,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { db } from "../lib/firebase";
@@ -148,6 +153,25 @@ const isFirebaseError = (error: unknown): error is FirebaseError => {
   return error instanceof Error && "code" in error;
 };
 
+type TabType = "pending" | "approved" | "rejected";
+
+interface TabState {
+  applications: EditApplication[];
+  loading: boolean;
+  loadingMore: boolean;
+  hasMore: boolean;
+  lastDoc: QueryDocumentSnapshot<DocumentData> | null;
+  initialized: boolean;
+}
+
+const ITEMS_PER_PAGE = 30;
+
+const TAB_LABELS: Record<TabType, string> = {
+  pending: "Bekleyen",
+  approved: "Onaylanan",
+  rejected: "Reddedilen",
+};
+
 // Rejection Modal Component
 const RejectionModal: React.FC<RejectionModalProps> = ({
   isOpen,
@@ -238,8 +262,7 @@ const RejectionModal: React.FC<RejectionModalProps> = ({
 
 export default function EditProductApplicationsPage() {
   const router = useRouter();
-  const [applications, setApplications] = useState<EditApplication[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabType>("pending");
   const [selectedApplication, setSelectedApplication] =
     useState<EditApplication | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -248,28 +271,138 @@ export default function EditProductApplicationsPage() {
     application: null as EditApplication | null,
   });
 
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      query(
-        collection(db, "product_edit_applications"),
-        orderBy("submittedAt", "desc")
-      ),
-      (snapshot) => {
-        const apps = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as EditApplication[];
-        setApplications(apps);
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Error fetching applications:", error);
-        setLoading(false);
-      }
-    );
+  // Separate state for each tab
+  const [tabStates, setTabStates] = useState<Record<TabType, TabState>>({
+    pending: {
+      applications: [],
+      loading: false,
+      loadingMore: false,
+      hasMore: true,
+      lastDoc: null,
+      initialized: false,
+    },
+    approved: {
+      applications: [],
+      loading: false,
+      loadingMore: false,
+      hasMore: true,
+      lastDoc: null,
+      initialized: false,
+    },
+    rejected: {
+      applications: [],
+      loading: false,
+      loadingMore: false,
+      hasMore: true,
+      lastDoc: null,
+      initialized: false,
+    },
+  });
 
-    return () => unsubscribe();
+  // Fetch applications for a specific tab
+  const fetchApplications = useCallback(
+    async (tab: TabType, isLoadMore: boolean = false) => {
+      const currentState = tabStates[tab];
+
+      // Don't fetch if already loading or no more items
+      if (currentState.loading || currentState.loadingMore) return;
+      if (isLoadMore && !currentState.hasMore) return;
+
+      // Update loading state
+      setTabStates((prev) => ({
+        ...prev,
+        [tab]: {
+          ...prev[tab],
+          loading: !isLoadMore,
+          loadingMore: isLoadMore,
+        },
+      }));
+
+      try {
+        // Build query with pagination
+        let q = query(
+          collection(db, "product_edit_applications"),
+          where("status", "==", tab),
+          orderBy("submittedAt", "desc"),
+          limit(ITEMS_PER_PAGE)
+        );
+
+        // Add startAfter for pagination
+        if (isLoadMore && currentState.lastDoc) {
+          q = query(
+            collection(db, "product_edit_applications"),
+            where("status", "==", tab),
+            orderBy("submittedAt", "desc"),
+            startAfter(currentState.lastDoc),
+            limit(ITEMS_PER_PAGE)
+          );
+        }
+
+        const snapshot = await getDocs(q);
+        const apps = snapshot.docs.map((doc) => ({
+          ...doc.data(),
+          id: doc.id, // ✅ Put AFTER spread so it won't be overwritten
+        })) as EditApplication[];
+
+        const lastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
+        const hasMore = snapshot.docs.length === ITEMS_PER_PAGE;
+
+        setTabStates((prev) => ({
+          ...prev,
+          [tab]: {
+            applications: isLoadMore
+              ? [...prev[tab].applications, ...apps]
+              : apps,
+            loading: false,
+            loadingMore: false,
+            hasMore,
+            lastDoc: lastVisible,
+            initialized: true,
+          },
+        }));
+      } catch (error) {
+        console.error(`Error fetching ${tab} applications:`, error);
+        setTabStates((prev) => ({
+          ...prev,
+          [tab]: {
+            ...prev[tab],
+            loading: false,
+            loadingMore: false,
+            initialized: true,
+          },
+        }));
+      }
+    },
+    [tabStates]
+  );
+
+  // Fetch pending applications on mount (default tab)
+  useEffect(() => {
+    if (!tabStates.pending.initialized) {
+      fetchApplications("pending");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fetch applications when tab changes (lazy loading)
+  const handleTabChange = useCallback(
+    (tab: TabType) => {
+      setActiveTab(tab);
+      // Only fetch if not yet initialized
+      if (!tabStates[tab].initialized) {
+        fetchApplications(tab);
+      }
+    },
+    [tabStates, fetchApplications]
+  );
+
+  // Load more handler
+  const handleLoadMore = useCallback(() => {
+    fetchApplications(activeTab, true);
+  }, [activeTab, fetchApplications]);
+
+  // Get current tab state
+  const currentTabState = tabStates[activeTab];
 
   // Get shop members for notification purposes
   const getShopMembers = async (shopId: string): Promise<ShopMember[]> => {
@@ -475,6 +608,23 @@ export default function EditProductApplicationsPage() {
           });
 
           setSelectedApplication(null);
+          // Invalidate both pending and approved tabs
+          setTabStates((prev) => ({
+            ...prev,
+            pending: {
+              ...prev.pending,
+              initialized: false,
+              lastDoc: null,
+              hasMore: true,
+            },
+            approved: {
+              ...prev.approved,
+              initialized: false,
+              lastDoc: null,
+              hasMore: true,
+            },
+          }));
+          fetchApplications("pending");
           alert(
             "Arşivlenmiş ürün güncellemesi onaylandı ve ürün aktif edildi!"
           );
@@ -671,6 +821,23 @@ export default function EditProductApplicationsPage() {
       });
 
       setSelectedApplication(null);
+      // Invalidate both pending and approved tabs
+      setTabStates((prev) => ({
+        ...prev,
+        pending: {
+          ...prev.pending,
+          initialized: false,
+          lastDoc: null,
+          hasMore: true,
+        },
+        approved: {
+          ...prev.approved,
+          initialized: false,
+          lastDoc: null,
+          hasMore: true,
+        },
+      }));
+      fetchApplications("pending");
       alert("Başvuru başarıyla onaylandı!");
     } catch (error) {
       console.error("Error approving application:", error);
@@ -736,6 +903,23 @@ export default function EditProductApplicationsPage() {
       // Close modal and clear selection
       setRejectionModal({ isOpen: false, application: null });
       setSelectedApplication(null);
+      // Invalidate both pending and rejected tabs
+      setTabStates((prev) => ({
+        ...prev,
+        pending: {
+          ...prev.pending,
+          initialized: false,
+          lastDoc: null,
+          hasMore: true,
+        },
+        rejected: {
+          ...prev.rejected,
+          initialized: false,
+          lastDoc: null,
+          hasMore: true,
+        },
+      }));
+      fetchApplications("pending");
       alert("Başvuru başarıyla reddedildi!");
     } catch (error) {
       console.error("Error rejecting application:", error);
@@ -852,18 +1036,9 @@ export default function EditProductApplicationsPage() {
     );
   };
 
-  if (loading) {
-    return (
-      <ProtectedRoute>
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full mx-auto mb-3"></div>
-            <p className="text-gray-600 text-sm">Başvurular yükleniyor...</p>
-          </div>
-        </div>
-      </ProtectedRoute>
-    );
-  }
+  // Get applications for the current tab
+  const applications = currentTabState.applications;
+  const loading = currentTabState.loading && !currentTabState.initialized;
 
   return (
     <ProtectedRoute>
@@ -890,125 +1065,206 @@ export default function EditProductApplicationsPage() {
                       Ürün Düzenleme Başvuruları
                     </h1>
                     <p className="text-xs text-gray-500">
-                      {applications.length} başvuru
+                      {applications.length}{" "}
+                      {TAB_LABELS[activeTab].toLowerCase()} başvuru
                     </p>
                   </div>
                 </div>
               </div>
+            </div>
+            {/* Tabs */}
+            <div className="flex gap-1 -mb-px">
+              {(["pending", "approved", "rejected"] as TabType[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => handleTabChange(tab)}
+                  className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === tab
+                      ? tab === "pending"
+                        ? "border-amber-500 text-amber-600"
+                        : tab === "approved"
+                        ? "border-green-500 text-green-600"
+                        : "border-red-500 text-red-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    {tab === "pending" && <Clock className="w-4 h-4" />}
+                    {tab === "approved" && <CheckCircle className="w-4 h-4" />}
+                    {tab === "rejected" && <XCircle className="w-4 h-4" />}
+                    {TAB_LABELS[tab]}
+                    {tabStates[tab].initialized && (
+                      <span
+                        className={`px-1.5 py-0.5 rounded-full text-xs ${
+                          activeTab === tab
+                            ? tab === "pending"
+                              ? "bg-amber-100 text-amber-700"
+                              : tab === "approved"
+                              ? "bg-green-100 text-green-700"
+                              : "bg-red-100 text-red-700"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {tabStates[tab].applications.length}
+                        {tabStates[tab].hasMore && "+"}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
         </header>
 
         {/* Main Content */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
-          {applications.length === 0 ? (
+          {/* Loading State */}
+          {loading ? (
+            <div className="text-center py-16 bg-white rounded-lg border border-gray-200">
+              <div className="animate-spin w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full mx-auto mb-3"></div>
+              <p className="text-gray-600 text-sm">Başvurular yükleniyor...</p>
+            </div>
+          ) : applications.length === 0 ? (
             <div className="text-center py-16 bg-white rounded-lg border border-gray-200">
               <Edit2 className="w-12 h-12 text-gray-300 mx-auto mb-3" />
               <h2 className="text-lg font-semibold text-gray-900 mb-1">
-                Ürün Güncelleme Yok
+                {activeTab === "pending"
+                  ? "Bekleyen Başvuru Yok"
+                  : activeTab === "approved"
+                  ? "Onaylanan Başvuru Yok"
+                  : "Reddedilen Başvuru Yok"}
               </h2>
               <p className="text-sm text-gray-500">
-                Henüz hiç ürün düzenleme başvurusu yapılmamış.
+                {activeTab === "pending"
+                  ? "Şu anda bekleyen ürün düzenleme başvurusu bulunmuyor."
+                  : activeTab === "approved"
+                  ? "Henüz onaylanmış başvuru bulunmuyor."
+                  : "Henüz reddedilmiş başvuru bulunmuyor."}
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {applications.map((app) => (
-                <div
-                  key={app.id}
-                  className={`bg-white border rounded-lg p-3 cursor-pointer hover:shadow-sm transition-all ${
-                    app.editType === "archived_product_update"
-                      ? "border-orange-300 hover:border-orange-400"
-                      : "border-gray-200 hover:border-blue-300"
-                  }`}
-                  onClick={() => setSelectedApplication(app)}
-                >
-                  <div className="flex items-start gap-2.5 mb-2.5">
-                    <div
-                      className={`flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0 ${
-                        app.editType === "archived_product_update"
-                          ? "bg-orange-50"
-                          : "bg-blue-50"
-                      }`}
-                    >
-                      {app.editType === "archived_product_update" ? (
-                        <Archive className="w-4 h-4 text-orange-600" />
-                      ) : (
-                        <Package className="w-4 h-4 text-blue-600" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-medium text-gray-900 truncate">
-                        {app.productName}
-                      </h3>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        <span className="text-xs text-gray-400">
-                          {app.id.substring(0, 8)}...
-                        </span>
-                        {(app.shopId || app.originalProductData?.shopId) && (
-                          <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium">
-                            SHOP
-                          </span>
-                        )}
-                        {/* NEW: Archive Badge */}
-                        {app.editType === "archived_product_update" && (
-                          <span className="px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded text-[10px] font-medium">
-                            ARŞİVDEN
-                          </span>
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {applications.map((app) => (
+                  <div
+                    key={app.id}
+                    className={`bg-white border rounded-lg p-3 cursor-pointer hover:shadow-sm transition-all ${
+                      app.editType === "archived_product_update"
+                        ? "border-orange-300 hover:border-orange-400"
+                        : "border-gray-200 hover:border-blue-300"
+                    }`}
+                    onClick={() => setSelectedApplication(app)}
+                  >
+                    <div className="flex items-start gap-2.5 mb-2.5">
+                      <div
+                        className={`flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0 ${
+                          app.editType === "archived_product_update"
+                            ? "bg-orange-50"
+                            : "bg-blue-50"
+                        }`}
+                      >
+                        {app.editType === "archived_product_update" ? (
+                          <Archive className="w-4 h-4 text-orange-600" />
+                        ) : (
+                          <Package className="w-4 h-4 text-blue-600" />
                         )}
                       </div>
-                    </div>
-                    <span
-                      className={`px-2 py-1 rounded text-[10px] font-medium flex-shrink-0 ${
-                        app.status === "pending"
-                          ? "bg-amber-50 text-amber-700"
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-medium text-gray-900 truncate">
+                          {app.productName}
+                        </h3>
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          <span className="text-xs text-gray-400">
+                            {app.id.substring(0, 8)}...
+                          </span>
+                          {(app.shopId || app.originalProductData?.shopId) && (
+                            <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium">
+                              SHOP
+                            </span>
+                          )}
+                          {/* NEW: Archive Badge */}
+                          {app.editType === "archived_product_update" && (
+                            <span className="px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded text-[10px] font-medium">
+                              ARŞİVDEN
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-1 rounded text-[10px] font-medium flex-shrink-0 ${
+                          app.status === "pending"
+                            ? "bg-amber-50 text-amber-700"
+                            : app.status === "approved"
+                            ? "bg-green-50 text-green-700"
+                            : "bg-red-50 text-red-700"
+                        }`}
+                      >
+                        {app.status === "pending"
+                          ? "Beklemede"
                           : app.status === "approved"
-                          ? "bg-green-50 text-green-700"
-                          : "bg-red-50 text-red-700"
-                      }`}
-                    >
-                      {app.status === "pending"
-                        ? "Beklemede"
-                        : app.status === "approved"
-                        ? "Onaylandı"
-                        : "Reddedildi"}
-                    </span>
-                  </div>
+                          ? "Onaylandı"
+                          : "Reddedildi"}
+                      </span>
+                    </div>
 
-                  {/* NEW: Show archive reason preview if exists */}
-                  {app.editType === "archived_product_update" &&
-                    app.archiveReason && (
-                      <div className="mb-2 p-2 bg-orange-50 rounded border border-orange-100">
-                        <p className="text-xs text-orange-700 line-clamp-2">
-                          <span className="font-medium">Admin notu:</span>{" "}
-                          {app.archiveReason}
-                        </p>
+                    {/* NEW: Show archive reason preview if exists */}
+                    {app.editType === "archived_product_update" &&
+                      app.archiveReason && (
+                        <div className="mb-2 p-2 bg-orange-50 rounded border border-orange-100">
+                          <p className="text-xs text-orange-700 line-clamp-2">
+                            <span className="font-medium">Admin notu:</span>{" "}
+                            {app.archiveReason}
+                          </p>
+                        </div>
+                      )}
+
+                    <div className="flex items-center gap-3 text-xs text-gray-500 pt-2 border-t border-gray-100">
+                      <div className="flex items-center gap-1">
+                        <User className="w-3 h-3" />
+                        <span>{app.userId.substring(0, 6)}...</span>
                       </div>
-                    )}
-
-                  <div className="flex items-center gap-3 text-xs text-gray-500 pt-2 border-t border-gray-100">
-                    <div className="flex items-center gap-1">
-                      <User className="w-3 h-3" />
-                      <span>{app.userId.substring(0, 6)}...</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      <span>
-                        {app.submittedAt
-                          ?.toDate?.()
-                          ?.toLocaleDateString("tr-TR")}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1 ml-auto">
-                      <DollarSign className="w-3 h-3" />
-                      <span className="font-medium text-gray-700">
-                        ₺{app.price}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        <span>
+                          {app.submittedAt
+                            ?.toDate?.()
+                            ?.toLocaleDateString("tr-TR")}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 ml-auto">
+                        <DollarSign className="w-3 h-3" />
+                        <span className="font-medium text-gray-700">
+                          ₺{app.price}
+                        </span>
+                      </div>
                     </div>
                   </div>
+                ))}
+              </div>
+
+              {/* Load More Button */}
+              {currentTabState.hasMore && (
+                <div className="mt-6 text-center">
+                  <button
+                    onClick={handleLoadMore}
+                    disabled={currentTabState.loadingMore}
+                    className="inline-flex items-center gap-2 px-6 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {currentTabState.loadingMore ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                        Yükleniyor...
+                      </>
+                    ) : (
+                      <>
+                        <Package className="w-4 h-4" />
+                        Daha fazla yükle
+                      </>
+                    )}
+                  </button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </main>
 
