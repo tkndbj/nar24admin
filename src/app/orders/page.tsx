@@ -30,8 +30,8 @@ import {
   Calendar,
 } from "lucide-react";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
 import { Pause, Play } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface OrderItem {
   id: string;
@@ -93,6 +93,7 @@ interface Filters {
 }
 
 export default function OrdersPage() {
+  const { isAuthenticated, user } = useAuth();
   const [orders, setOrders] = useState<CombinedOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -104,10 +105,10 @@ export default function OrdersPage() {
   const [hasPrevious, setHasPrevious] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [salesPaused, setSalesPaused] = useState(false);
-const [pauseReason, setPauseReason] = useState("");
-const [loadingSalesConfig, setLoadingSalesConfig] = useState(true);
-const [togglingPause, setTogglingPause] = useState(false);
-const [showPauseModal, setShowPauseModal] = useState(false);
+  const [pauseReason, setPauseReason] = useState("");
+  const [loadingSalesConfig, setLoadingSalesConfig] = useState(true);
+  const [togglingPause, setTogglingPause] = useState(false);
+  const [showPauseModal, setShowPauseModal] = useState(false);
 
   // Server-side filters
   const [filters, setFilters] = useState<Filters>({
@@ -282,11 +283,16 @@ const [showPauseModal, setShowPauseModal] = useState(false);
   };
 
   useEffect(() => {
+    // Only fetch when authenticated
+    if (!isAuthenticated) {
+      return;
+    }
+
     const fetchSalesConfig = async () => {
       try {
         const docRef = doc(db, "settings", "salesConfig");
         const docSnap = await getDoc(docRef);
-        
+
         if (docSnap.exists()) {
           const data = docSnap.data();
           setSalesPaused(data.salesPaused || false);
@@ -298,16 +304,21 @@ const [showPauseModal, setShowPauseModal] = useState(false);
         setLoadingSalesConfig(false);
       }
     };
-  
+
     fetchSalesConfig();
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
+    // Only fetch when authenticated
+    if (!isAuthenticated) {
+      return;
+    }
+
     setCurrentPage(1);
     setLastVisible(null);
     setFirstVisible(null);
     fetchOrders("initial");
-  }, [appliedFilters]);
+  }, [appliedFilters, isAuthenticated]);
 
   // Client-side search filter (for current page only)
   const filteredOrders = useMemo(() => {
@@ -328,17 +339,21 @@ const [showPauseModal, setShowPauseModal] = useState(false);
   const handleToggleSalesPause = async (pause: boolean, reason?: string) => {
     setTogglingPause(true);
     try {
-      const auth = getAuth();
-      const user = auth.currentUser;
-  
+      // Check if user is authenticated
+      if (!user) {
+        alert("Oturum açmanız gerekiyor. Lütfen tekrar giriş yapın.");
+        setTogglingPause(false);
+        return;
+      }
+
       await setDoc(doc(db, "settings", "salesConfig"), {
         salesPaused: pause,
         pausedAt: pause ? serverTimestamp() : null,
-        pausedBy: pause ? user?.uid : null,
+        pausedBy: pause ? user.uid : null,
         pauseReason: pause ? (reason || "") : "",
         updatedAt: serverTimestamp(),
       });
-  
+
       setSalesPaused(pause);
       setPauseReason(pause ? (reason || "") : "");
       setShowPauseModal(false);

@@ -18,8 +18,6 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { updateLastActivity } from "@/hooks/useIdleTimeout";
-import { markSessionValid } from "@/lib/tabSessionManager";
 
 // Session message configuration based on logout reason
 const SESSION_MESSAGES: Record<string, { title: string; message: string; icon: "clock" | "shield" }> = {
@@ -30,7 +28,7 @@ const SESSION_MESSAGES: Record<string, { title: string; message: string; icon: "
   },
   session_expired: {
     title: "Oturum Sona Erdi",
-    message: "Tarayıcı kapalıyken oturum süreniz doldu. Lütfen tekrar giriş yapın.",
+    message: "Başka bir sekmeden çıkış yapıldı. Lütfen tekrar giriş yapın.",
     icon: "clock",
   },
   not_admin: {
@@ -58,14 +56,19 @@ export default function AdminLogin() {
     icon: "clock" | "shield";
   } | null>(null);
   const router = useRouter();
-  const { logoutReason, verifyAndLogin, user, isVerifying } = useAuth();
+  const { logoutReason, user, isVerifying, loading: authLoading } = useAuth();
 
-  // Redirect if already authenticated
+  // Redirect if already authenticated or reset loading on auth failure
   useEffect(() => {
-    if (user && !isVerifying) {
+    if (user && !isVerifying && !authLoading) {
       router.push("/dashboard");
     }
-  }, [user, isVerifying, router]);
+    // Reset loading state when auth verification completes (success or failure)
+    if (!authLoading && !isVerifying && loading) {
+      setLoading(false);
+      setVerificationStep(null);
+    }
+  }, [user, isVerifying, authLoading, router, loading]);
 
   // Show message based on logout reason
   useEffect(() => {
@@ -89,28 +92,14 @@ export default function AdminLogin() {
     setSessionMessage(null);
 
     try {
-      // Step 0: Mark session as valid BEFORE Firebase auth
-      // This prevents the AuthContext from logging out immediately due to stale session data
-      markSessionValid();
-
       // Step 1: Firebase Authentication
       setVerificationStep("Kimlik bilgileri doğrulanıyor...");
       await signInWithEmailAndPassword(auth, email, password);
 
-      // Step 2: Server-side admin verification
+      // Step 2: Wait for AuthContext to verify (it happens automatically via onAuthStateChanged)
       setVerificationStep("Yönetici yetkileri kontrol ediliyor...");
-      const isVerified = await verifyAndLogin();
-
-      if (!isVerified) {
-        // verifyAndLogin already handles the error and logout
-        setError("Yönetici yetkileri doğrulanamadı. Erişim reddedildi.");
-        return;
-      }
-
-      // Step 3: Success - update activity and redirect
-      setVerificationStep("Giriş başarılı, yönlendiriliyorsunuz...");
-      updateLastActivity();
-      router.push("/dashboard");
+      // The redirect will happen automatically via the useEffect above
+      // when the user state is set after verification
     } catch (error) {
       console.error("Login error:", error);
 
@@ -145,12 +134,6 @@ export default function AdminLogin() {
       }
 
       setError(errorMessage);
-
-      // Sign out if there's a current user (partial login state)
-      if (auth.currentUser) {
-        await auth.signOut();
-      }
-    } finally {
       setLoading(false);
       setVerificationStep(null);
     }

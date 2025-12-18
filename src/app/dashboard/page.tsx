@@ -229,6 +229,12 @@ export default function Dashboard() {
   }, [user]);
 
   useEffect(() => {
+    // Only set up Firestore listeners when user is authenticated
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
     const unsubscribeUsers = onSnapshot(
       query(collection(db, "users"), orderBy("createdAt", "desc"), limit(5)),
       (snapshot) => {
@@ -237,6 +243,10 @@ export default function Dashboard() {
           ...doc.data(),
         })) as UserData[];
         setUsers(usersData);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Error loading users:", error);
         setLoading(false);
       }
     );
@@ -249,6 +259,9 @@ export default function Dashboard() {
           ...doc.data(),
         })) as ShopData[];
         setShops(shopsData);
+      },
+      (error) => {
+        console.error("Error loading shops:", error);
       }
     );
 
@@ -260,6 +273,9 @@ export default function Dashboard() {
           ...doc.data(),
         })) as ProductData[];
         setProducts(productsData);
+      },
+      (error) => {
+        console.error("Error loading products:", error);
       }
     );
 
@@ -268,7 +284,7 @@ export default function Dashboard() {
       unsubscribeShops();
       unsubscribeProducts();
     };
-  }, []);
+  }, [user]);
 
   const handleLogout = useCallback(async () => {
     try {

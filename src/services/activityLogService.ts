@@ -1,4 +1,4 @@
-import { db } from '@/app/lib/firebase';
+import { db, auth } from '@/app/lib/firebase';
 import {
   collection,
   writeBatch,
@@ -32,9 +32,16 @@ const CONFIG = {
   BATCH_INTERVAL_MS: 30000, // 30 seconds
   MAX_BATCH_SIZE: 500, // Firestore limit is 500 operations per batch
   MAX_QUEUE_SIZE: 1000, // Prevent memory issues
-  RETRY_ATTEMPTS: 3,
+  RETRY_ATTEMPTS: 2, // Reduced from 3 - fail faster
   RETRY_DELAY_MS: 1000,
 } as const;
+
+/**
+ * Check if user is authenticated with Firebase
+ */
+function isUserAuthenticated(): boolean {
+  return !!auth.currentUser;
+}
 
 /**
  * Production-grade Admin Activity Log Service
@@ -117,13 +124,17 @@ class ActivityLogService {
    */
   logActivity(activity: string, metadata?: Record<string, unknown>): void {
     if (!this.isInitialized || !this.adminUser) {
-      console.warn('[ActivityLogService] Service not initialized. Call initialize() first.');
+      // Silently skip - service not ready
+      return;
+    }
+
+    // Don't queue if user is not authenticated
+    if (!isUserAuthenticated()) {
       return;
     }
 
     // Prevent queue from growing too large
     if (this.queue.length >= CONFIG.MAX_QUEUE_SIZE) {
-      console.warn('[ActivityLogService] Queue full, triggering early flush');
       this.flushQueue();
 
       // If still full after flush attempt, drop oldest entries
@@ -242,6 +253,12 @@ class ActivityLogService {
       return;
     }
 
+    // Don't try to flush if not authenticated
+    if (!isUserAuthenticated()) {
+      this.queue = []; // Clear queue to prevent memory buildup
+      return;
+    }
+
     // Capture current queue before clearing
     const logsToFlush = [...this.queue];
 
@@ -251,8 +268,8 @@ class ActivityLogService {
     // Trigger async flush with captured logs
     // Note: This may not complete if the page unloads quickly,
     // but it's the best we can do with Firestore client SDK
-    this.writeLogsWithRetry(logsToFlush).catch(err => {
-      console.error('[ActivityLogService] Sync flush failed:', err);
+    this.writeLogsWithRetry(logsToFlush).catch(() => {
+      // Silently ignore - user may have logged out
     });
   }
 
@@ -261,6 +278,13 @@ class ActivityLogService {
    */
   private async writeLogsWithRetry(logs: QueuedLog[], attempt = 1): Promise<void> {
     if (logs.length === 0 || !this.adminUser) return;
+
+    // Check auth state before attempting to write
+    if (!isUserAuthenticated()) {
+      // User is not authenticated, discard logs silently
+      // Don't re-queue as they'll just fail again
+      return;
+    }
 
     try {
       // Split into batches if necessary (Firestore limit is 500)
@@ -276,7 +300,15 @@ class ActivityLogService {
 
       console.log(`[ActivityLogService] Successfully wrote ${logs.length} log(s)`);
     } catch (error) {
-      console.error(`[ActivityLogService] Write attempt ${attempt} failed:`, error);
+      // Check if this is a permission error - don't retry permission errors
+      const isPermissionError = error instanceof Error &&
+        (error.message.includes('permission') || error.message.includes('PERMISSION_DENIED'));
+
+      if (isPermissionError) {
+        // Permission error - user may have logged out, discard logs
+        console.warn('[ActivityLogService] Permission denied, discarding logs');
+        return;
+      }
 
       if (attempt < CONFIG.RETRY_ATTEMPTS) {
         // Wait before retry with exponential backoff
@@ -284,9 +316,8 @@ class ActivityLogService {
         return this.writeLogsWithRetry(logs, attempt + 1);
       }
 
-      // After all retries failed, re-queue the logs
-      console.error('[ActivityLogService] All retry attempts failed, re-queuing logs');
-      this.queue = [...logs, ...this.queue].slice(-CONFIG.MAX_QUEUE_SIZE);
+      // After all retries failed, discard logs to prevent infinite loop
+      console.warn('[ActivityLogService] All retry attempts failed, discarding logs');
     }
   }
 
