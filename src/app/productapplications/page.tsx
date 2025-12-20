@@ -5,7 +5,6 @@ import { useState, useEffect } from "react";
 import { logAdminActivity } from "@/services/activityLogService";
 import {
   collection,
-  onSnapshot,
   doc,
   Timestamp,
   arrayRemove,
@@ -13,6 +12,13 @@ import {
   writeBatch,
   arrayUnion,
   updateDoc,
+  query,
+  orderBy,
+  limit,
+  startAfter,
+  getDocs,
+  QueryDocumentSnapshot,
+  DocumentData,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
@@ -912,10 +918,29 @@ function ProductDetailModal({
   );
 }
 
+type TabType = "dukkan" | "vitrin";
+
+const ITEMS_PER_PAGE = 20;
+
 export default function ProductApplications() {
   const router = useRouter();
-  const [applications, setApplications] = useState<ProductApplication[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabType>("dukkan");
+
+  // Dükkan tab state
+  const [dukkanApplications, setDukkanApplications] = useState<ProductApplication[]>([]);
+  const [dukkanLoading, setDukkanLoading] = useState(true);
+  const [dukkanLastDoc, setDukkanLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [dukkanHasMore, setDukkanHasMore] = useState(true);
+  const [dukkanLoadingMore, setDukkanLoadingMore] = useState(false);
+
+  // Vitrin tab state
+  const [vitrinApplications, setVitrinApplications] = useState<ProductApplication[]>([]);
+  const [vitrinLoading, setVitrinLoading] = useState(false);
+  const [vitrinLastDoc, setVitrinLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [vitrinHasMore, setVitrinHasMore] = useState(true);
+  const [vitrinLoadingMore, setVitrinLoadingMore] = useState(false);
+  const [vitrinLoaded, setVitrinLoaded] = useState(false);
+
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [selectedApplication, setSelectedApplication] =
     useState<ProductApplication | null>(null);
@@ -924,152 +949,212 @@ export default function ProductApplications() {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [shopNames, setShopNames] = useState<Record<string, string>>({});
 
-  // Real-time listener for product applications
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "product_applications"),
-      (snapshot) => {
-        const applicationsData = snapshot.docs.map((doc) => {
-          const data = doc.data();
+  // Current tab data
+  const applications = activeTab === "dukkan" ? dukkanApplications : vitrinApplications;
+  const loading = activeTab === "dukkan" ? dukkanLoading : vitrinLoading;
+  const hasMore = activeTab === "dukkan" ? dukkanHasMore : vitrinHasMore;
+  const loadingMore = activeTab === "dukkan" ? dukkanLoadingMore : vitrinLoadingMore;
 
-          return {
-            id: doc.id,
-            productName: ProductUtils.safeString(data.productName),
-            description: ProductUtils.safeString(data.description),
-            price: ProductUtils.safeDouble(data.price),
-            currency: ProductUtils.safeString(data.currency, "TL"),
-            condition: ProductUtils.safeString(data.condition, "Brand New"),
-            brandModel: ProductUtils.safeStringNullable(data.brandModel),
-            imageUrls: ProductUtils.safeStringArray(data.imageUrls),
-            averageRating: ProductUtils.safeDouble(data.averageRating),
-            reviewCount: ProductUtils.safeInt(data.reviewCount),
-            gender: ProductUtils.safeStringNullable(data.gender),
-            bundleIds: ProductUtils.safeStringArray(data.bundleIds),
-            bundlePrice:
-              data.bundlePrice != null
-                ? ProductUtils.safeDouble(data.bundlePrice)
-                : undefined,
-            originalPrice:
-              data.originalPrice != null
-                ? ProductUtils.safeDouble(data.originalPrice)
-                : undefined,
-            discountPercentage:
-              data.discountPercentage != null
-                ? ProductUtils.safeInt(data.discountPercentage)
-                : undefined,
-            colorQuantities: ProductUtils.safeColorQuantities(
-              data.colorQuantities
-            ),
-            boostClickCountAtStart: ProductUtils.safeInt(
-              data.boostClickCountAtStart
-            ),
-            availableColors: ProductUtils.safeStringArray(data.availableColors),
-            userId: ProductUtils.safeString(data.userId),
-            discountThreshold:
-              data.discountThreshold != null
-                ? ProductUtils.safeInt(data.discountThreshold)
-                : undefined,
-            rankingScore: ProductUtils.safeDouble(data.rankingScore),
-            promotionScore: ProductUtils.safeDouble(data.promotionScore),
-            ownerId: ProductUtils.safeString(data.ownerId),
-            shopId: ProductUtils.safeStringNullable(data.shopId),
-            ilan_no: ProductUtils.safeString(
-              data.ilan_no ?? data.ilanNo ?? doc.id
-            ),
-            ilanNo: ProductUtils.safeString(
-              data.ilan_no ?? data.ilanNo ?? doc.id
-            ),
-            searchIndex: ProductUtils.safeStringArray(data.searchIndex),
-            createdAt: data.createdAt as Timestamp,
-            sellerName: ProductUtils.safeString(data.sellerName, "Unknown"),
-            category: ProductUtils.safeString(data.category, "Uncategorized"),
-            subcategory: ProductUtils.safeString(data.subcategory),
-            subsubcategory: ProductUtils.safeString(data.subsubcategory),
-            quantity: ProductUtils.safeInt(data.quantity),
-            bestSellerRank:
-              data.bestSellerRank != null
-                ? ProductUtils.safeInt(data.bestSellerRank)
-                : undefined,
-            sold: Boolean(data.sold),
-            clickCount: ProductUtils.safeInt(data.clickCount),
-            clickCountAtStart: ProductUtils.safeInt(data.clickCountAtStart),
-            favoritesCount: ProductUtils.safeInt(data.favoritesCount),
-            cartCount: ProductUtils.safeInt(data.cartCount),
-            purchaseCount: ProductUtils.safeInt(data.purchaseCount),
-            deliveryOption: ProductUtils.safeString(
-              data.deliveryOption,
-              "Self Delivery"
-            ),
-            boostedImpressionCount: ProductUtils.safeInt(
-              data.boostedImpressionCount
-            ),
-            boostImpressionCountAtStart: ProductUtils.safeInt(
-              data.boostImpressionCountAtStart
-            ),
-            isFeatured: Boolean(data.isFeatured),
-            isTrending: Boolean(data.isTrending),
-            isBoosted: Boolean(data.isBoosted),
-            boostStartTime: ProductUtils.safeDateNullable(data.boostStartTime),
-            boostEndTime: ProductUtils.safeDateNullable(data.boostEndTime),
-            dailyClickCount: ProductUtils.safeInt(data.dailyClickCount),
-            lastClickDate: ProductUtils.safeDateNullable(data.lastClickDate),
-            paused: Boolean(data.paused),
-            colorImages: ProductUtils.safeColorImages(data.colorImages),
-            videoUrl: ProductUtils.safeStringNullable(data.videoUrl),
-            attributes: ProductUtils.safeAttributes(data.attributes),
+  // Parse document to ProductApplication
+  const parseDocument = (docSnapshot: QueryDocumentSnapshot<DocumentData>): ProductApplication => {
+    const data = docSnapshot.data();
+    return {
+      id: docSnapshot.id,
+      productName: ProductUtils.safeString(data.productName),
+      description: ProductUtils.safeString(data.description),
+      price: ProductUtils.safeDouble(data.price),
+      currency: ProductUtils.safeString(data.currency, "TL"),
+      condition: ProductUtils.safeString(data.condition, "Brand New"),
+      brandModel: ProductUtils.safeStringNullable(data.brandModel),
+      imageUrls: ProductUtils.safeStringArray(data.imageUrls),
+      averageRating: ProductUtils.safeDouble(data.averageRating),
+      reviewCount: ProductUtils.safeInt(data.reviewCount),
+      gender: ProductUtils.safeStringNullable(data.gender),
+      bundleIds: ProductUtils.safeStringArray(data.bundleIds),
+      bundlePrice: data.bundlePrice != null ? ProductUtils.safeDouble(data.bundlePrice) : undefined,
+      originalPrice: data.originalPrice != null ? ProductUtils.safeDouble(data.originalPrice) : undefined,
+      discountPercentage: data.discountPercentage != null ? ProductUtils.safeInt(data.discountPercentage) : undefined,
+      colorQuantities: ProductUtils.safeColorQuantities(data.colorQuantities),
+      boostClickCountAtStart: ProductUtils.safeInt(data.boostClickCountAtStart),
+      availableColors: ProductUtils.safeStringArray(data.availableColors),
+      userId: ProductUtils.safeString(data.userId),
+      discountThreshold: data.discountThreshold != null ? ProductUtils.safeInt(data.discountThreshold) : undefined,
+      rankingScore: ProductUtils.safeDouble(data.rankingScore),
+      promotionScore: ProductUtils.safeDouble(data.promotionScore),
+      ownerId: ProductUtils.safeString(data.ownerId),
+      shopId: ProductUtils.safeStringNullable(data.shopId),
+      ilan_no: ProductUtils.safeString(data.ilan_no ?? data.ilanNo ?? docSnapshot.id),
+      ilanNo: ProductUtils.safeString(data.ilan_no ?? data.ilanNo ?? docSnapshot.id),
+      searchIndex: ProductUtils.safeStringArray(data.searchIndex),
+      createdAt: data.createdAt as Timestamp,
+      sellerName: ProductUtils.safeString(data.sellerName, "Unknown"),
+      category: ProductUtils.safeString(data.category, "Uncategorized"),
+      subcategory: ProductUtils.safeString(data.subcategory),
+      subsubcategory: ProductUtils.safeString(data.subsubcategory),
+      quantity: ProductUtils.safeInt(data.quantity),
+      bestSellerRank: data.bestSellerRank != null ? ProductUtils.safeInt(data.bestSellerRank) : undefined,
+      sold: Boolean(data.sold),
+      clickCount: ProductUtils.safeInt(data.clickCount),
+      clickCountAtStart: ProductUtils.safeInt(data.clickCountAtStart),
+      favoritesCount: ProductUtils.safeInt(data.favoritesCount),
+      cartCount: ProductUtils.safeInt(data.cartCount),
+      purchaseCount: ProductUtils.safeInt(data.purchaseCount),
+      deliveryOption: ProductUtils.safeString(data.deliveryOption, "Self Delivery"),
+      boostedImpressionCount: ProductUtils.safeInt(data.boostedImpressionCount),
+      boostImpressionCountAtStart: ProductUtils.safeInt(data.boostImpressionCountAtStart),
+      isFeatured: Boolean(data.isFeatured),
+      isTrending: Boolean(data.isTrending),
+      isBoosted: Boolean(data.isBoosted),
+      boostStartTime: ProductUtils.safeDateNullable(data.boostStartTime),
+      boostEndTime: ProductUtils.safeDateNullable(data.boostEndTime),
+      dailyClickCount: ProductUtils.safeInt(data.dailyClickCount),
+      lastClickDate: ProductUtils.safeDateNullable(data.lastClickDate),
+      paused: Boolean(data.paused),
+      colorImages: ProductUtils.safeColorImages(data.colorImages),
+      videoUrl: ProductUtils.safeStringNullable(data.videoUrl),
+      attributes: ProductUtils.safeAttributes(data.attributes),
+      phone: ProductUtils.safeStringNullable(data.phone),
+      region: ProductUtils.safeStringNullable(data.region),
+      address: ProductUtils.safeStringNullable(data.address),
+      ibanOwnerName: ProductUtils.safeStringNullable(data.ibanOwnerName),
+      ibanOwnerSurname: ProductUtils.safeStringNullable(data.ibanOwnerSurname),
+      iban: ProductUtils.safeStringNullable(data.iban),
+      needsSync: Boolean(data.needsSync),
+      updatedAt: data.updatedAt as Timestamp | undefined,
+      relatedProductIds: ProductUtils.safeStringArray(data.relatedProductIds),
+      maxQuantity: data.maxQuantity != null ? ProductUtils.safeInt(data.maxQuantity) : undefined,
+      bulkDiscountPercentage: data.bulkDiscountPercentage != null ? ProductUtils.safeInt(data.bulkDiscountPercentage) : undefined,
+      campaign: ProductUtils.safeStringNullable(data.campaign),
+      campaignName: ProductUtils.safeStringNullable(data.campaignName),
+      status: ProductUtils.safeStringNullable(data.status),
+    } as ProductApplication;
+  };
 
-            // Application-specific fields
-            phone: ProductUtils.safeStringNullable(data.phone),
-            region: ProductUtils.safeStringNullable(data.region),
-            address: ProductUtils.safeStringNullable(data.address),
-            ibanOwnerName: ProductUtils.safeStringNullable(data.ibanOwnerName),
-            ibanOwnerSurname: ProductUtils.safeStringNullable(
-              data.ibanOwnerSurname
-            ),
-            iban: ProductUtils.safeStringNullable(data.iban),
-            needsSync: Boolean(data.needsSync),
-            updatedAt: data.updatedAt as Timestamp | undefined,
-            relatedProductIds: ProductUtils.safeStringArray(
-              data.relatedProductIds
-            ),
-            maxQuantity:
-              data.maxQuantity != null
-                ? ProductUtils.safeInt(data.maxQuantity)
-                : undefined,
-            bulkDiscountPercentage:
-              data.bulkDiscountPercentage != null
-                ? ProductUtils.safeInt(data.bulkDiscountPercentage)
-                : undefined,
-            campaign: ProductUtils.safeStringNullable(data.campaign),
-            campaignName: ProductUtils.safeStringNullable(data.campaignName),
-            status: ProductUtils.safeStringNullable(data.status),
-          } as ProductApplication;
-        }) as ProductApplication[];
+  // Fetch applications with pagination
+  const fetchApplications = async (
+    collectionName: string,
+    lastDoc: QueryDocumentSnapshot<DocumentData> | null
+  ) => {
+    try {
+      let q = query(
+        collection(db, collectionName),
+        orderBy("createdAt", "desc"),
+        limit(ITEMS_PER_PAGE)
+      );
 
-        // Filter to only show pending applications (not approved or rejected)
-        const pendingApplications = applicationsData.filter(
-          (app) => !app.status || app.status === "pending"
+      if (lastDoc) {
+        q = query(
+          collection(db, collectionName),
+          orderBy("createdAt", "desc"),
+          startAfter(lastDoc),
+          limit(ITEMS_PER_PAGE)
         );
-
-        // Sort by creation date (newest first)
-        pendingApplications.sort((a, b) => {
-          if (!a.createdAt || !b.createdAt) return 0;
-          return (
-            b.createdAt.toDate().getTime() - a.createdAt.toDate().getTime()
-          );
-        });
-
-        setApplications(pendingApplications);
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Başvuruları dinlerken hata:", error);
-        setLoading(false);
       }
-    );
 
-    return () => unsubscribe();
+      const snapshot = await getDocs(q);
+      const docs = snapshot.docs;
+      const applicationsData = docs
+        .map(parseDocument)
+        .filter((app) => !app.status || app.status === "pending");
+
+      const newLastDoc = docs.length > 0 ? docs[docs.length - 1] : null;
+      const hasMoreData = docs.length === ITEMS_PER_PAGE;
+
+      return { applicationsData, newLastDoc, hasMoreData };
+    } catch (error) {
+      console.error(`Error fetching from ${collectionName}:`, error);
+      throw error;
+    }
+  };
+
+  // Load initial Dükkan data
+  useEffect(() => {
+    const loadDukkanData = async () => {
+      setDukkanLoading(true);
+      try {
+        const { applicationsData, newLastDoc, hasMoreData } = await fetchApplications(
+          "product_applications",
+          null
+        );
+        setDukkanApplications(applicationsData);
+        setDukkanLastDoc(newLastDoc);
+        setDukkanHasMore(hasMoreData);
+      } catch (error) {
+        console.error("Dükkan başvuruları yüklenirken hata:", error);
+      } finally {
+        setDukkanLoading(false);
+      }
+    };
+
+    loadDukkanData();
   }, []);
+
+  // Load Vitrin data when tab is clicked (lazy loading)
+  useEffect(() => {
+    if (activeTab === "vitrin" && !vitrinLoaded) {
+      const loadVitrinData = async () => {
+        setVitrinLoading(true);
+        try {
+          const { applicationsData, newLastDoc, hasMoreData } = await fetchApplications(
+            "vitrin_product_applications",
+            null
+          );
+          setVitrinApplications(applicationsData);
+          setVitrinLastDoc(newLastDoc);
+          setVitrinHasMore(hasMoreData);
+          setVitrinLoaded(true);
+        } catch (error) {
+          console.error("Vitrin başvuruları yüklenirken hata:", error);
+        } finally {
+          setVitrinLoading(false);
+        }
+      };
+
+      loadVitrinData();
+    }
+  }, [activeTab, vitrinLoaded]);
+
+  // Load more function
+  const loadMore = async () => {
+    if (activeTab === "dukkan") {
+      if (dukkanLoadingMore || !dukkanHasMore) return;
+      setDukkanLoadingMore(true);
+      try {
+        const { applicationsData, newLastDoc, hasMoreData } = await fetchApplications(
+          "product_applications",
+          dukkanLastDoc
+        );
+        setDukkanApplications((prev) => [...prev, ...applicationsData]);
+        setDukkanLastDoc(newLastDoc);
+        setDukkanHasMore(hasMoreData);
+      } catch (error) {
+        console.error("Daha fazla yüklenirken hata:", error);
+      } finally {
+        setDukkanLoadingMore(false);
+      }
+    } else {
+      if (vitrinLoadingMore || !vitrinHasMore) return;
+      setVitrinLoadingMore(true);
+      try {
+        const { applicationsData, newLastDoc, hasMoreData } = await fetchApplications(
+          "vitrin_product_applications",
+          vitrinLastDoc
+        );
+        setVitrinApplications((prev) => [...prev, ...applicationsData]);
+        setVitrinLastDoc(newLastDoc);
+        setVitrinHasMore(hasMoreData);
+      } catch (error) {
+        console.error("Daha fazla yüklenirken hata:", error);
+      } finally {
+        setVitrinLoadingMore(false);
+      }
+    }
+  };
+
+  // Get current collection name
+  const getCurrentCollectionName = () => {
+    return activeTab === "dukkan" ? "product_applications" : "vitrin_product_applications";
+  };
 
   // Fetch shop names for applications with shopId
   useEffect(() => {
@@ -1179,9 +1264,11 @@ export default function ProductApplications() {
     if (processingIds.has(application.id)) return;
     setProcessingIds((prev) => new Set(prev).add(application.id));
 
+    const currentCollection = getCurrentCollectionName();
+
     try {
       // ✅ STEP 0: Verify application still exists and is pending
-      const applicationRef = doc(db, "product_applications", application.id);
+      const applicationRef = doc(db, currentCollection, application.id);
       const applicationSnap = await getDoc(applicationRef);
 
       if (!applicationSnap.exists()) {
@@ -1229,12 +1316,16 @@ export default function ProductApplications() {
       void _status;
 
       const newDocId = ilan_no && ilan_no.trim() !== "" ? ilan_no : id;
+      const isVitrin = currentCollection === "vitrin_product_applications";
       const isShopProduct =
         productData.shopId && productData.shopId.trim() !== "";
-      const collectionName = isShopProduct ? "shop_products" : "products";
+      // Vitrin products go to vitrin_products, otherwise shop_products or products
+      const targetCollectionName = isVitrin
+        ? "vitrin_products"
+        : (isShopProduct ? "shop_products" : "products");
 
       // ✅ STEP 1: Check if product already exists (prevent overwrites)
-      const productRef = doc(db, collectionName, newDocId);
+      const productRef = doc(db, targetCollectionName, newDocId);
       const existingProduct = await getDoc(productRef);
 
       if (existingProduct.exists()) {
@@ -1278,13 +1369,13 @@ export default function ProductApplications() {
         status: "approved",
         reviewedAt: Timestamp.now(),
         approvedProductId: newDocId,
-        approvedCollection: collectionName,
+        approvedCollection: targetCollectionName,
       });
 
       // ✅ COMMIT ATOMICALLY - both succeed or both fail
       await batch.commit();
 
-      console.log(`✅ Product approved: ${newDocId} in ${collectionName}`);
+      console.log(`✅ Product approved: ${newDocId} in ${targetCollectionName}`);
 
       // Log admin activity
       const sellerDisplayName = application.shopId && shopNames[application.shopId]
@@ -1298,7 +1389,8 @@ export default function ProductApplications() {
 
       // ✅ STEP 3: Update category index AFTER successful commit
       // This is non-critical - if it fails, product still exists
-      if (isShopProduct) {
+      // Skip for vitrin products as they don't use shop category indexing
+      if (isShopProduct && !isVitrin) {
         try {
           await updateCategoryShopsIndex(
             productData.shopId!,
@@ -1314,6 +1406,13 @@ export default function ProductApplications() {
           );
           // Don't fail the approval - product is already created
         }
+      }
+
+      // Remove from local state
+      if (activeTab === "dukkan") {
+        setDukkanApplications((prev) => prev.filter((app) => app.id !== application.id));
+      } else {
+        setVitrinApplications((prev) => prev.filter((app) => app.id !== application.id));
       }
 
       showNotification("Ürün başarıyla onaylandı!");
@@ -1347,9 +1446,11 @@ export default function ProductApplications() {
     if (processingIds.has(application.id)) return;
     setProcessingIds((prev) => new Set(prev).add(application.id));
 
+    const currentCollection = getCurrentCollectionName();
+
     try {
       // ✅ Verify still pending
-      const applicationRef = doc(db, "product_applications", application.id);
+      const applicationRef = doc(db, currentCollection, application.id);
       const applicationSnap = await getDoc(applicationRef);
 
       if (!applicationSnap.exists()) {
@@ -1378,6 +1479,13 @@ export default function ProductApplications() {
         productName: application.productName,
         sellerName: sellerDisplayName,
       });
+
+      // Remove from local state
+      if (activeTab === "dukkan") {
+        setDukkanApplications((prev) => prev.filter((app) => app.id !== application.id));
+      } else {
+        setVitrinApplications((prev) => prev.filter((app) => app.id !== application.id));
+      }
 
       showNotification("Ürün başvurusu reddedildi");
       setShowDetailModal(false);
@@ -1456,6 +1564,44 @@ export default function ProductApplications() {
             </div>
           </div>
         </header>
+
+        {/* Tabs */}
+        <div className="max-w-7xl mx-auto px-4 pt-3">
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+            <button
+              onClick={() => setActiveTab("dukkan")}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "dukkan"
+                  ? "bg-white text-blue-600 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              <Store className="w-4 h-4 inline-block mr-1.5" />
+              Dükkan Ürünleri
+              {!dukkanLoading && (
+                <span className="ml-1.5 text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">
+                  {dukkanApplications.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab("vitrin")}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "vitrin"
+                  ? "bg-white text-purple-600 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              <Eye className="w-4 h-4 inline-block mr-1.5" />
+              Vitrin Ürünleri
+              {vitrinLoaded && !vitrinLoading && (
+                <span className="ml-1.5 text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full">
+                  {vitrinApplications.length}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
 
         {/* Main Content */}
         <main className="max-w-7xl mx-auto px-4 py-3">
@@ -1668,6 +1814,29 @@ export default function ProductApplications() {
                   </div>
                 ))}
               </div>
+
+              {/* Load More Button */}
+              {hasMore && (
+                <div className="p-4 border-t border-gray-200 flex justify-center">
+                  <button
+                    onClick={loadMore}
+                    disabled={loadingMore}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Yükleniyor...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronRight className="w-4 h-4" />
+                        <span>Daha Fazla Yükle</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </main>

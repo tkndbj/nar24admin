@@ -154,6 +154,7 @@ const isFirebaseError = (error: unknown): error is FirebaseError => {
 };
 
 type TabType = "pending" | "approved" | "rejected";
+type SourceType = "dukkan" | "vitrin";
 
 interface TabState {
   applications: EditApplication[];
@@ -164,6 +165,8 @@ interface TabState {
   initialized: boolean;
 }
 
+type SourceTabStates = Record<TabType, TabState>;
+
 const ITEMS_PER_PAGE = 30;
 
 const TAB_LABELS: Record<TabType, string> = {
@@ -171,6 +174,31 @@ const TAB_LABELS: Record<TabType, string> = {
   approved: "Onaylanan",
   rejected: "Reddedilen",
 };
+
+const SOURCE_LABELS: Record<SourceType, string> = {
+  dukkan: "Dükkan",
+  vitrin: "Vitrin",
+};
+
+const COLLECTION_NAMES: Record<SourceType, string> = {
+  dukkan: "product_edit_applications",
+  vitrin: "vitrin_edit_product_applications",
+};
+
+const initialTabState: TabState = {
+  applications: [],
+  loading: false,
+  loadingMore: false,
+  hasMore: true,
+  lastDoc: null,
+  initialized: false,
+};
+
+const createInitialSourceState = (): SourceTabStates => ({
+  pending: { ...initialTabState },
+  approved: { ...initialTabState },
+  rejected: { ...initialTabState },
+});
 
 // Rejection Modal Component
 const RejectionModal: React.FC<RejectionModalProps> = ({
@@ -262,6 +290,7 @@ const RejectionModal: React.FC<RejectionModalProps> = ({
 
 export default function EditProductApplicationsPage() {
   const router = useRouter();
+  const [activeSource, setActiveSource] = useState<SourceType>("dukkan");
   const [activeTab, setActiveTab] = useState<TabType>("pending");
   const [selectedApplication, setSelectedApplication] =
     useState<EditApplication | null>(null);
@@ -271,57 +300,42 @@ export default function EditProductApplicationsPage() {
     application: null as EditApplication | null,
   });
 
-  // Separate state for each tab
-  const [tabStates, setTabStates] = useState<Record<TabType, TabState>>({
-    pending: {
-      applications: [],
-      loading: false,
-      loadingMore: false,
-      hasMore: true,
-      lastDoc: null,
-      initialized: false,
-    },
-    approved: {
-      applications: [],
-      loading: false,
-      loadingMore: false,
-      hasMore: true,
-      lastDoc: null,
-      initialized: false,
-    },
-    rejected: {
-      applications: [],
-      loading: false,
-      loadingMore: false,
-      hasMore: true,
-      lastDoc: null,
-      initialized: false,
-    },
+  // Separate state for each source and each tab
+  const [sourceStates, setSourceStates] = useState<Record<SourceType, SourceTabStates>>({
+    dukkan: createInitialSourceState(),
+    vitrin: createInitialSourceState(),
   });
 
-  // Fetch applications for a specific tab
+  // Get current tab states for the active source
+  const tabStates = sourceStates[activeSource];
+
+  // Fetch applications for a specific tab and source
   const fetchApplications = useCallback(
-    async (tab: TabType, isLoadMore: boolean = false) => {
-      const currentState = tabStates[tab];
+    async (source: SourceType, tab: TabType, isLoadMore: boolean = false) => {
+      const currentState = sourceStates[source][tab];
+      const collectionName = COLLECTION_NAMES[source];
 
       // Don't fetch if already loading or no more items
       if (currentState.loading || currentState.loadingMore) return;
       if (isLoadMore && !currentState.hasMore) return;
 
       // Update loading state
-      setTabStates((prev) => ({
+      setSourceStates((prev) => ({
         ...prev,
-        [tab]: {
-          ...prev[tab],
-          loading: !isLoadMore,
-          loadingMore: isLoadMore,
+        [source]: {
+          ...prev[source],
+          [tab]: {
+            ...prev[source][tab],
+            loading: !isLoadMore,
+            loadingMore: isLoadMore,
+          },
         },
       }));
 
       try {
         // Build query with pagination
         let q = query(
-          collection(db, "product_edit_applications"),
+          collection(db, collectionName),
           where("status", "==", tab),
           orderBy("submittedAt", "desc"),
           limit(ITEMS_PER_PAGE)
@@ -330,7 +344,7 @@ export default function EditProductApplicationsPage() {
         // Add startAfter for pagination
         if (isLoadMore && currentState.lastDoc) {
           q = query(
-            collection(db, "product_edit_applications"),
+            collection(db, collectionName),
             where("status", "==", tab),
             orderBy("submittedAt", "desc"),
             startAfter(currentState.lastDoc),
@@ -339,67 +353,86 @@ export default function EditProductApplicationsPage() {
         }
 
         const snapshot = await getDocs(q);
-        const apps = snapshot.docs.map((doc) => ({
-          ...doc.data(),
-          id: doc.id, // ✅ Put AFTER spread so it won't be overwritten
+        const apps = snapshot.docs.map((docSnap) => ({
+          ...docSnap.data(),
+          id: docSnap.id, // ✅ Put AFTER spread so it won't be overwritten
         })) as EditApplication[];
 
         const lastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
         const hasMore = snapshot.docs.length === ITEMS_PER_PAGE;
 
-        setTabStates((prev) => ({
+        setSourceStates((prev) => ({
           ...prev,
-          [tab]: {
-            applications: isLoadMore
-              ? [...prev[tab].applications, ...apps]
-              : apps,
-            loading: false,
-            loadingMore: false,
-            hasMore,
-            lastDoc: lastVisible,
-            initialized: true,
+          [source]: {
+            ...prev[source],
+            [tab]: {
+              applications: isLoadMore
+                ? [...prev[source][tab].applications, ...apps]
+                : apps,
+              loading: false,
+              loadingMore: false,
+              hasMore,
+              lastDoc: lastVisible,
+              initialized: true,
+            },
           },
         }));
       } catch (error) {
-        console.error(`Error fetching ${tab} applications:`, error);
-        setTabStates((prev) => ({
+        console.error(`Error fetching ${tab} applications from ${collectionName}:`, error);
+        setSourceStates((prev) => ({
           ...prev,
-          [tab]: {
-            ...prev[tab],
-            loading: false,
-            loadingMore: false,
-            initialized: true,
+          [source]: {
+            ...prev[source],
+            [tab]: {
+              ...prev[source][tab],
+              loading: false,
+              loadingMore: false,
+              initialized: true,
+            },
           },
         }));
       }
     },
-    [tabStates]
+    [sourceStates]
   );
 
-  // Fetch pending applications on mount (default tab)
+  // Fetch pending applications on mount (default tab for dukkan source)
   useEffect(() => {
-    if (!tabStates.pending.initialized) {
-      fetchApplications("pending");
+    if (!sourceStates.dukkan.pending.initialized) {
+      fetchApplications("dukkan", "pending");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch applications when tab changes (lazy loading)
+  // Handle source change (Dükkan/Vitrin tabs)
+  const handleSourceChange = useCallback(
+    (source: SourceType) => {
+      setActiveSource(source);
+      setActiveTab("pending"); // Reset to pending tab when changing source
+      // Only fetch if not yet initialized
+      if (!sourceStates[source].pending.initialized) {
+        fetchApplications(source, "pending");
+      }
+    },
+    [sourceStates, fetchApplications]
+  );
+
+  // Fetch applications when status tab changes (lazy loading)
   const handleTabChange = useCallback(
     (tab: TabType) => {
       setActiveTab(tab);
-      // Only fetch if not yet initialized
-      if (!tabStates[tab].initialized) {
-        fetchApplications(tab);
+      // Only fetch if not yet initialized for the current source
+      if (!sourceStates[activeSource][tab].initialized) {
+        fetchApplications(activeSource, tab);
       }
     },
-    [tabStates, fetchApplications]
+    [activeSource, sourceStates, fetchApplications]
   );
 
   // Load more handler
   const handleLoadMore = useCallback(() => {
-    fetchApplications(activeTab, true);
-  }, [activeTab, fetchApplications]);
+    fetchApplications(activeSource, activeTab, true);
+  }, [activeSource, activeTab, fetchApplications]);
 
   // Get current tab state
   const currentTabState = tabStates[activeTab];
@@ -608,23 +641,26 @@ export default function EditProductApplicationsPage() {
           });
 
           setSelectedApplication(null);
-          // Invalidate both pending and approved tabs
-          setTabStates((prev) => ({
+          // Invalidate both pending and approved tabs for current source
+          setSourceStates((prev) => ({
             ...prev,
-            pending: {
-              ...prev.pending,
-              initialized: false,
-              lastDoc: null,
-              hasMore: true,
-            },
-            approved: {
-              ...prev.approved,
-              initialized: false,
-              lastDoc: null,
-              hasMore: true,
+            [activeSource]: {
+              ...prev[activeSource],
+              pending: {
+                ...prev[activeSource].pending,
+                initialized: false,
+                lastDoc: null,
+                hasMore: true,
+              },
+              approved: {
+                ...prev[activeSource].approved,
+                initialized: false,
+                lastDoc: null,
+                hasMore: true,
+              },
             },
           }));
-          fetchApplications("pending");
+          fetchApplications(activeSource, "pending");
           alert(
             "Arşivlenmiş ürün güncellemesi onaylandı ve ürün aktif edildi!"
           );
@@ -821,23 +857,26 @@ export default function EditProductApplicationsPage() {
       });
 
       setSelectedApplication(null);
-      // Invalidate both pending and approved tabs
-      setTabStates((prev) => ({
+      // Invalidate both pending and approved tabs for current source
+      setSourceStates((prev) => ({
         ...prev,
-        pending: {
-          ...prev.pending,
-          initialized: false,
-          lastDoc: null,
-          hasMore: true,
-        },
-        approved: {
-          ...prev.approved,
-          initialized: false,
-          lastDoc: null,
-          hasMore: true,
+        [activeSource]: {
+          ...prev[activeSource],
+          pending: {
+            ...prev[activeSource].pending,
+            initialized: false,
+            lastDoc: null,
+            hasMore: true,
+          },
+          approved: {
+            ...prev[activeSource].approved,
+            initialized: false,
+            lastDoc: null,
+            hasMore: true,
+          },
         },
       }));
-      fetchApplications("pending");
+      fetchApplications(activeSource, "pending");
       alert("Başvuru başarıyla onaylandı!");
     } catch (error) {
       console.error("Error approving application:", error);
@@ -903,23 +942,26 @@ export default function EditProductApplicationsPage() {
       // Close modal and clear selection
       setRejectionModal({ isOpen: false, application: null });
       setSelectedApplication(null);
-      // Invalidate both pending and rejected tabs
-      setTabStates((prev) => ({
+      // Invalidate both pending and rejected tabs for current source
+      setSourceStates((prev) => ({
         ...prev,
-        pending: {
-          ...prev.pending,
-          initialized: false,
-          lastDoc: null,
-          hasMore: true,
-        },
-        rejected: {
-          ...prev.rejected,
-          initialized: false,
-          lastDoc: null,
-          hasMore: true,
+        [activeSource]: {
+          ...prev[activeSource],
+          pending: {
+            ...prev[activeSource].pending,
+            initialized: false,
+            lastDoc: null,
+            hasMore: true,
+          },
+          rejected: {
+            ...prev[activeSource].rejected,
+            initialized: false,
+            lastDoc: null,
+            hasMore: true,
+          },
         },
       }));
-      fetchApplications("pending");
+      fetchApplications(activeSource, "pending");
       alert("Başvuru başarıyla reddedildi!");
     } catch (error) {
       console.error("Error rejecting application:", error);
@@ -1072,7 +1114,36 @@ export default function EditProductApplicationsPage() {
                 </div>
               </div>
             </div>
-            {/* Tabs */}
+
+            {/* Source Tabs (Dükkan/Vitrin) */}
+            <div className="flex items-center gap-2 mt-2 mb-2">
+              <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                <button
+                  onClick={() => handleSourceChange("dukkan")}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    activeSource === "dukkan"
+                      ? "bg-white text-blue-600 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <Package className="w-4 h-4" />
+                  {SOURCE_LABELS.dukkan}
+                </button>
+                <button
+                  onClick={() => handleSourceChange("vitrin")}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    activeSource === "vitrin"
+                      ? "bg-white text-purple-600 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <Edit2 className="w-4 h-4" />
+                  {SOURCE_LABELS.vitrin}
+                </button>
+              </div>
+            </div>
+
+            {/* Status Tabs */}
             <div className="flex gap-1 -mb-px">
               {(["pending", "approved", "rejected"] as TabType[]).map((tab) => (
                 <button
