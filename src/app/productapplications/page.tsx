@@ -12,10 +12,6 @@ import {
   writeBatch,
   arrayUnion,
   updateDoc,
-  query,
-  orderBy,
-  limit,
-  startAfter,
   getDocs,
   QueryDocumentSnapshot,
   DocumentData,
@@ -920,8 +916,6 @@ function ProductDetailModal({
 
 type TabType = "dukkan" | "vitrin";
 
-const ITEMS_PER_PAGE = 20;
-
 export default function ProductApplications() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>("dukkan");
@@ -929,16 +923,10 @@ export default function ProductApplications() {
   // Dükkan tab state
   const [dukkanApplications, setDukkanApplications] = useState<ProductApplication[]>([]);
   const [dukkanLoading, setDukkanLoading] = useState(true);
-  const [dukkanLastDoc, setDukkanLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [dukkanHasMore, setDukkanHasMore] = useState(true);
-  const [dukkanLoadingMore, setDukkanLoadingMore] = useState(false);
 
   // Vitrin tab state
   const [vitrinApplications, setVitrinApplications] = useState<ProductApplication[]>([]);
   const [vitrinLoading, setVitrinLoading] = useState(false);
-  const [vitrinLastDoc, setVitrinLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [vitrinHasMore, setVitrinHasMore] = useState(true);
-  const [vitrinLoadingMore, setVitrinLoadingMore] = useState(false);
   const [vitrinLoaded, setVitrinLoaded] = useState(false);
 
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
@@ -952,8 +940,6 @@ export default function ProductApplications() {
   // Current tab data
   const applications = activeTab === "dukkan" ? dukkanApplications : vitrinApplications;
   const loading = activeTab === "dukkan" ? dukkanLoading : vitrinLoading;
-  const hasMore = activeTab === "dukkan" ? dukkanHasMore : vitrinHasMore;
-  const loadingMore = activeTab === "dukkan" ? dukkanLoadingMore : vitrinLoadingMore;
 
   // Parse document to ProductApplication
   const parseDocument = (docSnapshot: QueryDocumentSnapshot<DocumentData>): ProductApplication => {
@@ -1030,37 +1016,33 @@ export default function ProductApplications() {
     } as ProductApplication;
   };
 
-  // Fetch applications with pagination
-  const fetchApplications = async (
-    collectionName: string,
-    lastDoc: QueryDocumentSnapshot<DocumentData> | null
-  ) => {
+  // Fetch all applications and filter/sort client-side (simpler, no index needed)
+  const fetchApplications = async (collectionName: string) => {
     try {
-      let q = query(
-        collection(db, collectionName),
-        orderBy("createdAt", "desc"),
-        limit(ITEMS_PER_PAGE)
+      // Fetch all documents from collection (no orderBy to avoid index requirement)
+      const snapshot = await getDocs(collection(db, collectionName));
+      const docs = snapshot.docs;
+
+      // Parse all documents
+      const allApplications = docs.map(parseDocument);
+
+      // Filter for pending applications (no status or status === "pending")
+      const pendingApplications = allApplications.filter(
+        (app) => !app.status || app.status === "pending"
       );
 
-      if (lastDoc) {
-        q = query(
-          collection(db, collectionName),
-          orderBy("createdAt", "desc"),
-          startAfter(lastDoc),
-          limit(ITEMS_PER_PAGE)
-        );
-      }
+      // Sort by creation date (newest first) - client-side like original
+      pendingApplications.sort((a, b) => {
+        if (!a.createdAt || !b.createdAt) return 0;
+        return b.createdAt.toDate().getTime() - a.createdAt.toDate().getTime();
+      });
 
-      const snapshot = await getDocs(q);
-      const docs = snapshot.docs;
-      const applicationsData = docs
-        .map(parseDocument)
-        .filter((app) => !app.status || app.status === "pending");
-
-      const newLastDoc = docs.length > 0 ? docs[docs.length - 1] : null;
-      const hasMoreData = docs.length === ITEMS_PER_PAGE;
-
-      return { applicationsData, newLastDoc, hasMoreData };
+      // For now, return all pending applications (pagination can be added later if needed)
+      return {
+        applicationsData: pendingApplications,
+        newLastDoc: null,
+        hasMoreData: false
+      };
     } catch (error) {
       console.error(`Error fetching from ${collectionName}:`, error);
       throw error;
@@ -1072,13 +1054,8 @@ export default function ProductApplications() {
     const loadDukkanData = async () => {
       setDukkanLoading(true);
       try {
-        const { applicationsData, newLastDoc, hasMoreData } = await fetchApplications(
-          "product_applications",
-          null
-        );
+        const { applicationsData } = await fetchApplications("product_applications");
         setDukkanApplications(applicationsData);
-        setDukkanLastDoc(newLastDoc);
-        setDukkanHasMore(hasMoreData);
       } catch (error) {
         console.error("Dükkan başvuruları yüklenirken hata:", error);
       } finally {
@@ -1095,13 +1072,8 @@ export default function ProductApplications() {
       const loadVitrinData = async () => {
         setVitrinLoading(true);
         try {
-          const { applicationsData, newLastDoc, hasMoreData } = await fetchApplications(
-            "vitrin_product_applications",
-            null
-          );
+          const { applicationsData } = await fetchApplications("vitrin_product_applications");
           setVitrinApplications(applicationsData);
-          setVitrinLastDoc(newLastDoc);
-          setVitrinHasMore(hasMoreData);
           setVitrinLoaded(true);
         } catch (error) {
           console.error("Vitrin başvuruları yüklenirken hata:", error);
@@ -1113,43 +1085,6 @@ export default function ProductApplications() {
       loadVitrinData();
     }
   }, [activeTab, vitrinLoaded]);
-
-  // Load more function
-  const loadMore = async () => {
-    if (activeTab === "dukkan") {
-      if (dukkanLoadingMore || !dukkanHasMore) return;
-      setDukkanLoadingMore(true);
-      try {
-        const { applicationsData, newLastDoc, hasMoreData } = await fetchApplications(
-          "product_applications",
-          dukkanLastDoc
-        );
-        setDukkanApplications((prev) => [...prev, ...applicationsData]);
-        setDukkanLastDoc(newLastDoc);
-        setDukkanHasMore(hasMoreData);
-      } catch (error) {
-        console.error("Daha fazla yüklenirken hata:", error);
-      } finally {
-        setDukkanLoadingMore(false);
-      }
-    } else {
-      if (vitrinLoadingMore || !vitrinHasMore) return;
-      setVitrinLoadingMore(true);
-      try {
-        const { applicationsData, newLastDoc, hasMoreData } = await fetchApplications(
-          "vitrin_product_applications",
-          vitrinLastDoc
-        );
-        setVitrinApplications((prev) => [...prev, ...applicationsData]);
-        setVitrinLastDoc(newLastDoc);
-        setVitrinHasMore(hasMoreData);
-      } catch (error) {
-        console.error("Daha fazla yüklenirken hata:", error);
-      } finally {
-        setVitrinLoadingMore(false);
-      }
-    }
-  };
 
   // Get current collection name
   const getCurrentCollectionName = () => {
@@ -1814,29 +1749,6 @@ export default function ProductApplications() {
                   </div>
                 ))}
               </div>
-
-              {/* Load More Button */}
-              {hasMore && (
-                <div className="p-4 border-t border-gray-200 flex justify-center">
-                  <button
-                    onClick={loadMore}
-                    disabled={loadingMore}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
-                  >
-                    {loadingMore ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Yükleniyor...</span>
-                      </>
-                    ) : (
-                      <>
-                        <ChevronRight className="w-4 h-4" />
-                        <span>Daha Fazla Yükle</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
             </div>
           )}
         </main>
