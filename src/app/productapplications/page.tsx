@@ -1256,8 +1256,8 @@ export default function ProductApplications() {
         productData.shopId && productData.shopId.trim() !== "";
       // Vitrin products go to vitrin_products, otherwise shop_products or products
       const targetCollectionName = isVitrin
-        ? "vitrin_products"
-        : (isShopProduct ? "shop_products" : "products");
+        ? "products"
+        : "shop_products"
 
       // ✅ STEP 1: Check if product already exists (prevent overwrites)
       const productRef = doc(db, targetCollectionName, newDocId);
