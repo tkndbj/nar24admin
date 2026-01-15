@@ -4,10 +4,12 @@
 import { initializeApp, getApps, cert, App } from "firebase-admin/app";
 import { getAuth, Auth } from "firebase-admin/auth";
 import { getFirestore, Firestore } from "firebase-admin/firestore";
+import { getAppCheck, AppCheck } from "firebase-admin/app-check";
 
 let adminApp: App | null = null;
 let adminAuth: Auth | null = null;
 let adminDb: Firestore | null = null;
+let adminAppCheck: AppCheck | null = null;
 
 function getPrivateKey(): string {
   let privateKey = process.env.FIREBASE_PRIVATE_KEY;
@@ -100,6 +102,16 @@ export function getAdminFirestore(): Firestore {
   const app = initializeAdminApp();
   adminDb = getFirestore(app);
   return adminDb;
+}
+
+export function getAdminAppCheck(): AppCheck {
+  if (adminAppCheck) {
+    return adminAppCheck;
+  }
+
+  const app = initializeAdminApp();
+  adminAppCheck = getAppCheck(app);
+  return adminAppCheck;
 }
 
 export { initializeAdminApp };

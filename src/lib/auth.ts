@@ -2,7 +2,7 @@
 // Server-side authentication utilities for API route protection
 
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminAuth, getAdminFirestore } from "./firebase-admin";
+import { getAdminAuth, getAdminFirestore, getAdminAppCheck } from "./firebase-admin";
 import { DecodedIdToken } from "firebase-admin/auth";
 
 export interface AuthenticatedUser {
@@ -194,6 +194,97 @@ export function unauthorizedResponse(message: string = "Unauthorized"): NextResp
  */
 export function forbiddenResponse(message: string = "Forbidden"): NextResponse {
   return NextResponse.json({ error: message }, { status: 403 });
+}
+
+/**
+ * Verifies the App Check token from the X-Firebase-AppCheck header.
+ * This provides an additional layer of security by ensuring requests
+ * come from your genuine app, not from scripts or bots.
+ *
+ * @param request - The incoming Next.js request
+ * @returns true if App Check token is valid, false otherwise
+ */
+export async function verifyAppCheck(request: NextRequest): Promise<boolean> {
+  const appCheckToken = request.headers.get("X-Firebase-AppCheck");
+
+  if (!appCheckToken) {
+    console.warn("App Check: Missing X-Firebase-AppCheck header");
+    return false;
+  }
+
+  try {
+    const appCheck = getAdminAppCheck();
+    await appCheck.verifyToken(appCheckToken);
+    return true;
+  } catch (error) {
+    console.error("App Check verification failed:", error);
+    return false;
+  }
+}
+
+/**
+ * Configuration options for App Check enforcement
+ */
+export interface AppCheckOptions {
+  /** If true, requests without valid App Check tokens will be rejected */
+  enforceAppCheck?: boolean;
+}
+
+/**
+ * Verifies admin authentication with optional App Check enforcement.
+ * Use this when you want to require both Firebase Auth AND App Check.
+ *
+ * @param request - The incoming Next.js request
+ * @param options - Configuration options for App Check enforcement
+ */
+export async function verifyAdminAuthWithAppCheck(
+  request: NextRequest,
+  options: AppCheckOptions = { enforceAppCheck: true }
+): Promise<AuthResponse> {
+  // First verify App Check if enforcement is enabled
+  if (options.enforceAppCheck) {
+    const isAppCheckValid = await verifyAppCheck(request);
+    if (!isAppCheckValid) {
+      return {
+        success: false,
+        error: "App Check verification failed. Request rejected.",
+        status: 401,
+      };
+    }
+  }
+
+  // Then proceed with regular admin auth verification
+  return verifyAdminAuth(request);
+}
+
+/**
+ * Wrapper function for protected API routes with App Check enforcement.
+ * This ensures both App Check AND admin authentication are verified.
+ *
+ * Usage:
+ * ```typescript
+ * export const GET = withAppCheckAndAdminAuth(async (request, user) => {
+ *   // user is guaranteed to be authenticated with valid App Check
+ *   return NextResponse.json({ data: "protected data" });
+ * });
+ * ```
+ */
+export function withAppCheckAndAdminAuth(
+  handler: (request: NextRequest, user: AuthenticatedUser) => Promise<NextResponse>,
+  options: AppCheckOptions = { enforceAppCheck: true }
+) {
+  return async (request: NextRequest): Promise<NextResponse> => {
+    const authResult = await verifyAdminAuthWithAppCheck(request, options);
+
+    if (!authResult.success) {
+      return NextResponse.json(
+        { error: authResult.error },
+        { status: authResult.status }
+      );
+    }
+
+    return handler(request, authResult.user);
+  };
 }
 
 /**
