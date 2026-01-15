@@ -13,7 +13,7 @@ import {
   CheckCircle,
   Loader2,
 } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useActivityLog, createPageLogger } from "@/hooks/useActivityLog";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -109,48 +109,51 @@ export default function AdPricesPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [serviceEnabled, setServiceEnabled] = useState(true);
-const [togglingService, setTogglingService] = useState(false);
+  const [togglingService, setTogglingService] = useState(false);
 
-  // Activity logging
+  // Activity logging - use ref to prevent re-renders
   const { logActivity } = useActivityLog();
-  const logger = createPageLogger(logActivity, "Ad Prices");
+  const loggerRef = useRef(createPageLogger(logActivity, "Ad Prices"));
+  
+  // Track if initial fetch has been done
+  const hasFetched = useRef(false);
 
-  // Fetch prices from Firestore
-  const fetchPrices = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const docRef = doc(db, "app_config", "ad_prices");
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        const data = docSnap.data() as AdPrices & { serviceEnabled?: boolean };
-        setPrices(data);
-        setOriginalPrices(data);
-        setServiceEnabled(data.serviceEnabled !== false); // Default to true
-        logger.action("Loaded ad prices");
-      } else {
-        // Document doesn't exist, use defaults and create it
-        setPrices(DEFAULT_PRICES);
-        setOriginalPrices(DEFAULT_PRICES);
-        logger.action("Using default ad prices");
-      }
-    } catch (err) {
-      console.error("Error fetching ad prices:", err);
-      setError("Fiyatlar yüklenirken hata oluştu. Lütfen sayfayı yenileyin.");
-      logger.action("Error loading ad prices", { error: String(err) });
-    } finally {
-      setLoading(false);
-    }
-  }, [logger]);
-
-  // Initial fetch
+  // Initial fetch - only run once when user is available
   useEffect(() => {
-    if (user) {
-      fetchPrices();
-    }
-  }, [user, fetchPrices]);
+    if (!user || hasFetched.current) return;
+    
+    const fetchPrices = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const docRef = doc(db, "app_config", "ad_prices");
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+          const data = docSnap.data() as AdPrices & { serviceEnabled?: boolean };
+          setPrices(data);
+          setOriginalPrices(data);
+          setServiceEnabled(data.serviceEnabled !== false);
+          loggerRef.current.action("Loaded ad prices");
+        } else {
+          setPrices(DEFAULT_PRICES);
+          setOriginalPrices(DEFAULT_PRICES);
+          loggerRef.current.action("Using default ad prices");
+        }
+        
+        hasFetched.current = true;
+      } catch (err) {
+        console.error("Error fetching ad prices:", err);
+        setError("Fiyatlar yüklenirken hata oluştu. Lütfen sayfayı yenileyin.");
+        loggerRef.current.action("Error loading ad prices", { error: String(err) });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPrices();
+  }, [user]);
 
   // Check for changes
   useEffect(() => {
@@ -187,41 +190,44 @@ const [togglingService, setTogglingService] = useState(false);
       const docRef = doc(db, "app_config", "ad_prices");
       await setDoc(docRef, {
         ...prices,
+        serviceEnabled,
         updatedAt: serverTimestamp(),
         updatedBy: user?.email || "unknown",
       });
 
       setOriginalPrices(prices);
       setSuccess("Fiyatlar başarıyla kaydedildi!");
-      logger.action("Saved ad prices", { prices });
+      loggerRef.current.action("Saved ad prices", { prices });
 
-      // Clear success message after 3 seconds
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       console.error("Error saving ad prices:", err);
       setError("Fiyatlar kaydedilirken hata oluştu. Lütfen tekrar deneyin.");
-      logger.action("Error saving ad prices", { error: String(err) });
+      loggerRef.current.action("Error saving ad prices", { error: String(err) });
     } finally {
       setSaving(false);
     }
   };
 
   // Toggle service status
-const handleToggleService = async () => {
+  const handleToggleService = async () => {
     try {
       setTogglingService(true);
       const newStatus = !serviceEnabled;
-      
+
       const docRef = doc(db, "app_config", "ad_prices");
-      await setDoc(docRef, {
-        ...prices,
-        serviceEnabled: newStatus,
-        updatedAt: serverTimestamp(),
-        updatedBy: user?.email || "unknown",
-      }, { merge: true });
-      
+      await setDoc(
+        docRef,
+        {
+          serviceEnabled: newStatus,
+          updatedAt: serverTimestamp(),
+          updatedBy: user?.email || "unknown",
+        },
+        { merge: true }
+      );
+
       setServiceEnabled(newStatus);
-      logger.action(newStatus ? "Enabled ad service" : "Disabled ad service");
+      loggerRef.current.action(newStatus ? "Enabled ad service" : "Disabled ad service");
     } catch (err) {
       console.error("Error toggling service:", err);
       setError("Servis durumu değiştirilemedi.");
@@ -342,40 +348,46 @@ const handleToggleService = async () => {
               </div>
 
               {/* Service Toggle Card */}
-<div className="mb-8 p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
-  <div className="flex items-center justify-between">
-    <div className="flex items-center gap-4">
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${serviceEnabled ? 'bg-green-100' : 'bg-red-100'}`}>
-        {serviceEnabled ? (
-          <CheckCircle className="w-6 h-6 text-green-600" />
-        ) : (
-          <AlertCircle className="w-6 h-6 text-red-600" />
-        )}
-      </div>
-      <div>
-        <h3 className="font-semibold text-gray-900">Reklam Servisi</h3>
-        <p className="text-sm text-gray-500">
-          {serviceEnabled 
-            ? "Servis aktif - Kullanıcılar reklam başvurusu yapabilir" 
-            : "Servis kapalı - Yeni başvurular engellenmiş"}
-        </p>
-      </div>
-    </div>
-    <button
-      onClick={handleToggleService}
-      disabled={togglingService}
-      className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors ${
-        serviceEnabled ? 'bg-green-500' : 'bg-gray-300'
-      } ${togglingService ? 'opacity-50' : ''}`}
-    >
-      <span
-        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
-          serviceEnabled ? 'translate-x-8' : 'translate-x-1'
-        }`}
-      />
-    </button>
-  </div>
-</div>
+              <div className="mb-8 p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div
+                      className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                        serviceEnabled ? "bg-green-100" : "bg-red-100"
+                      }`}
+                    >
+                      {serviceEnabled ? (
+                        <CheckCircle className="w-6 h-6 text-green-600" />
+                      ) : (
+                        <AlertCircle className="w-6 h-6 text-red-600" />
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900">
+                        Reklam Servisi
+                      </h3>
+                      <p className="text-sm text-gray-500">
+                        {serviceEnabled
+                          ? "Servis aktif - Kullanıcılar reklam başvurusu yapabilir"
+                          : "Servis kapalı - Yeni başvurular engellenmiş"}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleToggleService}
+                    disabled={togglingService}
+                    className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors ${
+                      serviceEnabled ? "bg-green-500" : "bg-gray-300"
+                    } ${togglingService ? "opacity-50" : ""}`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
+                        serviceEnabled ? "translate-x-8" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
 
               {/* Price Cards Grid */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -431,7 +443,7 @@ const handleToggleService = async () => {
                                     e.target.value
                                   )
                                 }
-                                className={`w-full px-4 py-3 ${adType.inputBgClass} border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-${adType.color}-500 focus:border-transparent text-lg font-semibold text-gray-900 pr-12`}
+                                className={`w-full px-4 py-3 ${adType.inputBgClass} border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-semibold text-gray-900 pr-12`}
                               />
                               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium">
                                 TL
@@ -443,9 +455,7 @@ const handleToggleService = async () => {
 
                       {/* Card Footer - Price Summary */}
                       <div className="px-5 pb-5">
-                        <div
-                          className={`p-3 ${adType.inputBgClass} rounded-xl`}
-                        >
+                        <div className={`p-3 ${adType.inputBgClass} rounded-xl`}>
                           <p className="text-xs text-gray-500 mb-2">
                             Toplam Fiyat Aralığı
                           </p>
