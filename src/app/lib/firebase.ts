@@ -6,7 +6,7 @@ import { getStorage } from "firebase/storage";
 import { getFunctions } from "firebase/functions";
 import {
   initializeAppCheck,
-  ReCaptchaV3Provider,
+  ReCaptchaEnterpriseProvider,
   AppCheck,
 } from "firebase/app-check";
 
@@ -59,7 +59,7 @@ function initializeAppCheckInstance(): AppCheck | null {
     }
 
     appCheck = initializeAppCheck(app, {
-      provider: new ReCaptchaV3Provider(siteKey),
+      provider: new ReCaptchaEnterpriseProvider(siteKey),
       // Optional: Set to true to allow auto-refresh of App Check tokens
       isTokenAutoRefreshEnabled: true,
     });

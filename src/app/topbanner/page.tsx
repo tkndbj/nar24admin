@@ -44,7 +44,7 @@ import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
 import { compressImage, formatFileSize } from "@/utils/imageCompression";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import FirebaseImage from "@/components/FirebaseImage";
+import Image from "next/image";
 import SearchModal, { type SearchSelection } from "@/components/SearchModal";
 
 // ============================================================================
@@ -341,74 +341,20 @@ const ImageModal: React.FC<ImageModalProps> = ({
   onClose,
   bannerName,
 }) => {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!isOpen || !imageUrl) {
-      setBlobUrl(null);
-      setLoading(true);
-      return;
-    }
-
-    let isMounted = true;
-
-    async function fetchImage() {
-      try {
-        setLoading(true);
-
-        // Extract the storage path from the Firebase Storage URL
-        let storagePath: string | null = null;
-        if (imageUrl.includes("firebasestorage.googleapis.com")) {
-          const match = imageUrl.match(/\/o\/(.+?)(\?|$)/);
-          if (match) {
-            storagePath = decodeURIComponent(match[1]);
-          }
-        }
-
-        let downloadUrl = imageUrl;
-        if (storagePath) {
-          const storage = getStorage();
-          const storageRef = ref(storage, storagePath);
-          downloadUrl = await getDownloadURL(storageRef);
-        }
-
-        const response = await fetch(downloadUrl);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const blob = await response.blob();
-        const objectUrl = URL.createObjectURL(blob);
-
-        if (isMounted) {
-          setBlobUrl(objectUrl);
-          setLoading(false);
-        }
-      } catch (error) {
-        console.error("ImageModal fetch error:", error);
-        if (isMounted) setLoading(false);
-      }
-    }
-
-    fetchImage();
-
-    return () => {
-      isMounted = false;
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, imageUrl]);
-
   if (!isOpen) return null;
 
   const downloadImage = async () => {
-    if (!blobUrl) return;
     try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = blobUrl;
+      link.href = url;
       link.download = `${bannerName}_banner.jpg`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Download failed:", error);
     }
@@ -425,8 +371,7 @@ const ImageModal: React.FC<ImageModalProps> = ({
           <div className="flex items-center gap-3">
             <button
               onClick={downloadImage}
-              disabled={loading || !blobUrl}
-              className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
             >
               <Download className="w-4 h-4" />
               <span className="text-sm">İndir</span>
@@ -441,18 +386,12 @@ const ImageModal: React.FC<ImageModalProps> = ({
         </div>
       </div>
 
-      <div className="relative max-w-7xl max-h-full p-16 flex items-center justify-center">
-        {loading ? (
-          <Loader2 className="w-12 h-12 text-white animate-spin" />
-        ) : blobUrl ? (
-          <img
-            src={blobUrl}
-            alt="Banner"
-            className="max-w-full max-h-full object-contain"
-          />
-        ) : (
-          <p className="text-white">Görsel yüklenemedi</p>
-        )}
+      <div className="relative max-w-7xl max-h-full p-16">
+        <img
+          src={imageUrl}
+          alt="Banner"
+          className="max-w-full max-h-full object-contain"
+        />
       </div>
     </div>
   );
@@ -1085,7 +1024,7 @@ export default function TopBannerPage() {
                       <div className="flex flex-col lg:flex-row">
                         {/* Top Banner Image */}
                         <div className="relative w-full lg:w-96 h-48 bg-gray-100 flex-shrink-0 group">
-                          <FirebaseImage
+                          <Image
                             src={ad.imageUrl}
                             alt="Top Banner"
                             fill
@@ -1267,7 +1206,7 @@ export default function TopBannerPage() {
                       <div className="flex flex-col lg:flex-row">
                         {/* Top Banner Image */}
                         <div className="relative w-full lg:w-96 h-48 bg-gray-100 flex-shrink-0 group">
-                          <FirebaseImage
+                          <Image
                             src={ad.imageUrl}
                             alt="Top Banner"
                             fill
@@ -1437,7 +1376,7 @@ export default function TopBannerPage() {
                     >
                       <div className="flex flex-col lg:flex-row">
                         <div className="relative w-full lg:w-96 h-48 bg-gray-100">
-                          <FirebaseImage
+                          <Image
                             src={submission.imageUrl}
                             alt="Submission"
                             fill
