@@ -1028,6 +1028,7 @@ export default function TopBannerPage() {
                             src={ad.imageUrl}
                             alt="Top Banner"
                             fill
+                            unoptimized
                             className="object-cover"
                           />
 
@@ -1210,6 +1211,7 @@ export default function TopBannerPage() {
                             src={ad.imageUrl}
                             alt="Top Banner"
                             fill
+                            unoptimized
                             className="object-cover"
                           />
 
@@ -1380,6 +1382,7 @@ export default function TopBannerPage() {
                             src={submission.imageUrl}
                             alt="Submission"
                             fill
+                            unoptimized
                             className="object-cover cursor-pointer"
                             onClick={() =>
                               setImageModal({
