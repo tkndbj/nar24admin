@@ -96,6 +96,8 @@ interface OrderItemData {
   gatheringStatus?: string;
   productImage?: string;
   selectedColorImage?: string;
+  sellerName?: string; // ADD THIS
+  price?: number; // ADD THIS
 }
 
 interface OrderData {
@@ -106,6 +108,18 @@ interface OrderData {
   items: OrderItemData[];
   distributionStatus?: string;
   allItemsGathered?: boolean;
+  // NEW FIELDS
+  deliveryOption?: string;
+  deliveryPrice?: number;
+  couponCode?: string;
+  couponDiscount?: number;
+  freeShippingApplied?: boolean;
+  itemsSubtotal?: number;
+  paymentOrderId?: string;
+  // For failed payments
+  status?: 'completed' | 'payment_succeeded_order_failed' | 'payment_failed';
+  orderError?: string;
+  isFailedPayment?: boolean;
 }
 
 // Create a separate component that uses useSearchParams
@@ -262,12 +276,12 @@ const revokeBenefitCallable = httpsCallable(functions, "revokeBenefit");
         limit(ORDERS_PER_PAGE)
       );
       const ordersSnapshot = await getDocs(ordersQuery);
-
+      
       // Fetch items for each order
       const ordersData = await Promise.all(
         ordersSnapshot.docs.map(async (orderDoc) => {
           const orderData = orderDoc.data();
-
+      
           // Fetch items subcollection
           const itemsSnapshot = await getDocs(
             collection(db, "orders", orderDoc.id, "items")
@@ -281,9 +295,11 @@ const revokeBenefitCallable = httpsCallable(functions, "revokeBenefit");
               gatheringStatus: data.gatheringStatus,
               productImage: data.productImage,
               selectedColorImage: data.selectedColorImage,
+              sellerName: data.sellerName,
+              price: data.price,
             };
           });
-
+      
           return {
             id: orderDoc.id,
             totalPrice: orderData.totalPrice,
@@ -292,11 +308,58 @@ const revokeBenefitCallable = httpsCallable(functions, "revokeBenefit");
             items,
             distributionStatus: orderData.distributionStatus,
             allItemsGathered: orderData.allItemsGathered,
+            // NEW FIELDS
+            deliveryOption: orderData.deliveryOption,
+            deliveryPrice: orderData.deliveryPrice,
+            couponCode: orderData.couponCode,
+            couponDiscount: orderData.couponDiscount,
+            freeShippingApplied: orderData.freeShippingApplied,
+            itemsSubtotal: orderData.itemsSubtotal,
+            paymentOrderId: orderData.paymentOrderId,
+            status: 'completed',
           } as OrderData;
         })
       );
 
-      setOrders(ordersData);
+      const failedPaymentsQuery = query(
+        collection(db, "pendingPayments"),
+        where("userId", "==", userId),
+        where("status", "in", ["payment_succeeded_order_failed", "payment_failed"]),
+        firestoreOrderBy("createdAt", "desc"),
+        limit(20)
+      );
+      const failedPaymentsSnapshot = await getDocs(failedPaymentsQuery);
+      
+      const failedPaymentsData: OrderData[] = failedPaymentsSnapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          totalPrice: data.amount || 0,
+          timestamp: data.createdAt,
+          itemCount: data.cartData?.items?.length || 0,
+          items: (data.cartData?.items || []).map((item: { productId: string; quantity?: number }, idx: number) => ({
+            id: `item-${idx}`,
+            productName: item.productId, // We only have productId in cartData
+            quantity: item.quantity || 1,
+          })),
+          status: data.status,
+          orderError: data.orderError,
+          isFailedPayment: true,
+          deliveryOption: data.cartData?.deliveryOption,
+          couponCode: undefined,
+          couponDiscount: 0,
+          freeShippingApplied: data.cartData?.freeShippingBenefitId ? true : false,
+        } as unknown as OrderData;
+      });
+      
+      // Combine and sort by timestamp
+      const allOrders = [...ordersData, ...failedPaymentsData].sort((a, b) => {
+        const timeA = a.timestamp?.toDate?.() || new Date(0);
+        const timeB = b.timestamp?.toDate?.() || new Date(0);
+        return timeB.getTime() - timeA.getTime();
+      });
+
+      setOrders(allOrders);
 
       // Set pagination state
       if (ordersSnapshot.docs.length > 0) {
@@ -420,10 +483,10 @@ const revokeBenefitCallable = httpsCallable(functions, "revokeBenefit");
   // Load more orders function for pagination
   const loadMoreOrders = useCallback(async () => {
     if (!userId || !ordersLastDoc || loadingMoreOrders || !hasMoreOrders) return;
-
+  
     try {
       setLoadingMoreOrders(true);
-
+  
       const ordersQuery = query(
         collection(db, "orders"),
         where("buyerId", "==", userId),
@@ -432,12 +495,12 @@ const revokeBenefitCallable = httpsCallable(functions, "revokeBenefit");
         limit(ORDERS_PER_PAGE)
       );
       const ordersSnapshot = await getDocs(ordersQuery);
-
+  
       // Fetch items for each order
       const newOrdersData = await Promise.all(
         ordersSnapshot.docs.map(async (orderDoc) => {
           const orderData = orderDoc.data();
-
+  
           // Fetch items subcollection
           const itemsSnapshot = await getDocs(
             collection(db, "orders", orderDoc.id, "items")
@@ -451,9 +514,11 @@ const revokeBenefitCallable = httpsCallable(functions, "revokeBenefit");
               gatheringStatus: data.gatheringStatus,
               productImage: data.productImage,
               selectedColorImage: data.selectedColorImage,
+              sellerName: data.sellerName,
+              price: data.price,
             };
           });
-
+  
           return {
             id: orderDoc.id,
             totalPrice: orderData.totalPrice,
@@ -462,13 +527,22 @@ const revokeBenefitCallable = httpsCallable(functions, "revokeBenefit");
             items,
             distributionStatus: orderData.distributionStatus,
             allItemsGathered: orderData.allItemsGathered,
+            // NEW FIELDS
+            deliveryOption: orderData.deliveryOption,
+            deliveryPrice: orderData.deliveryPrice,
+            couponCode: orderData.couponCode,
+            couponDiscount: orderData.couponDiscount,
+            freeShippingApplied: orderData.freeShippingApplied,
+            itemsSubtotal: orderData.itemsSubtotal,
+            paymentOrderId: orderData.paymentOrderId,
+            status: 'completed' as const,
           } as OrderData;
         })
       );
-
+  
       // Append new orders to existing ones
       setOrders((prev) => [...prev, ...newOrdersData]);
-
+  
       // Update pagination state
       if (ordersSnapshot.docs.length > 0) {
         setOrdersLastDoc(ordersSnapshot.docs[ordersSnapshot.docs.length - 1]);
@@ -1460,146 +1534,247 @@ const revokeBenefitCallable = httpsCallable(functions, "revokeBenefit");
 
                 {/* Orders Tab Content */}
                 {activeTab === "orders" && (
-                  <div>
-                    {/* Search */}
-                    <div className="relative mb-3">
-                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
-                      <input
-                        type="text"
-                        value={orderSearch}
-                        onChange={(e) => setOrderSearch(e.target.value)}
-                        placeholder="Sipariş ara..."
-                        className="w-full pl-7 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-900 text-xs placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
+  <div>
+    {/* Search */}
+    <div className="relative mb-3">
+      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+      <input
+        type="text"
+        value={orderSearch}
+        onChange={(e) => setOrderSearch(e.target.value)}
+        placeholder="Sipariş ara..."
+        className="w-full pl-7 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-900 text-xs placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+      />
+    </div>
 
-                    {/* Orders List */}
-                    {filteredOrders.length > 0 ? (
-                      <div className="space-y-2">
-                        {filteredOrders.map((order) => {
-                          // Determine shipment status with distinct colors
-                          const getShipmentStatus = () => {
-                            if (order.distributionStatus === "delivered") {
-                              return { label: "Teslim Edildi", textColor: "text-green-600", bgColor: "bg-green-50", borderColor: "border-green-200" };
-                            }
-                            if (order.distributionStatus === "distributed" || order.distributionStatus === "assigned") {
-                              return { label: "Dağıtımda", textColor: "text-blue-600", bgColor: "bg-blue-50", borderColor: "border-blue-200" };
-                            }
-                            if (order.allItemsGathered || order.distributionStatus === "ready") {
-                              return { label: "Depoda", textColor: "text-purple-600", bgColor: "bg-purple-50", borderColor: "border-purple-200" };
-                            }
-                            // Check if any items are being gathered
-                            const hasGatheredItems = order.items.some(
-                              (item) => item.gatheringStatus === "gathered" || item.gatheringStatus === "at_warehouse"
-                            );
-                            if (hasGatheredItems) {
-                              return { label: "Toplanıyor", textColor: "text-amber-600", bgColor: "bg-amber-50", borderColor: "border-amber-200" };
-                            }
-                            return { label: "Beklemede", textColor: "text-orange-600", bgColor: "bg-orange-50", borderColor: "border-orange-200" };
-                          };
+    {/* Orders List */}
+    {filteredOrders.length > 0 ? (
+      <div className="space-y-3">
+        {filteredOrders.map((order) => {
+          // Check if this is a failed payment
+          const isFailedPayment = order.isFailedPayment || order.status === 'payment_succeeded_order_failed' || order.status === 'payment_failed';
+          
+          // Determine shipment status with distinct colors
+          const getShipmentStatus = () => {
+            if (isFailedPayment) {
+              if (order.status === 'payment_succeeded_order_failed') {
+                return { label: "Ödeme Alındı - Sipariş Hatalı", textColor: "text-red-600", bgColor: "bg-red-50", borderColor: "border-red-300", icon: "⚠️" };
+              }
+              return { label: "Ödeme Başarısız", textColor: "text-gray-600", bgColor: "bg-gray-50", borderColor: "border-gray-300", icon: "❌" };
+            }
+            if (order.distributionStatus === "delivered") {
+              return { label: "Teslim Edildi", textColor: "text-green-600", bgColor: "bg-green-50", borderColor: "border-green-200", icon: "✓" };
+            }
+            if (order.distributionStatus === "distributed" || order.distributionStatus === "assigned") {
+              return { label: "Dağıtımda", textColor: "text-blue-600", bgColor: "bg-blue-50", borderColor: "border-blue-200", icon: "🚚" };
+            }
+            if (order.allItemsGathered || order.distributionStatus === "ready") {
+              return { label: "Depoda", textColor: "text-purple-600", bgColor: "bg-purple-50", borderColor: "border-purple-200", icon: "📦" };
+            }
+            const hasGatheredItems = order.items.some(
+              (item) => item.gatheringStatus === "gathered" || item.gatheringStatus === "at_warehouse"
+            );
+            if (hasGatheredItems) {
+              return { label: "Toplanıyor", textColor: "text-amber-600", bgColor: "bg-amber-50", borderColor: "border-amber-200", icon: "⏳" };
+            }
+            return { label: "Beklemede", textColor: "text-orange-600", bgColor: "bg-orange-50", borderColor: "border-orange-200", icon: "🕐" };
+          };
 
-                          const shipmentStatus = getShipmentStatus();
+          const shipmentStatus = getShipmentStatus();
+          
+          // Get unique sellers
+          const uniqueSellers = [...new Set(order.items.map(item => item.sellerName).filter(Boolean))];
 
-                          return (
-                            <div
-                              key={order.id}
-                              className="p-3 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 transition-colors"
-                            >
-                              {/* Order Header */}
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs font-mono text-gray-600">
-                                  #{order.id.substring(0, 8)}
-                                </span>
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${shipmentStatus.textColor} ${shipmentStatus.bgColor} ${shipmentStatus.borderColor}`}
-                                >
-                                  {shipmentStatus.label}
-                                </span>
-                              </div>
+          return (
+            <div
+              key={order.id}
+              className={`p-3 rounded-lg border transition-colors ${
+                isFailedPayment 
+                  ? 'bg-red-50 border-red-200 hover:bg-red-100' 
+                  : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+              }`}
+            >
+              {/* Order Header */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono text-gray-600">
+                    #{order.id.substring(0, 8)}
+                  </span>
+                  {order.paymentOrderId && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(order.paymentOrderId || '');
+                        toast.success("Ödeme ID kopyalandı!");
+                      }}
+                      className="text-[9px] px-1.5 py-0.5 bg-gray-200 hover:bg-gray-300 rounded cursor-pointer"
+                      title="Ödeme ID'yi kopyala"
+                    >
+                      💳 {order.paymentOrderId.substring(0, 10)}...
+                    </button>
+                  )}
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${shipmentStatus.textColor} ${shipmentStatus.bgColor} ${shipmentStatus.borderColor}`}
+                >
+                  {shipmentStatus.icon} {shipmentStatus.label}
+                </span>
+              </div>
 
-                              {/* Product Items with Thumbnails */}
-                              <div className="mb-2 space-y-1.5">
-                                {order.items.slice(0, 3).map((item) => {
-                                  // Use selectedColorImage if available, otherwise fall back to productImage
-                                  const thumbnailUrl = item.selectedColorImage || item.productImage;
+              {/* Error Message for Failed Orders */}
+              {isFailedPayment && order.orderError && (
+                <div className="mb-2 p-2 bg-red-100 border border-red-300 rounded text-xs text-red-700">
+                  <span className="font-semibold">Hata: </span>
+                  {order.orderError}
+                </div>
+              )}
 
-                                  return (
-                                    <div key={item.id} className="flex items-center gap-2">
-                                      {/* Thumbnail */}
-                                      <div className="relative w-8 h-8 rounded overflow-hidden flex-shrink-0 bg-gray-100">
-                                        {thumbnailUrl ? (
-                                          <Image
-                                            src={thumbnailUrl}
-                                            alt={item.productName}
-                                            fill
-                                            className="object-cover"
-                                          />
-                                        ) : (
-                                          <div className="w-full h-full flex items-center justify-center">
-                                            <Package className="w-3 h-3 text-gray-400" />
-                                          </div>
-                                        )}
-                                      </div>
-                                      {/* Product Name and Quantity */}
-                                      <div className="flex-1 min-w-0 flex items-center gap-1">
-                                        <span className="text-xs text-gray-700 truncate">{item.productName}</span>
-                                        {item.quantity > 1 && (
-                                          <span className="text-[10px] text-gray-500 flex-shrink-0">x{item.quantity}</span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                                {order.items.length > 3 && (
-                                  <div className="text-[10px] text-gray-500 ml-10">
-                                    +{order.items.length - 3} daha fazla ürün
-                                  </div>
-                                )}
-                              </div>
+              {/* Delivery & Discount Info Row */}
+              {!isFailedPayment && (
+                <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                  {/* Delivery Type */}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                    order.deliveryOption === 'express' 
+                      ? 'bg-blue-50 text-blue-700 border-blue-200' 
+                      : 'bg-gray-100 text-gray-600 border-gray-200'
+                  }`}>
+                    {order.deliveryOption === 'express' ? '🚀 Ekspres' : '📦 Normal'} 
+                    {order.deliveryPrice !== undefined && ` (${order.deliveryPrice} TL)`}
+                  </span>
 
-                              {/* Order Footer */}
-                              <div className="flex items-center justify-between text-[10px] text-gray-600 pt-2 border-t border-gray-200">
-                                <span>
-                                  {order.timestamp
-                                    .toDate()
-                                    .toLocaleDateString("tr-TR")}
-                                </span>
-                                <span className="font-semibold text-gray-900">
-                                  {order.totalPrice} TL
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
+                  {/* Free Shipping Badge */}
+                  {order.freeShippingApplied && (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded">
+                      🎁 Ücretsiz Kargo
+                    </span>
+                  )}
 
-                        {/* Load More Button */}
-                        {hasMoreOrders && !orderSearch.trim() && (
-                          <button
-                            onClick={loadMoreOrders}
-                            disabled={loadingMoreOrders}
-                            className="w-full py-2 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded border border-blue-200 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                          >
-                            {loadingMoreOrders ? (
-                              <>
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                                Yükleniyor...
-                              </>
-                            ) : (
-                              "Daha fazla yükle"
-                            )}
-                          </button>
+                  {/* Coupon Badge */}
+                  {order.couponCode && (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-orange-50 text-orange-700 border border-orange-200 rounded">
+                      🎟️ {order.couponCode} (-{order.couponDiscount} TL)
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Sellers Row */}
+              {uniqueSellers.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1 mb-2">
+                  <span className="text-[10px] text-gray-500">Satıcılar:</span>
+                  {uniqueSellers.slice(0, 3).map((seller, idx) => (
+                    <span 
+                      key={idx}
+                      className="text-[10px] px-1.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded"
+                    >
+                      {seller}
+                    </span>
+                  ))}
+                  {uniqueSellers.length > 3 && (
+                    <span className="text-[10px] text-gray-500">
+                      +{uniqueSellers.length - 3} daha
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Product Items with Thumbnails */}
+              <div className="mb-2 space-y-1.5">
+                {order.items.slice(0, 3).map((item) => {
+                  const thumbnailUrl = item.selectedColorImage || item.productImage;
+
+                  return (
+                    <div key={item.id} className="flex items-center gap-2">
+                      {/* Thumbnail */}
+                      <div className="relative w-8 h-8 rounded overflow-hidden flex-shrink-0 bg-gray-100">
+                        {thumbnailUrl ? (
+                          <Image
+                            src={thumbnailUrl}
+                            alt={item.productName}
+                            fill
+                            className="object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Package className="w-3 h-3 text-gray-400" />
+                          </div>
                         )}
                       </div>
-                    ) : (
-                      <div className="text-center py-6">
-                        <ShoppingBag className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                        <p className="text-gray-600 text-xs">
-                          Sipariş bulunamadı
-                        </p>
+                      {/* Product Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-700 truncate">{item.productName}</span>
+                          {item.quantity > 1 && (
+                            <span className="text-[10px] text-gray-500 flex-shrink-0">x{item.quantity}</span>
+                          )}
+                        </div>
+                        {item.sellerName && (
+                          <span className="text-[9px] text-gray-500">{item.sellerName}</span>
+                        )}
                       </div>
-                    )}
+                      {item.price !== undefined && (
+                        <span className="text-[10px] text-gray-600 flex-shrink-0">
+                          {item.price} TL
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+                {order.items.length > 3 && (
+                  <div className="text-[10px] text-gray-500 ml-10">
+                    +{order.items.length - 3} daha fazla ürün
                   </div>
                 )}
+              </div>
+
+              {/* Order Footer */}
+              <div className="flex items-center justify-between text-[10px] text-gray-600 pt-2 border-t border-gray-200">
+                <span>
+                  {order.timestamp?.toDate?.()?.toLocaleDateString("tr-TR") || "N/A"}
+                </span>
+                <div className="flex items-center gap-2">
+                  {/* Show subtotal if there's a discount */}
+                  {order.itemsSubtotal && order.couponDiscount && order.couponDiscount > 0 && (
+                    <span className="line-through text-gray-400">
+                      {order.itemsSubtotal} TL
+                    </span>
+                  )}
+                  <span className={`font-semibold ${isFailedPayment ? 'text-red-600' : 'text-gray-900'}`}>
+                    {order.totalPrice} TL
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Load More Button */}
+        {hasMoreOrders && !orderSearch.trim() && (
+          <button
+            onClick={loadMoreOrders}
+            disabled={loadingMoreOrders}
+            className="w-full py-2 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded border border-blue-200 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {loadingMoreOrders ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Yükleniyor...
+              </>
+            ) : (
+              "Daha fazla yükle"
+            )}
+          </button>
+        )}
+      </div>
+    ) : (
+      <div className="text-center py-6">
+        <ShoppingBag className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+        <p className="text-gray-600 text-xs">
+          Sipariş bulunamadı
+        </p>
+      </div>
+    )}
+  </div>
+)}
               </div>
             </div>
           </div>
