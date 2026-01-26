@@ -23,6 +23,10 @@ import {
   MapPin,
   Activity,
   ClipboardList,
+  Gift,
+  Truck,
+  Ticket,
+  Trash2,
 } from "lucide-react";
 import {
   useState,
@@ -125,6 +129,34 @@ function UserDetailsContent() {
   const [loading, setLoading] = useState(true);
   const [savingField, setSavingField] = useState<string | null>(null);
 
+  const [showCouponModal, setShowCouponModal] = useState(false);
+const [couponAmount, setCouponAmount] = useState("");
+const [couponDescription, setCouponDescription] = useState("");
+const [couponExpiryDays, setCouponExpiryDays] = useState("30");
+const [grantingCoupon, setGrantingCoupon] = useState(false);
+
+// Free Shipping Modal State
+const [showFreeShippingModal, setShowFreeShippingModal] = useState(false);
+const [freeShippingExpiryDays, setFreeShippingExpiryDays] = useState("30");
+const [grantingFreeShipping, setGrantingFreeShipping] = useState(false);
+
+const [userCoupons, setUserCoupons] = useState<Array<{
+  id: string;
+  amount: number;
+  currency: string;
+  code: string;
+  isUsed: boolean;
+  createdAt: string;
+  expiresAt?: string;
+}>>([]);
+const [userBenefits, setUserBenefits] = useState<Array<{
+  id: string;
+  type: string;
+  isUsed: boolean;
+  createdAt: string;
+  expiresAt?: string;
+}>>([]);
+
   // Search states
   const [productSearch, setProductSearch] = useState("");
   const [shopSearch, setShopSearch] = useState("");
@@ -158,6 +190,12 @@ function UserDetailsContent() {
   const [loadingActivityLogs, setLoadingActivityLogs] = useState(false);
   const ACTIVITY_LOGS_PER_PAGE = 20;
   const activityLogsContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const grantUserCouponCallable = httpsCallable(functions, "grantUserCoupon");
+const grantFreeShippingCallable = httpsCallable(functions, "grantFreeShipping");
+const getUserCouponsAndBenefitsCallable = httpsCallable(functions, "getUserCouponsAndBenefits");
+const revokeCouponCallable = httpsCallable(functions, "revokeCoupon");
+const revokeBenefitCallable = httpsCallable(functions, "revokeBenefit");
 
   // Active tab
   const [activeTab, setActiveTab] = useState<"products" | "shops" | "orders">(
@@ -276,6 +314,108 @@ function UserDetailsContent() {
   useEffect(() => {
     fetchUserData();
   }, [fetchUserData]);
+
+  const fetchUserCouponsAndBenefits = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const result = await getUserCouponsAndBenefitsCallable({ userId });
+      const data = result.data as { coupons: typeof userCoupons; benefits: typeof userBenefits };
+      setUserCoupons(data.coupons || []);
+      setUserBenefits(data.benefits || []);
+    } catch (error) {
+      console.error("Error fetching coupons/benefits:", error);
+    }
+  }, [userId]);
+  
+  // Call on mount
+  useEffect(() => {
+    if (user) {
+      fetchUserCouponsAndBenefits();
+    }
+  }, [user, fetchUserCouponsAndBenefits]);
+  
+  // Grant coupon handler
+  const handleGrantCoupon = async () => {
+    if (!user || !couponAmount) return;
+    
+    const amount = parseFloat(couponAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("Geçerli bir tutar girin");
+      return;
+    }
+  
+    setGrantingCoupon(true);
+    try {
+      await grantUserCouponCallable({
+        userId: user.id,
+        amount: amount,
+        description: couponDescription || undefined,
+        expiresInDays: parseInt(couponExpiryDays) || 30,
+      });
+      toast.success(`${amount} TL kupon verildi!`);
+      setShowCouponModal(false);
+      setCouponAmount("");
+      setCouponDescription("");
+      fetchUserCouponsAndBenefits();
+    } catch (error) {
+      console.error("Error granting coupon:", error);
+      toast.error("Kupon verilemedi");
+    } finally {
+      setGrantingCoupon(false);
+    }
+  };
+  
+
+  // Grant free shipping handler
+  const handleGrantFreeShipping = async () => {
+    if (!user) return;
+  
+    setGrantingFreeShipping(true);
+    try {
+      await grantFreeShippingCallable({
+        userId: user.id,
+        expiresInDays: parseInt(freeShippingExpiryDays) || 30,
+      });
+      toast.success("Ücretsiz kargo verildi!");
+      setShowFreeShippingModal(false);
+      fetchUserCouponsAndBenefits();
+    } catch (error) {
+      console.error("Error granting free shipping:", error);
+      toast.error("Ücretsiz kargo verilemedi");
+    } finally {
+      setGrantingFreeShipping(false);
+    }
+  };
+  
+  // Revoke coupon handler
+  const handleRevokeCoupon = async (couponId: string) => {
+    if (!user) return;
+    if (!window.confirm("Bu kuponu iptal etmek istediğinize emin misiniz?")) return;
+  
+    try {
+      await revokeCouponCallable({ userId: user.id, couponId });
+      toast.success("Kupon iptal edildi");
+      fetchUserCouponsAndBenefits();
+    } catch (error: unknown) {
+      console.error("Error revoking coupon:", error);
+      toast.error((error as Error).message || "Kupon iptal edilemedi");
+    }
+  };
+  
+  // Revoke benefit handler
+  const handleRevokeBenefit = async (benefitId: string) => {
+    if (!user) return;
+    if (!window.confirm("Bu avantajı iptal etmek istediğinize emin misiniz?")) return;
+  
+    try {
+      await revokeBenefitCallable({ userId: user.id, benefitId });
+      toast.success("Avantaj iptal edildi");
+      fetchUserCouponsAndBenefits();
+    } catch (error: unknown) {
+      console.error("Error revoking benefit:", error);
+      toast.error((error as Error).message || "Avantaj iptal edilemedi");
+    }
+  };
 
   // Load more orders function for pagination
   const loadMoreOrders = useCallback(async () => {
@@ -928,6 +1068,7 @@ function UserDetailsContent() {
                   <ClipboardList className="w-3 h-3" />
                   Aktivite
                 </button>
+                
               )}
               <button
                 onClick={handleResetPassword}
@@ -935,6 +1076,20 @@ function UserDetailsContent() {
               >
                 Parola Sıfırla
               </button>
+              <button
+  onClick={() => setShowCouponModal(true)}
+  className="px-2 py-1 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded text-xs transition-colors flex items-center gap-1"
+>
+  <Ticket className="w-3 h-3" />
+  Kupon Ver
+</button>
+<button
+  onClick={() => setShowFreeShippingModal(true)}
+  className="px-2 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded text-xs transition-colors flex items-center gap-1"
+>
+  <Truck className="w-3 h-3" />
+  Ücretsiz Kargo
+</button>
               <button
                 onClick={handleDeleteAccount}
                 className="px-2 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded text-xs transition-colors"
@@ -1052,6 +1207,53 @@ function UserDetailsContent() {
                 </div>
               </div>
             </div>
+            {/* User Coupons & Benefits */}
+<div className="bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
+  <h3 className="text-xs font-semibold text-gray-900 mb-2 flex items-center gap-1">
+    <Gift className="w-3 h-3 text-orange-600" />
+    Kuponlar & Avantajlar
+  </h3>
+  <div className="space-y-2 text-xs max-h-48 overflow-y-auto">
+    {/* Coupons */}
+    {userCoupons.filter(c => !c.isUsed).map((coupon) => (
+      <div key={coupon.id} className="flex items-center justify-between p-2 bg-orange-50 rounded border border-orange-200">
+        <div>
+          <span className="font-semibold text-orange-700">{coupon.amount} {coupon.currency}</span>
+          <span className="ml-1 text-gray-500">({coupon.code})</span>
+        </div>
+        <button
+          onClick={() => handleRevokeCoupon(coupon.id)}
+          className="p-1 hover:bg-orange-200 rounded transition-colors"
+          title="İptal Et"
+        >
+          <Trash2 className="w-3 h-3 text-red-500" />
+        </button>
+      </div>
+    ))}
+    
+    {/* Free Shipping Benefits */}
+    {userBenefits.filter(b => !b.isUsed && b.type === 'free_shipping').map((benefit) => (
+      <div key={benefit.id} className="flex items-center justify-between p-2 bg-purple-50 rounded border border-purple-200">
+        <div className="flex items-center gap-1">
+          <Truck className="w-3 h-3 text-purple-600" />
+          <span className="text-purple-700">Ücretsiz Kargo</span>
+        </div>
+        <button
+          onClick={() => handleRevokeBenefit(benefit.id)}
+          className="p-1 hover:bg-purple-200 rounded transition-colors"
+          title="İptal Et"
+        >
+          <Trash2 className="w-3 h-3 text-red-500" />
+        </button>
+      </div>
+    ))}
+    
+    {userCoupons.filter(c => !c.isUsed).length === 0 && 
+     userBenefits.filter(b => !b.isUsed).length === 0 && (
+      <p className="text-gray-500 text-center py-2">Aktif kupon/avantaj yok</p>
+    )}
+  </div>
+</div>
           </div>
 
           {/* Middle Column - All Fields */}
@@ -1495,6 +1697,166 @@ function UserDetailsContent() {
           </div>
         </div>
       )}
+      {/* Coupon Modal */}
+{showCouponModal && (
+  <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+      <div className="flex items-center justify-between p-4 border-b border-gray-200">
+        <div className="flex items-center gap-2">
+          <Ticket className="w-5 h-5 text-orange-600" />
+          <h2 className="text-lg font-semibold text-gray-900">Kupon Ver</h2>
+        </div>
+        <button
+          onClick={() => setShowCouponModal(false)}
+          className="p-1 hover:bg-gray-100 rounded transition-colors"
+        >
+          <X className="w-5 h-5 text-gray-600" />
+        </button>
+      </div>
+      
+      <div className="p-4 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Tutar (TL) *
+          </label>
+          <input
+            type="number"
+            value={couponAmount}
+            onChange={(e) => setCouponAmount(e.target.value)}
+            placeholder="50"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Açıklama (Opsiyonel)
+          </label>
+          <input
+            type="text"
+            value={couponDescription}
+            onChange={(e) => setCouponDescription(e.target.value)}
+            placeholder="Teşekkür kuponu"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Geçerlilik Süresi (Gün)
+          </label>
+          <select
+            value={couponExpiryDays}
+            onChange={(e) => setCouponExpiryDays(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+          >
+            <option value="7">7 gün</option>
+            <option value="14">14 gün</option>
+            <option value="30">30 gün</option>
+            <option value="60">60 gün</option>
+            <option value="90">90 gün</option>
+            <option value="365">1 yıl</option>
+          </select>
+        </div>
+      </div>
+      
+      <div className="flex gap-3 p-4 border-t border-gray-200">
+        <button
+          onClick={() => setShowCouponModal(false)}
+          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          İptal
+        </button>
+        <button
+          onClick={handleGrantCoupon}
+          disabled={grantingCoupon || !couponAmount}
+          className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        >
+          {grantingCoupon ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Veriliyor...
+            </>
+          ) : (
+            <>
+              <Gift className="w-4 h-4" />
+              Kupon Ver
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+{/* Free Shipping Modal */}
+{showFreeShippingModal && (
+  <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+      <div className="flex items-center justify-between p-4 border-b border-gray-200">
+        <div className="flex items-center gap-2">
+          <Truck className="w-5 h-5 text-purple-600" />
+          <h2 className="text-lg font-semibold text-gray-900">Ücretsiz Kargo Ver</h2>
+        </div>
+        <button
+          onClick={() => setShowFreeShippingModal(false)}
+          className="p-1 hover:bg-gray-100 rounded transition-colors"
+        >
+          <X className="w-5 h-5 text-gray-600" />
+        </button>
+      </div>
+      
+      <div className="p-4 space-y-4">
+        <p className="text-gray-600 text-sm">
+          Bu kullanıcıya bir sonraki siparişinde ücretsiz kargo hakkı verilecek.
+        </p>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Geçerlilik Süresi (Gün)
+          </label>
+          <select
+            value={freeShippingExpiryDays}
+            onChange={(e) => setFreeShippingExpiryDays(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+          >
+            <option value="7">7 gün</option>
+            <option value="14">14 gün</option>
+            <option value="30">30 gün</option>
+            <option value="60">60 gün</option>
+            <option value="90">90 gün</option>
+          </select>
+        </div>
+      </div>
+      
+      <div className="flex gap-3 p-4 border-t border-gray-200">
+        <button
+          onClick={() => setShowFreeShippingModal(false)}
+          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          İptal
+        </button>
+        <button
+          onClick={handleGrantFreeShipping}
+          disabled={grantingFreeShipping}
+          className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        >
+          {grantingFreeShipping ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Veriliyor...
+            </>
+          ) : (
+            <>
+              <Truck className="w-4 h-4" />
+              Ücretsiz Kargo Ver
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 }
