@@ -78,6 +78,10 @@ interface OrderHeader {
   itemCount: number;
   paymentMethod: string;
   timestamp: Timestamp;
+  couponCode?: string;
+  couponDiscount?: number;
+  freeShippingApplied?: boolean;
+  originalDeliveryPrice?: number;
 }
 
 interface CombinedOrder {
@@ -370,17 +374,23 @@ export default function OrdersPage() {
     let totalRevenue = 0;
     let totalCommission = 0;
     let totalDelivery = 0;
+    let totalCouponDiscounts = 0; // ✅ ADD
+    let freeShippingCount = 0;
     const totalOrders = filteredOrders.length;
 
     filteredOrders.forEach((order) => {
       const orderTotalPrice = order.orderHeader.totalPrice || 0;
       const orderDeliveryPrice = order.orderHeader.deliveryPrice || 0;
+      const couponDiscount = order.orderHeader.couponDiscount || 0;
 
       // FIXED: Total revenue includes delivery
       const orderRevenue = orderTotalPrice + orderDeliveryPrice;
       totalRevenue += orderRevenue;
       totalDelivery += orderDeliveryPrice;
-
+      totalCouponDiscounts += couponDiscount;
+      if (order.orderHeader.freeShippingApplied) {
+        freeShippingCount++;
+      }
       order.items.forEach((item) => {
         const itemTotal = item.calculatedTotal || 0;
         const commissionRate = item.ourComission || 0;
@@ -400,6 +410,8 @@ export default function OrdersPage() {
       totalDelivery,
       totalProfit,
       totalOrders,
+      totalCouponDiscounts, // ✅ ADD
+      freeShippingCount,
     };
   }, [filteredOrders]);
 
@@ -521,6 +533,8 @@ export default function OrdersPage() {
           "Ürün Fiyatı (TL)",
           "Teslimat Tipi",
           "Teslimat Ücreti (TL)",
+          "Kupon İndirimi (TL)", // ✅ ADD
+    "Ücretsiz Kargo",
           "Komisyon Oranı (%)",
           "Komisyon Tutarı (TL)",
           "Toplam (TL)",
@@ -536,6 +550,9 @@ export default function OrdersPage() {
           const commissionRate = item.ourComission || 0;
           const deliveryPrice =
             idx === 0 ? order.orderHeader.deliveryPrice || 0 : 0;
+
+            const couponDiscount = idx === 0 ? order.orderHeader.couponDiscount || 0 : 0;
+            const freeShippingApplied = idx === 0 && order.orderHeader.freeShippingApplied ? "Evet" : "";
 
           // FIXED calculations
           const commission = (itemTotal * commissionRate) / 100;
@@ -565,6 +582,8 @@ export default function OrdersPage() {
                 ? getDeliveryLabel(order.orderHeader.deliveryOption)
                 : "",
               deliveryPrice.toFixed(2),
+              couponDiscount.toFixed(2), // ✅ ADD
+        freeShippingApplied,
               commissionRate,
               commission.toFixed(2),
               totalWithDelivery.toFixed(2),
@@ -881,6 +900,9 @@ export default function OrdersPage() {
                   <th className="px-2 py-2 text-left font-semibold text-gray-900">
                     Teslimat
                   </th>
+                  <th className="px-2 py-2 text-center font-semibold text-gray-900">
+  Kupon / İndirim
+</th>
                   <th className="px-2 py-2 text-right font-semibold text-gray-900">
                     Komisyon
                   </th>
@@ -899,7 +921,7 @@ export default function OrdersPage() {
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={13}
+                      colSpan={14}
                       className="px-2 py-8 text-center text-gray-500"
                     >
                       Yükleniyor...
@@ -908,7 +930,7 @@ export default function OrdersPage() {
                 ) : filteredOrders.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={13}
+                      colSpan={14}
                       className="px-2 py-8 text-center text-gray-500"
                     >
                       Sipariş bulunamadı
@@ -1027,6 +1049,39 @@ export default function OrdersPage() {
                               </div>
                             )}
                           </td>
+                          <td className="px-2 py-2">
+  {idx === 0 && (
+    <div className="flex flex-col gap-1">
+      {/* Coupon */}
+      {order.orderHeader.couponDiscount && order.orderHeader.couponDiscount > 0 ? (
+        <div className="flex items-center gap-1">
+          <span className="inline-flex items-center px-1.5 py-0.5 bg-green-100 text-green-800 rounded text-xs font-medium">
+            🎟️ -{order.orderHeader.couponDiscount.toFixed(0)} TL
+          </span>
+        </div>
+      ) : null}
+      
+      {/* Free Shipping */}
+      {order.orderHeader.freeShippingApplied ? (
+        <div className="flex items-center gap-1">
+          <span className="inline-flex items-center px-1.5 py-0.5 bg-teal-100 text-teal-800 rounded text-xs font-medium">
+            🚚 Ücretsiz
+          </span>
+          {order.orderHeader.originalDeliveryPrice ? (
+            <span className="text-gray-400 line-through text-xs">
+              {order.orderHeader.originalDeliveryPrice.toFixed(0)} TL
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      
+      {/* No discount */}
+      {!order.orderHeader.couponDiscount && !order.orderHeader.freeShippingApplied && (
+        <span className="text-gray-400 text-xs">-</span>
+      )}
+    </div>
+  )}
+</td>
                           <td className="px-2 py-2 text-right">
                             <div className="flex flex-col items-end">
                               <span className="text-purple-900 font-medium">
