@@ -247,27 +247,37 @@ export default function OrdersPage() {
 
           const items: OrderItem[] = itemsSnapshot.docs.map((itemDoc) => {
             const itemData = itemDoc.data();
-
-            // calculatedTotal is inside selectedAttributes map
+          
+            // Get price from root level, fallback to selectedAttributes for legacy data
+            const unitPrice = 
+              itemData.price || 
+              itemData.selectedAttributes?.calculatedUnitPrice || 
+              0;
+            
+            const quantity = itemData.quantity || 1;
+            
+            // Calculate total: try selectedAttributes first (legacy), then compute from price * quantity
             const calculatedTotal =
-              itemData.selectedAttributes?.calculatedTotal || 0;
-            const calculatedUnitPrice =
-              itemData.selectedAttributes?.calculatedUnitPrice || 0;
-
+              itemData.selectedAttributes?.calculatedTotal || 
+              (unitPrice * quantity);
+            
+            const calculatedUnitPrice = unitPrice;
+          
             console.log("Raw item data from Firestore:", {
               docId: itemDoc.id,
+              price: itemData.price,
+              quantity: quantity,
               calculatedTotal,
               calculatedUnitPrice,
               ourComission: itemData.ourComission,
-              price: itemData.price,
               selectedAttributes: itemData.selectedAttributes,
             });
-
+          
             return {
               id: itemDoc.id,
               ...itemData,
-              calculatedTotal, // Extract from selectedAttributes
-              calculatedUnitPrice, // Extract from selectedAttributes
+              calculatedTotal,
+              calculatedUnitPrice,
             } as OrderItem;
           });
 
@@ -374,43 +384,49 @@ export default function OrdersPage() {
     let totalRevenue = 0;
     let totalCommission = 0;
     let totalDelivery = 0;
-    let totalCouponDiscounts = 0; // ✅ ADD
+    let totalCouponDiscounts = 0;
     let freeShippingCount = 0;
     const totalOrders = filteredOrders.length;
-
+  
     filteredOrders.forEach((order) => {
-      const orderTotalPrice = order.orderHeader.totalPrice || 0;
       const orderDeliveryPrice = order.orderHeader.deliveryPrice || 0;
       const couponDiscount = order.orderHeader.couponDiscount || 0;
-
-      // FIXED: Total revenue includes delivery
-      const orderRevenue = orderTotalPrice + orderDeliveryPrice;
-      totalRevenue += orderRevenue;
+  
       totalDelivery += orderDeliveryPrice;
       totalCouponDiscounts += couponDiscount;
+      
       if (order.orderHeader.freeShippingApplied) {
         freeShippingCount++;
       }
+  
       order.items.forEach((item) => {
-        const itemTotal = item.calculatedTotal || 0;
+        // ✅ FIXED: Get item total correctly
+        const itemTotal = 
+          item.calculatedTotal || 
+          (item.selectedAttributes as any)?.calculatedTotal ||
+          ((item.price || 0) * (item.quantity || 1));
+        
         const commissionRate = item.ourComission || 0;
-
-        // FIXED: Commission calculation
         const commission = (itemTotal * commissionRate) / 100;
+        
+        totalRevenue += itemTotal;
         totalCommission += commission;
       });
     });
-
-    // FIXED: Net profit calculation
-    const totalProfit = totalCommission + totalDelivery;
-
+  
+    // Add delivery to total revenue
+    totalRevenue += totalDelivery;
+  
+    // ✅ FIXED: Net profit = commission + delivery - coupon discounts
+    const totalProfit = totalCommission + totalDelivery - totalCouponDiscounts;
+  
     return {
       totalRevenue,
       totalCommission,
       totalDelivery,
       totalProfit,
       totalOrders,
-      totalCouponDiscounts, // ✅ ADD
+      totalCouponDiscounts,
       freeShippingCount,
     };
   }, [filteredOrders]);
@@ -546,19 +562,22 @@ export default function OrdersPage() {
       // Data rows
       allOrders.forEach((order) => {
         order.items.forEach((item, idx) => {
-          const itemTotal = item.calculatedTotal || 0;
+          // ✅ FIXED: Get item total from price * quantity if calculatedTotal is missing
+          const itemTotal = 
+            item.calculatedTotal || 
+            (item.selectedAttributes as any)?.calculatedTotal ||
+            ((item.price || 0) * (item.quantity || 1));
+          
           const commissionRate = item.ourComission || 0;
-          const deliveryPrice =
-            idx === 0 ? order.orderHeader.deliveryPrice || 0 : 0;
-
-            const couponDiscount = idx === 0 ? order.orderHeader.couponDiscount || 0 : 0;
-            const freeShippingApplied = idx === 0 && order.orderHeader.freeShippingApplied ? "Evet" : "";
-
-          // FIXED calculations
+          const deliveryPrice = idx === 0 ? order.orderHeader.deliveryPrice || 0 : 0;
+          const couponDiscount = idx === 0 ? order.orderHeader.couponDiscount || 0 : 0;
+          const freeShippingApplied = idx === 0 && order.orderHeader.freeShippingApplied ? "Evet" : "";
+      
+          // ✅ FIXED calculations
           const commission = (itemTotal * commissionRate) / 100;
           const totalWithDelivery = itemTotal + deliveryPrice;
           const sellerEarnings = itemTotal - commission;
-          const ourProfit = commission + deliveryPrice;
+          const ourProfit = commission + deliveryPrice - couponDiscount;
 
           csvRows.push(
             [
@@ -940,29 +959,34 @@ export default function OrdersPage() {
                   filteredOrders.map((order) =>
                     order.items.map((item, idx) => {
                       // Get values from the item data
-                      const itemTotal = Number(item.calculatedTotal) || 0;
+                      const itemTotal = Number(item.calculatedTotal) || Number(item.price) * Number(item.quantity || 1) || 0;
                       const commissionRate = Number(item.ourComission) || 0;
-                      const deliveryPrice =
-                        idx === 0
-                          ? Number(order.orderHeader.deliveryPrice) || 0
-                          : 0;
-
+                      const deliveryPrice = idx === 0 ? Number(order.orderHeader.deliveryPrice) || 0 : 0;
+                      
+                      // ✅ NEW: Get coupon discount (only for first item row)
+                      const couponDiscount = idx === 0 ? Number(order.orderHeader.couponDiscount) || 0 : 0;
+                  
                       // Debug log for first item
                       if (idx === 0) {
                         console.log("Order Item Debug:", {
                           orderId: order.orderHeader.id,
+                          itemPrice: item.price,
+                          itemQuantity: item.quantity,
                           itemTotal,
                           commissionRate,
                           deliveryPrice,
+                          couponDiscount,
                           rawItem: item,
                         });
                       }
-
-                      // FIXED: Correct calculations
+                  
+                      // ✅ FIXED: Correct calculations
                       const commission = (itemTotal * commissionRate) / 100;
                       const totalWithDelivery = itemTotal + deliveryPrice;
                       const sellerEarnings = itemTotal - commission;
-                      const ourProfit = commission + deliveryPrice;
+                      
+                      // ✅ FIXED: Nar24 profit = commission + delivery - coupon discount
+                      const ourProfit = commission + deliveryPrice - couponDiscount;
 
                       return (
                         <tr
