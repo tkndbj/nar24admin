@@ -327,11 +327,12 @@ export default function OrdersPage() {
     if (!isAuthenticated) {
       return;
     }
-
+  
     setCurrentPage(1);
     setLastVisible(null);
     setFirstVisible(null);
     fetchOrders("initial");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appliedFilters, isAuthenticated]);
 
   // Client-side search filter (for current page only)
@@ -402,9 +403,9 @@ export default function OrdersPage() {
       order.items.forEach((item) => {
         // ✅ FIXED: Get item total correctly
         const itemTotal = 
-          item.calculatedTotal || 
-          (item.selectedAttributes as any)?.calculatedTotal ||
-          ((item.price || 0) * (item.quantity || 1));
+        item.calculatedTotal || 
+        (item.selectedAttributes as Record<string, unknown>)?.calculatedTotal as number ||
+        ((item.price || 0) * (item.quantity || 1));
         
         const commissionRate = item.ourComission || 0;
         const commission = (itemTotal * commissionRate) / 100;
@@ -564,9 +565,9 @@ export default function OrdersPage() {
         order.items.forEach((item, idx) => {
           // ✅ FIXED: Get item total from price * quantity if calculatedTotal is missing
           const itemTotal = 
-            item.calculatedTotal || 
-            (item.selectedAttributes as any)?.calculatedTotal ||
-            ((item.price || 0) * (item.quantity || 1));
+          item.calculatedTotal || 
+          (item.selectedAttributes as Record<string, unknown>)?.calculatedTotal as number ||
+          ((item.price || 0) * (item.quantity || 1));
           
           const commissionRate = item.ourComission || 0;
           const deliveryPrice = idx === 0 ? order.orderHeader.deliveryPrice || 0 : 0;
