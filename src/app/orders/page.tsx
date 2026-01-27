@@ -28,6 +28,7 @@ import {
   DollarSign,
   TrendingUp,
   Calendar,
+  ArrowLeft,
 } from "lucide-react";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { Pause, Play } from "lucide-react";
@@ -82,6 +83,11 @@ interface OrderHeader {
   couponDiscount?: number;
   freeShippingApplied?: boolean;
   originalDeliveryPrice?: number;
+  distributionStatus?: string;
+  distributedByName?: string;
+  allItemsGathered?: boolean;
+  gatheringStatus?: string;
+  gatheredByName?: string;
 }
 
 interface CombinedOrder {
@@ -702,12 +708,17 @@ export default function OrdersPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-[1800px] mx-auto">
+      <div className="w-full">
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">           
-
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => window.history.back()}
+                className="flex items-center justify-center w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                <ArrowLeft className="w-5 h-5 text-gray-600" />
+              </button>
               <div className="flex items-center justify-center w-10 h-10 bg-blue-600 rounded-lg">
                 <Package className="w-6 h-6 text-white" />
               </div>
@@ -935,13 +946,16 @@ export default function OrdersPage() {
                   <th className="px-2 py-2 text-right font-semibold text-gray-900">
                     Nar24 Kazanç
                   </th>
+                  <th className="px-2 py-2 text-left font-semibold text-gray-900">
+                    Teslimat Durumu
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={14}
+                      colSpan={15}
                       className="px-2 py-8 text-center text-gray-500"
                     >
                       Yükleniyor...
@@ -950,7 +964,7 @@ export default function OrdersPage() {
                 ) : filteredOrders.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={14}
+                      colSpan={15}
                       className="px-2 py-8 text-center text-gray-500"
                     >
                       Sipariş bulunamadı
@@ -989,10 +1003,20 @@ export default function OrdersPage() {
                       // ✅ FIXED: Nar24 profit = commission + delivery - coupon discount
                       const ourProfit = commission + deliveryPrice - couponDiscount;
 
+                      // Determine row background color based on delivery status
+                      const isDelivered = order.orderHeader.distributionStatus === "delivered";
+                      const isPending = !order.orderHeader.distributionStatus && !order.orderHeader.gatheringStatus && !order.orderHeader.allItemsGathered;
+
+                      const rowBgClass = isDelivered
+                        ? "bg-green-50 hover:bg-green-100"
+                        : isPending
+                          ? "bg-yellow-50 hover:bg-yellow-100"
+                          : "hover:bg-gray-50";
+
                       return (
                         <tr
                           key={`${order.orderHeader.id}-${item.id}`}
-                          className="hover:bg-gray-50"
+                          className={rowBgClass}
                         >
                           <td className="px-2 py-2 text-gray-600 whitespace-nowrap">
                             {idx === 0
@@ -1131,6 +1155,47 @@ export default function OrdersPage() {
                             <span className="text-pink-900 font-bold">
                               {ourProfit.toFixed(2)} TL
                             </span>
+                          </td>
+                          <td className="px-2 py-2">
+                            {idx === 0 && (
+                              <div className="flex flex-col gap-1">
+                                {order.orderHeader.distributionStatus === "delivered" ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                    Teslim Edildi
+                                  </span>
+                                ) : order.orderHeader.distributionStatus === "assigned" || order.orderHeader.distributionStatus === "in_progress" || order.orderHeader.distributionStatus === "distributed" ? (
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="inline-flex items-center px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                                      Dağıtımda
+                                    </span>
+                                    {order.orderHeader.distributedByName && (
+                                      <span className="text-xs text-gray-600 truncate max-w-[100px]">
+                                        {order.orderHeader.distributedByName}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : order.orderHeader.allItemsGathered || order.orderHeader.gatheringStatus === "at_warehouse" ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">
+                                    Depoda
+                                  </span>
+                                ) : order.orderHeader.gatheringStatus === "assigned" ? (
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="inline-flex items-center px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">
+                                      Toplanıyor
+                                    </span>
+                                    {order.orderHeader.gatheredByName && (
+                                      <span className="text-xs text-gray-600 truncate max-w-[100px]">
+                                        {order.orderHeader.gatheredByName}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="inline-flex items-center px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
+                                    Bekliyor
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       );
