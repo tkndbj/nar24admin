@@ -31,8 +31,9 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
-import { Pause, Play } from "lucide-react";
+import { Pause, Play, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { searchOrders, AlgoliaOrderHit } from "@/app/lib/algolia/searchService";
 
 interface OrderItem {
   id: string;
@@ -119,6 +120,13 @@ export default function OrdersPage() {
   const [loadingSalesConfig, setLoadingSalesConfig] = useState(true);
   const [togglingPause, setTogglingPause] = useState(false);
   const [showPauseModal, setShowPauseModal] = useState(false);
+
+  // Algolia search state
+  const [searchInput, setSearchInput] = useState("");
+  const [algoliaResults, setAlgoliaResults] = useState<AlgoliaOrderHit[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [isSearchMode, setIsSearchMode] = useState(false);
 
   // Server-side filters
   const [filters, setFilters] = useState<Filters>({
@@ -442,6 +450,52 @@ export default function OrdersPage() {
     setAppliedFilters({ ...filters });
   };
 
+  // Algolia search handler - only called on Enter or button click
+  const handleSearch = async () => {
+    const query = searchInput.trim();
+
+    if (!query) {
+      // Clear search and return to normal view
+      setAlgoliaResults([]);
+      setIsSearchMode(false);
+      setSearchError(null);
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchError(null);
+    setIsSearchMode(true);
+
+    try {
+      const result = await searchOrders(query, {
+        hitsPerPage: 100,
+      });
+      setAlgoliaResults(result.hits);
+    } catch (error) {
+      console.error("Search error:", error);
+      setSearchError("Arama sırasında bir hata oluştu. Lütfen tekrar deneyin.");
+      setAlgoliaResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Handle Enter key press in search input
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSearch();
+    }
+  };
+
+  // Clear search and return to normal view
+  const handleClearSearch = () => {
+    setSearchInput("");
+    setAlgoliaResults([]);
+    setIsSearchMode(false);
+    setSearchError(null);
+  };
+
   const handleNextPage = () => {
     if (hasMore) {
       setCurrentPage((prev) => prev + 1);
@@ -706,6 +760,40 @@ export default function OrdersPage() {
     return labels[option] || option;
   };
 
+  // Format Algolia timestamp
+  const formatAlgoliaTimestamp = (timestamp: { _seconds: number; _nanoseconds: number } | null) => {
+    if (!timestamp) return "—";
+    const date = new Date(timestamp._seconds * 1000);
+    return date.toLocaleDateString("tr-TR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  // Get delivery status badge for Algolia results
+  const getAlgoliaDeliveryStatus = (hit: AlgoliaOrderHit) => {
+    const distributionStatus = hit.distributionStatus as string | undefined;
+    const gatheringStatus = hit.gatheringStatus;
+    const allItemsGathered = hit.allItemsGathered as boolean | undefined;
+
+    if (distributionStatus === "delivered") {
+      return { label: "Teslim Edildi", className: "bg-green-100 text-green-700" };
+    }
+    if (distributionStatus === "assigned" || distributionStatus === "in_progress" || distributionStatus === "distributed") {
+      return { label: "Dağıtımda", className: "bg-blue-100 text-blue-700" };
+    }
+    if (allItemsGathered || gatheringStatus === "at_warehouse") {
+      return { label: "Depoda", className: "bg-purple-100 text-purple-700" };
+    }
+    if (gatheringStatus === "assigned") {
+      return { label: "Toplanıyor", className: "bg-orange-100 text-orange-700" };
+    }
+    return { label: "Bekliyor", className: "bg-gray-100 text-gray-600" };
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="w-full">
@@ -825,21 +913,53 @@ export default function OrdersPage() {
             </div>
           </div>
 
-          {/* Filters */}
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                value={filters.searchTerm}
-                onChange={(e) =>
-                  setFilters({ ...filters, searchTerm: e.target.value })
-                }
-                placeholder="Ara (alıcı, satıcı, ürün)"
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+          {/* Algolia Search Bar */}
+          <div className="mb-4">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Ara (alıcı, satıcı, ürün) - Enter ile ara"
+                  className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                {searchInput && (
+                  <button
+                    onClick={handleClearSearch}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={handleSearch}
+                disabled={isSearching}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {isSearching ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Search className="w-4 h-4" />
+                )}
+                Ara
+              </button>
+              {isSearchMode && (
+                <span className="text-sm text-gray-600">
+                  {algoliaResults.length} sonuç bulundu
+                </span>
+              )}
             </div>
+            {searchError && (
+              <p className="mt-2 text-sm text-red-600">{searchError}</p>
+            )}
+          </div>
 
+          {/* Filters */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             <select
               value={filters.deliveryOption}
               onChange={(e) =>
@@ -898,8 +1018,133 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        {/* Orders Table */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        {/* Search Results or Orders Table */}
+        {isSearchMode ? (
+          /* Algolia Search Results */
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-blue-50 border-b border-blue-200 px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Search className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-medium text-blue-900">
+                  Arama Sonuçları: &quot;{searchInput}&quot;
+                </span>
+              </div>
+              <button
+                onClick={handleClearSearch}
+                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+              >
+                Aramayı Temizle
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-900">Tarih</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-900">Sipariş ID</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-900">Ürün</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-900">Alıcı</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-900">Satıcı</th>
+                    <th className="px-3 py-2 text-center font-semibold text-gray-900">Adet</th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-900">Fiyat</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-900">Kategori</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-900">Teslimat Durumu</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {isSearching ? (
+                    <tr>
+                      <td colSpan={9} className="px-3 py-8 text-center text-gray-500">
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                          Aranıyor...
+                        </div>
+                      </td>
+                    </tr>
+                  ) : algoliaResults.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="px-3 py-8 text-center text-gray-500">
+                        Sonuç bulunamadı
+                      </td>
+                    </tr>
+                  ) : (
+                    algoliaResults.map((hit) => {
+                      const deliveryStatus = getAlgoliaDeliveryStatus(hit);
+                      const isDelivered = (hit.distributionStatus as string) === "delivered";
+                      const isPending = !hit.distributionStatus && !hit.gatheringStatus && !hit.allItemsGathered;
+                      const rowBgClass = isDelivered
+                        ? "bg-green-50 hover:bg-green-100"
+                        : isPending
+                          ? "bg-yellow-50 hover:bg-yellow-100"
+                          : "hover:bg-gray-50";
+
+                      return (
+                        <tr key={hit.objectID} className={rowBgClass}>
+                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                            {formatAlgoliaTimestamp(hit.timestamp)}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="text-gray-500 font-mono text-xs">
+                              #{hit.orderId.slice(0, 8)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-col">
+                              <span className="text-gray-900 font-medium truncate max-w-[200px]">
+                                {hit.productName}
+                              </span>
+                              {hit.brandModel && (
+                                <span className="text-gray-500 text-xs">{hit.brandModel}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center gap-1">
+                              <User className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                              <span className="text-gray-900 font-medium truncate max-w-[120px]">
+                                {hit.buyerName}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center gap-1">
+                              <Store className="w-3 h-3 text-purple-600 flex-shrink-0" />
+                              <span className="text-gray-900 font-medium truncate max-w-[120px]">
+                                {hit.sellerName}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <span className="inline-flex items-center justify-center px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full font-medium">
+                              {hit.quantity}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <span className="text-gray-900 font-medium">
+                              {hit.price} {(hit.currency as string) || "TL"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="text-gray-600 truncate max-w-[100px] block">
+                              {hit.category || "—"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${deliveryStatus.className}`}>
+                              {deliveryStatus.label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          /* Regular Orders Table */
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 border-b border-gray-200">
@@ -1231,6 +1476,7 @@ export default function OrdersPage() {
             </div>
           </div>
         </div>
+        )}
       </div>
       {/* Pause Sales Modal */}
 {showPauseModal && (
