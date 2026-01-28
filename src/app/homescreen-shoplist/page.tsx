@@ -2,15 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
-  collection,
   doc,
   getDoc,
   setDoc,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  limit,
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -36,7 +30,6 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   Search,
   Store,
-  Plus,
   X,
   GripVertical,
   Save,
@@ -45,8 +38,15 @@ import {
   AlertCircle,
   Star,
   Loader2,
+  MapPin,
+  ArrowLeft,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
+import {
+  searchShops,
+  type AlgoliaShopHit,
+} from "../lib/algolia/dashboardSearchService";
 
 // ============================================================================
 // TYPES
@@ -59,7 +59,7 @@ interface Shop {
   coverImageUrl?: string;
   averageRating?: number;
   isActive?: boolean;
-  createdAt?: Date;
+  city?: string;
 }
 
 interface FeaturedShopsConfig {
@@ -81,9 +81,6 @@ const FIRESTORE_CONFIG_COLLECTION = "app_config";
 // HOOKS
 // ============================================================================
 
-/**
- * Debounce hook for search input
- */
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
 
@@ -95,13 +92,19 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
+// Helper to extract Firestore doc ID from Algolia objectID
+function extractFirestoreId(objectID: string, collectionName: string): string {
+  const prefix = `${collectionName}_`;
+  if (objectID.startsWith(prefix)) {
+    return objectID.substring(prefix.length);
+  }
+  return objectID;
+}
+
 // ============================================================================
 // COMPONENTS
 // ============================================================================
 
-/**
- * Sortable shop card for the selected list
- */
 function SortableShopCard({
   shop,
   index,
@@ -135,7 +138,6 @@ function SortableShopCard({
           : "border-gray-200 hover:border-gray-300"
       }`}
     >
-      {/* Drag Handle */}
       <div
         {...attributes}
         {...listeners}
@@ -144,12 +146,10 @@ function SortableShopCard({
         <GripVertical className="w-4 h-4 text-gray-400" />
       </div>
 
-      {/* Position Badge */}
       <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
         {index + 1}
       </span>
 
-      {/* Shop Image */}
       <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 relative">
         {shop.profileImageUrl || shop.coverImageUrl ? (
           <Image
@@ -166,73 +166,6 @@ function SortableShopCard({
         )}
       </div>
 
-      {/* Shop Info */}
-      <div className="flex-1 min-w-0">
-        <h4 className="text-sm font-medium text-gray-900 truncate">
-          {shop.name}
-        </h4>
-        {shop.averageRating !== undefined && shop.averageRating > 0 && (
-          <div className="flex items-center gap-1 mt-0.5">
-            <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
-            <span className="text-xs text-gray-500">
-              {shop.averageRating.toFixed(1)}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Remove Button */}
-      <button
-        onClick={() => onRemove(shop.id)}
-        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-        title="Remove from featured"
-      >
-        <X className="w-4 h-4" />
-      </button>
-    </div>
-  );
-}
-
-/**
- * Search result shop card
- */
-function SearchResultCard({
-  shop,
-  isSelected,
-  onAdd,
-  disabled,
-}: {
-  shop: Shop;
-  isSelected: boolean;
-  onAdd: (shop: Shop) => void;
-  disabled: boolean;
-}) {
-  return (
-    <div
-      className={`flex items-center gap-3 p-3 border rounded-lg transition-all ${
-        isSelected
-          ? "bg-green-50 border-green-200"
-          : "bg-white border-gray-200 hover:border-gray-300"
-      }`}
-    >
-      {/* Shop Image */}
-      <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 relative">
-        {shop.profileImageUrl || shop.coverImageUrl ? (
-          <Image
-            src={shop.profileImageUrl || shop.coverImageUrl || ""}
-            alt={shop.name}
-            fill
-            className="object-cover"
-            unoptimized
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <Store className="w-5 h-5 text-gray-400" />
-          </div>
-        )}
-      </div>
-
-      {/* Shop Info */}
       <div className="flex-1 min-w-0">
         <h4 className="text-sm font-medium text-gray-900 truncate">
           {shop.name}
@@ -246,31 +179,90 @@ function SearchResultCard({
               </span>
             </div>
           )}
-          {shop.isActive === false && (
-            <span className="text-xs text-red-500 bg-red-50 px-1.5 py-0.5 rounded">
-              Inactive
-            </span>
+          {shop.city && (
+            <div className="flex items-center gap-1 text-gray-400">
+              <MapPin className="w-3 h-3" />
+              <span className="text-xs">{shop.city}</span>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Add/Selected Button */}
+      <button
+        onClick={() => onRemove(shop.id)}
+        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+        title="Remove from featured"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
+// Search Dropdown Item
+function SearchDropdownItem({
+  shop,
+  isSelected,
+  onSelect,
+}: {
+  shop: Shop;
+  isSelected: boolean;
+  onSelect: (shop: Shop) => void;
+}) {
+  return (
+    <button
+      onClick={() => !isSelected && onSelect(shop)}
+      disabled={isSelected}
+      className={`w-full flex items-center gap-3 p-3 text-left transition-all ${
+        isSelected
+          ? "bg-green-50 cursor-not-allowed"
+          : "hover:bg-blue-50 cursor-pointer"
+      }`}
+    >
+      <div className="w-9 h-9 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 relative">
+        {shop.profileImageUrl || shop.coverImageUrl ? (
+          <Image
+            src={shop.profileImageUrl || shop.coverImageUrl || ""}
+            alt={shop.name}
+            fill
+            className="object-cover"
+            unoptimized
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Store className="w-4 h-4 text-gray-400" />
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <h4 className="text-sm font-medium text-gray-900 truncate">
+          {shop.name}
+        </h4>
+        <div className="flex items-center gap-2 mt-0.5">
+          {shop.averageRating !== undefined && shop.averageRating > 0 && (
+            <div className="flex items-center gap-1">
+              <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
+              <span className="text-xs text-gray-500">
+                {shop.averageRating.toFixed(1)}
+              </span>
+            </div>
+          )}
+          {shop.city && (
+            <span className="text-xs text-gray-400">{shop.city}</span>
+          )}
+        </div>
+      </div>
+
       {isSelected ? (
-        <span className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-lg">
-          <CheckCircle className="w-3.5 h-3.5" />
-          Selected
+        <span className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded">
+          <CheckCircle className="w-3 h-3" />
+          Added
         </span>
       ) : (
-        <button
-          onClick={() => onAdd(shop)}
-          disabled={disabled}
-          className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:bg-gray-100 disabled:text-gray-400 text-xs font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Add
-        </button>
+        <span className="text-xs text-blue-600 font-medium">+ Add</span>
       )}
-    </div>
+    </button>
   );
 }
 
@@ -280,6 +272,7 @@ function SearchResultCard({
 
 export default function HomescreenShopListPage() {
   const { user } = useAuth();
+  const router = useRouter();
 
   // Selected shops state
   const [selectedShops, setSelectedShops] = useState<Shop[]>([]);
@@ -289,6 +282,7 @@ export default function HomescreenShopListPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Shop[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
 
   // UI state
   const [isLoading, setIsLoading] = useState(true);
@@ -298,6 +292,8 @@ export default function HomescreenShopListPage() {
   // Refs
   const isMountedRef = useRef(true);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Debounced search query
   const debouncedSearchQuery = useDebounce(searchQuery, SEARCH_DEBOUNCE_MS);
@@ -315,6 +311,21 @@ export default function HomescreenShopListPage() {
     return currentIds.some((id, index) => id !== originalShopIds[index]);
   }, [selectedShops, originalShopIds]);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(event.target as Node)
+      ) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   // ========================================================================
   // LOAD FEATURED SHOPS CONFIG
   // ========================================================================
@@ -326,7 +337,6 @@ export default function HomescreenShopListPage() {
       try {
         setIsLoading(true);
 
-        // Get config document
         const configRef = doc(db, FIRESTORE_CONFIG_COLLECTION, FIRESTORE_CONFIG_DOC);
         const configSnap = await getDoc(configRef);
 
@@ -361,6 +371,7 @@ export default function HomescreenShopListPage() {
                 coverImageUrl: data.coverImageUrl || data.coverImageUrls?.[0],
                 averageRating: data.averageRating,
                 isActive: data.isActive,
+                city: data.location?.city,
               } as Shop;
             }
             return null;
@@ -398,89 +409,44 @@ export default function HomescreenShopListPage() {
   }, []);
 
   // ========================================================================
-  // SEARCH SHOPS
+  // SEARCH SHOPS WITH ALGOLIA
   // ========================================================================
 
   useEffect(() => {
-    const searchShops = async () => {
+    const performSearch = async () => {
       if (!debouncedSearchQuery.trim()) {
         setSearchResults([]);
+        setShowDropdown(false);
         return;
       }
 
       setIsSearching(true);
 
       try {
-        // Search by name prefix (case-sensitive limitation of Firestore)
-        // For production, consider Algolia or Elasticsearch
-        const searchLower = debouncedSearchQuery.toLowerCase();
-        const searchUpper = searchLower + "\uf8ff";
+        const result = await searchShops(debouncedSearchQuery, {
+          hitsPerPage: 15,
+        });
 
-        const shopsQuery = query(
-          collection(db, "shops"),
-          where("nameLowercase", ">=", searchLower),
-          where("nameLowercase", "<=", searchUpper),
-          orderBy("nameLowercase"),
-          limit(20)
-        );
-
-        const snapshot = await getDocs(shopsQuery);
-        
-        const shops: Shop[] = snapshot.docs.map((doc) => {
-          const data = doc.data();
+        const shops: Shop[] = result.hits.map((hit: AlgoliaShopHit) => {
+          const firestoreId = extractFirestoreId(hit.objectID, "shops");
           return {
-            id: doc.id,
-            name: data.name || "Unknown Shop",
-            profileImageUrl: data.profileImageUrl,
-            coverImageUrl: data.coverImageUrl || data.coverImageUrls?.[0],
-            averageRating: data.averageRating,
-            isActive: data.isActive,
+            id: firestoreId,
+            name: hit.shopName || hit.name || "Unknown Shop",
+            profileImageUrl: undefined,
+            coverImageUrl: undefined,
+            averageRating: hit.rating,
+            isActive: hit.status === "active",
+            city: hit.location?.city,
           };
         });
 
         if (isMountedRef.current) {
           setSearchResults(shops);
+          setShowDropdown(true);
         }
       } catch (error) {
-        console.error("Error searching shops:", error);
-        
-        // Fallback: try searching without lowercase field
-        try {
-          const fallbackQuery = query(
-            collection(db, "shops"),
-            where("isActive", "==", true),
-            orderBy("name"),
-            limit(50)
-          );
-          
-          const snapshot = await getDocs(fallbackQuery);
-          const searchLower = debouncedSearchQuery.toLowerCase();
-          
-          const shops: Shop[] = snapshot.docs
-            .filter((doc) => {
-              const name = doc.data().name?.toLowerCase() || "";
-              return name.includes(searchLower);
-            })
-            .slice(0, 20)
-            .map((doc) => {
-              const data = doc.data();
-              return {
-                id: doc.id,
-                name: data.name || "Unknown Shop",
-                profileImageUrl: data.profileImageUrl,
-                coverImageUrl: data.coverImageUrl || data.coverImageUrls?.[0],
-                averageRating: data.averageRating,
-                isActive: data.isActive,
-              };
-            });
-
-          if (isMountedRef.current) {
-            setSearchResults(shops);
-          }
-        } catch (fallbackError) {
-          console.error("Fallback search failed:", fallbackError);
-          setSearchResults([]);
-        }
+        console.error("Algolia search error:", error);
+        setSearchResults([]);
       } finally {
         if (isMountedRef.current) {
           setIsSearching(false);
@@ -488,7 +454,7 @@ export default function HomescreenShopListPage() {
       }
     };
 
-    searchShops();
+    performSearch();
   }, [debouncedSearchQuery]);
 
   // ========================================================================
@@ -501,6 +467,7 @@ export default function HomescreenShopListPage() {
       if (prev.some((s) => s.id === shop.id)) return prev;
       return [...prev, shop];
     });
+    // Keep dropdown open so user can add more
   }, []);
 
   const handleRemoveShop = useCallback((shopId: string) => {
@@ -565,12 +532,24 @@ export default function HomescreenShopListPage() {
   }, [user, isSaving, selectedShops]);
 
   const handleReset = useCallback(() => {
-    // Reload from original
     setSelectedShops([]);
     setSearchQuery("");
     setSearchResults([]);
-    // Re-trigger load
+    setShowDropdown(false);
     window.location.reload();
+  }, []);
+
+  const handleInputFocus = useCallback(() => {
+    if (searchResults.length > 0) {
+      setShowDropdown(true);
+    }
+  }, [searchResults.length]);
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery("");
+    setSearchResults([]);
+    setShowDropdown(false);
+    inputRef.current?.focus();
   }, []);
 
   // ========================================================================
@@ -601,6 +580,13 @@ export default function HomescreenShopListPage() {
           <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <div className="flex justify-between items-center py-3">
               <div className="flex items-center gap-2.5">
+                <button
+                  onClick={() => router.push("/dashboard")}
+                  className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Back to Dashboard"
+                >
+                  <ArrowLeft className="w-5 h-5 text-gray-600" />
+                </button>
                 <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-br from-purple-600 to-pink-600 rounded-lg shadow">
                   <Store className="w-4 h-4 text-white" />
                 </div>
@@ -615,14 +601,12 @@ export default function HomescreenShopListPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                {/* Unsaved Changes Indicator */}
                 {hasChanges && (
                   <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-md">
                     Unsaved changes
                   </span>
                 )}
 
-                {/* Save Status */}
                 {saveStatus === "success" && (
                   <div className="flex items-center gap-1.5 text-green-600 bg-green-50 px-2 py-1 rounded-md">
                     <CheckCircle className="w-3.5 h-3.5" />
@@ -637,7 +621,6 @@ export default function HomescreenShopListPage() {
                   </div>
                 )}
 
-                {/* Reset Button */}
                 <button
                   onClick={handleReset}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors"
@@ -646,7 +629,6 @@ export default function HomescreenShopListPage() {
                   Reset
                 </button>
 
-                {/* Save Button */}
                 <button
                   onClick={handleSave}
                   disabled={isSaving || !hasChanges}
@@ -677,70 +659,100 @@ export default function HomescreenShopListPage() {
                   <h2 className="text-sm font-semibold text-gray-900">
                     Search Shops
                   </h2>
+                  <span className="text-xs text-gray-400 ml-auto">
+                    Powered by Algolia
+                  </span>
                 </div>
 
-                {/* Search Input */}
-                <div className="relative mb-4">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search by shop name..."
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                  {isSearching && (
-                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" />
+                {/* Search Input with Dropdown */}
+                <div ref={searchContainerRef} className="relative">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onFocus={handleInputFocus}
+                      placeholder="Type shop name to search..."
+                      className="w-full pl-10 pr-10 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    {isSearching ? (
+                      <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-500 animate-spin" />
+                    ) : searchQuery && (
+                      <button
+                        onClick={handleClearSearch}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Dropdown Results */}
+                  {showDropdown && searchQuery.trim() && (
+                    <div className="absolute z-40 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-[400px] overflow-y-auto">
+                      {isSearching ? (
+                        <div className="flex items-center justify-center py-8">
+                          <Loader2 className="w-5 h-5 animate-spin text-blue-500 mr-2" />
+                          <span className="text-sm text-gray-500">Searching...</span>
+                        </div>
+                      ) : searchResults.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-8 text-gray-400">
+                          <Store className="w-8 h-8 mb-2 opacity-50" />
+                          <p className="text-sm">No shops found for &quot;{searchQuery}&quot;</p>
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-gray-100">
+                          {!canAddMore && (
+                            <div className="px-3 py-2 bg-amber-50 text-amber-700 text-xs font-medium">
+                              Maximum {MAX_FEATURED_SHOPS} shops reached. Remove a shop to add more.
+                            </div>
+                          )}
+                          {searchResults.map((shop) => (
+                            <SearchDropdownItem
+                              key={shop.id}
+                              shop={shop}
+                              isSelected={selectedShopIds.has(shop.id)}
+                              onSelect={canAddMore ? handleAddShop : () => {}}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 
                 {/* Capacity Indicator */}
-                <div className="flex items-center justify-between mb-3 px-1">
+                <div className="flex items-center justify-between mt-4 px-1">
                   <span className="text-xs text-gray-500">
                     {canAddMore
                       ? `${MAX_FEATURED_SHOPS - selectedShops.length} slots remaining`
                       : "Maximum reached"}
                   </span>
                   <span
-                    className={`text-xs font-medium ${
-                      canAddMore ? "text-green-600" : "text-amber-600"
+                    className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                      canAddMore
+                        ? "text-green-700 bg-green-100"
+                        : "text-amber-700 bg-amber-100"
                     }`}
                   >
                     {selectedShops.length}/{MAX_FEATURED_SHOPS}
                   </span>
                 </div>
 
-                {/* Search Results */}
-                <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                  {searchQuery.trim() === "" ? (
-                    <div className="text-center py-8 text-gray-400">
-                      <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">
-                        Enter a shop name to search
-                      </p>
-                    </div>
-                  ) : isSearching ? (
-                    <div className="text-center py-8">
-                      <Loader2 className="w-6 h-6 animate-spin text-blue-500 mx-auto mb-2" />
-                      <p className="text-sm text-gray-500">Searching...</p>
-                    </div>
-                  ) : searchResults.length === 0 ? (
-                    <div className="text-center py-8 text-gray-400">
-                      <Store className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">No shops found</p>
-                    </div>
-                  ) : (
-                    searchResults.map((shop) => (
-                      <SearchResultCard
-                        key={shop.id}
-                        shop={shop}
-                        isSelected={selectedShopIds.has(shop.id)}
-                        onAdd={handleAddShop}
-                        disabled={!canAddMore}
-                      />
-                    ))
-                  )}
-                </div>
+                {/* Empty State */}
+                {!searchQuery && (
+                  <div className="text-center py-8 mt-4 border-2 border-dashed border-gray-200 rounded-lg">
+                    <Search className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+                    <p className="text-sm text-gray-500 font-medium">
+                      Search for shops to add
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Type a shop name in the search box above
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -800,11 +812,11 @@ export default function HomescreenShopListPage() {
               {/* Info Card */}
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
                 <h3 className="text-sm font-semibold text-blue-900 mb-2">
-                  ℹ️ How it works
+                  How it works
                 </h3>
                 <ul className="text-xs text-blue-800 space-y-1">
-                  <li>• Search for shops by name in the left panel</li>
-                  <li>• Click &quot;Add&quot; to include a shop in featured list</li>
+                  <li>• Type shop name in the search box</li>
+                  <li>• Click on a shop from dropdown to add it</li>
                   <li>• Drag and drop to reorder the display sequence</li>
                   <li>• Click &quot;Save&quot; to publish changes to all apps</li>
                   <li>• Maximum {MAX_FEATURED_SHOPS} shops can be featured</li>
