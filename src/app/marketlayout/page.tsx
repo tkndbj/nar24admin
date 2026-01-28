@@ -36,18 +36,24 @@ import {
   CheckCircle,
   AlertCircle,
   AlertTriangle,
+  Monitor,
+  Layers,
 } from "lucide-react";
 import {
   doc,
-
   setDoc,
   onSnapshot,
   serverTimestamp,
-
+  getDoc,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 
-// Widget types based on Flutter code
+// ============================================================================
+// TYPES
+// ============================================================================
+
+type PlatformTarget = "both" | "flutter" | "web";
+
 interface MarketWidget {
   id: string;
   name: string;
@@ -65,6 +71,37 @@ interface MarketWidget {
   icon: React.ReactNode;
   description: string;
 }
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const FIRESTORE_DOCS = {
+  both: "market_layout",
+  flutter: "market_layout_flutter",
+  web: "market_layout_web",
+} as const;
+
+const PLATFORM_OPTIONS: { value: PlatformTarget; label: string; icon: React.ReactNode; description: string }[] = [
+  {
+    value: "both",
+    label: "Both Platforms",
+    icon: <Layers className="w-4 h-4" />,
+    description: "Changes apply to Flutter & Web",
+  },
+  {
+    value: "flutter",
+    label: "Flutter Only",
+    icon: <Smartphone className="w-4 h-4" />,
+    description: "Mobile app layout",
+  },
+  {
+    value: "web",
+    label: "Web Only",
+    icon: <Monitor className="w-4 h-4" />,
+    description: "Web app layout",
+  },
+];
 
 // Helper function to get icon by widget type
 const getIconByType = (type: string): React.ReactNode => {
@@ -157,6 +194,77 @@ const DEFAULT_WIDGETS: MarketWidget[] = [
   },
 ];
 
+// ============================================================================
+// COMPONENTS
+// ============================================================================
+
+// Platform Selector Component
+function PlatformSelector({
+  selected,
+  onChange,
+  disabled,
+}: {
+  selected: PlatformTarget;
+  onChange: (platform: PlatformTarget) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex gap-2">
+      {PLATFORM_OPTIONS.map((option) => (
+        <button
+          key={option.value}
+          onClick={() => onChange(option.value)}
+          disabled={disabled}
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+            selected === option.value
+              ? option.value === "both"
+                ? "bg-purple-50 border-purple-300 text-purple-700"
+                : option.value === "flutter"
+                ? "bg-blue-50 border-blue-300 text-blue-700"
+                : "bg-green-50 border-green-300 text-green-700"
+              : "bg-white border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+          } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+        >
+          <span
+            className={
+              selected === option.value
+                ? option.value === "both"
+                  ? "text-purple-600"
+                  : option.value === "flutter"
+                  ? "text-blue-600"
+                  : "text-green-600"
+                : "text-gray-400"
+            }
+          >
+            {option.icon}
+          </span>
+          <div className="text-left">
+            <div className="text-xs font-semibold">{option.label}</div>
+            <div className="text-[10px] opacity-70">{option.description}</div>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Platform Badge Component
+function PlatformBadge({ platform }: { platform: PlatformTarget }) {
+  const config = {
+    both: { bg: "bg-purple-100", text: "text-purple-700", label: "Both" },
+    flutter: { bg: "bg-blue-100", text: "text-blue-700", label: "Flutter" },
+    web: { bg: "bg-green-100", text: "text-green-700", label: "Web" },
+  };
+
+  const { bg, text, label } = config[platform];
+
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${bg} ${text}`}>
+      {label}
+    </span>
+  );
+}
+
 // Sortable item component
 function SortableWidget({
   widget,
@@ -184,7 +292,9 @@ function SortableWidget({
       ref={setNodeRef}
       style={style}
       className={`flex items-center gap-2 p-2.5 bg-gray-50 border border-gray-200 rounded-lg transition-all ${
-        isDragging ? "opacity-50 scale-[1.02] shadow-md bg-white" : "hover:bg-gray-100 hover:border-gray-300"
+        isDragging
+          ? "opacity-50 scale-[1.02] shadow-md bg-white"
+          : "hover:bg-gray-100 hover:border-gray-300"
       }`}
     >
       <div
@@ -197,7 +307,9 @@ function SortableWidget({
 
       <div
         className={`flex items-center justify-center w-7 h-7 rounded-md ${
-          widget.isVisible ? "bg-blue-100 text-blue-600" : "bg-gray-200 text-gray-400"
+          widget.isVisible
+            ? "bg-blue-100 text-blue-600"
+            : "bg-gray-200 text-gray-400"
         }`}
       >
         {widget.icon}
@@ -237,32 +349,50 @@ function SortableWidget({
 }
 
 // Phone preview component
-function PhonePreview({ widgets }: { widgets: MarketWidget[] }) {
+function PhonePreview({
+  widgets,
+  platform,
+}: {
+  widgets: MarketWidget[];
+  platform: PlatformTarget;
+}) {
   const visibleWidgets = widgets
     .filter((w) => w.isVisible)
     .sort((a, b) => a.order - b.order);
+
+  const isWeb = platform === "web";
+  const previewWidth = isWeb ? 280 : 220;
+  const previewHeight = isWeb ? 400 : 440;
 
   return (
     <div className="bg-gray-800 rounded-2xl p-2 shadow-lg">
       <div className="bg-gray-900 rounded-xl p-0.5">
         <div
-          className="bg-white rounded-lg overflow-hidden"
-          style={{ width: "220px", height: "440px" }}
+          className="bg-white rounded-lg overflow-hidden transition-all duration-300"
+          style={{ width: previewWidth, height: previewHeight }}
         >
+          {/* Status bar */}
           <div className="bg-gray-100 h-5 flex items-center justify-between px-2">
             <div className="flex items-center gap-0.5">
               <div className="w-0.5 h-0.5 bg-gray-800 rounded-full"></div>
               <div className="w-0.5 h-0.5 bg-gray-800 rounded-full"></div>
               <div className="w-0.5 h-0.5 bg-gray-800 rounded-full"></div>
             </div>
-            <div className="text-[8px] font-medium text-gray-600">9:41</div>
+            <div className="text-[8px] font-medium text-gray-600">
+              {isWeb ? "browser" : "9:41"}
+            </div>
             <div className="w-3 h-1.5 bg-green-500 rounded-sm"></div>
           </div>
 
-          <div className="bg-gradient-to-r from-orange-400 to-pink-500 h-8 flex items-center justify-center">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-orange-400 to-pink-500 h-8 flex items-center justify-center gap-1">
+            {platform === "web" && <Monitor className="w-3 h-3 text-white/70" />}
+            {platform === "flutter" && <Smartphone className="w-3 h-3 text-white/70" />}
+            {platform === "both" && <Layers className="w-3 h-3 text-white/70" />}
             <span className="text-white font-semibold text-[10px]">Market</span>
           </div>
 
+          {/* Content */}
           <div className="flex-1 overflow-y-auto bg-gray-50 text-[8px]">
             {visibleWidgets.map((widget, index) => (
               <div key={widget.id} className="border-b border-gray-100">
@@ -274,9 +404,7 @@ function PhonePreview({ widgets }: { widgets: MarketWidget[] }) {
                     <div className="text-[7px] font-medium text-gray-700 truncate">
                       {widget.name}
                     </div>
-                    <div className="text-[6px] text-gray-400">
-                      #{index + 1}
-                    </div>
+                    <div className="text-[6px] text-gray-400">#{index + 1}</div>
                   </div>
                 </div>
                 <div className="mx-1.5 mb-1.5">
@@ -371,13 +499,22 @@ function EmergencyResetModal({
   onClose,
   onConfirm,
   isResetting,
+  platform,
 }: {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => void;
   isResetting: boolean;
+  platform: PlatformTarget;
 }) {
   if (!isOpen) return null;
+
+  const platformLabel =
+    platform === "both"
+      ? "both platforms"
+      : platform === "flutter"
+      ? "Flutter app"
+      : "Web app";
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
@@ -386,11 +523,14 @@ function EmergencyResetModal({
           <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
             <AlertTriangle className="w-4 h-4 text-red-600" />
           </div>
-          <h3 className="text-base font-bold text-gray-900">Emergency Reset</h3>
+          <div>
+            <h3 className="text-base font-bold text-gray-900">Emergency Reset</h3>
+            <PlatformBadge platform={platform} />
+          </div>
         </div>
         <p className="text-sm text-gray-600 mb-5">
-          This will reset the layout configuration to default values. All custom
-          changes will be lost. This action cannot be undone.
+          This will reset the layout configuration for <strong>{platformLabel}</strong> to
+          default values. All custom changes will be lost. This action cannot be undone.
         </p>
         <div className="flex gap-2">
           <button
@@ -420,18 +560,29 @@ function EmergencyResetModal({
   );
 }
 
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
+
 export default function MarketLayoutPage() {
   const { user } = useAuth();
+
+  // Platform selection
+  const [selectedPlatform, setSelectedPlatform] = useState<PlatformTarget>("both");
+
+  // Widget state
   const [widgets, setWidgets] = useState<MarketWidget[]>(DEFAULT_WIDGETS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">(
-    "idle"
-  );
+  const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
   const [showResetModal, setShowResetModal] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
 
-  // Refs to prevent race conditions
+  // Track if platform-specific config exists
+  const [hasFlutterConfig, setHasFlutterConfig] = useState(false);
+  const [hasWebConfig, setHasWebConfig] = useState(false);
+
+  // Refs
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
@@ -448,32 +599,32 @@ export default function MarketLayoutPage() {
   );
 
   // Validate widget data
-  const validateWidget = useCallback((widget: unknown): widget is MarketWidget => {
-    return (
-      widget !== null &&
-      typeof widget === "object" &&
-      widget !== null &&
-      typeof (widget as Record<string, unknown>).id === "string" &&
-      (widget as Record<string, unknown>).id !== "" &&
-      typeof (widget as Record<string, unknown>).type === "string" &&
-      (widget as Record<string, unknown>).type !== "" &&
-      typeof (widget as Record<string, unknown>).isVisible === "boolean" &&
-      typeof (widget as Record<string, unknown>).order === "number" &&
-      !isNaN((widget as Record<string, unknown>).order as number)
-    );
-  }, []);
+  const validateWidget = useCallback(
+    (widget: unknown): widget is MarketWidget => {
+      return (
+        widget !== null &&
+        typeof widget === "object" &&
+        typeof (widget as Record<string, unknown>).id === "string" &&
+        (widget as Record<string, unknown>).id !== "" &&
+        typeof (widget as Record<string, unknown>).type === "string" &&
+        (widget as Record<string, unknown>).type !== "" &&
+        typeof (widget as Record<string, unknown>).isVisible === "boolean" &&
+        typeof (widget as Record<string, unknown>).order === "number" &&
+        !isNaN((widget as Record<string, unknown>).order as number)
+      );
+    },
+    []
+  );
 
   // Parse widgets from Firestore data
   const parseWidgetsFromData = useCallback(
     (data: unknown): MarketWidget[] => {
       if (!data || typeof data !== "object" || data === null) {
-        console.warn("Invalid data format");
         return DEFAULT_WIDGETS;
       }
 
       const dataObj = data as Record<string, unknown>;
       if (!dataObj.widgets || !Array.isArray(dataObj.widgets)) {
-        console.warn("No widgets array found in data");
         return DEFAULT_WIDGETS;
       }
 
@@ -481,15 +632,8 @@ export default function MarketLayoutPage() {
       const validWidgets: MarketWidget[] = [];
 
       for (const widget of dataObj.widgets) {
-        if (!validateWidget(widget)) {
-          console.warn("Invalid widget data:", widget);
-          continue;
-        }
-
-        if (seenIds.has(widget.id)) {
-          console.warn("Duplicate widget ID:", widget.id);
-          continue;
-        }
+        if (!validateWidget(widget)) continue;
+        if (seenIds.has(widget.id)) continue;
 
         seenIds.add(widget.id);
         validWidgets.push({
@@ -503,7 +647,22 @@ export default function MarketLayoutPage() {
     [validateWidget]
   );
 
-  // Setup real-time listener
+  // Check if platform-specific configs exist
+  const checkPlatformConfigs = useCallback(async () => {
+    try {
+      const [flutterSnap, webSnap] = await Promise.all([
+        getDoc(doc(db, "app_config", FIRESTORE_DOCS.flutter)),
+        getDoc(doc(db, "app_config", FIRESTORE_DOCS.web)),
+      ]);
+
+      setHasFlutterConfig(flutterSnap.exists() && !!flutterSnap.data()?.widgets?.length);
+      setHasWebConfig(webSnap.exists() && !!webSnap.data()?.widgets?.length);
+    } catch (error) {
+      console.error("Error checking platform configs:", error);
+    }
+  }, []);
+
+  // Setup real-time listener based on selected platform
   useEffect(() => {
     isMountedRef.current = true;
     let retryCount = 0;
@@ -511,19 +670,19 @@ export default function MarketLayoutPage() {
 
     const setupListener = () => {
       try {
-        const docRef = doc(db, "app_config", "market_layout");
+        const docName = FIRESTORE_DOCS[selectedPlatform];
+        const docRef = doc(db, "app_config", docName);
 
         // Cleanup previous listener
         if (unsubscribeRef.current) {
           unsubscribeRef.current();
         }
 
-        // Setup new listener
+        setLoading(true);
+
         const unsubscribe = onSnapshot(
           docRef,
-          {
-            includeMetadataChanges: false,
-          },
+          { includeMetadataChanges: false },
           (snapshot) => {
             if (!isMountedRef.current) return;
 
@@ -532,9 +691,13 @@ export default function MarketLayoutPage() {
                 const data = snapshot.data();
                 const parsedWidgets = parseWidgetsFromData(data);
                 setWidgets(parsedWidgets);
-                console.log("✅ Layout synced:", parsedWidgets.length, "widgets");
+                console.log(
+                  `✅ [${selectedPlatform}] Layout synced:`,
+                  parsedWidgets.length,
+                  "widgets"
+                );
               } else {
-                console.log("ℹ️ No layout found, using defaults");
+                console.log(`ℹ️ [${selectedPlatform}] No layout found, using defaults`);
                 setWidgets(DEFAULT_WIDGETS);
               }
             } catch (error) {
@@ -552,7 +715,6 @@ export default function MarketLayoutPage() {
 
             if (retryCount < maxRetries) {
               retryCount++;
-              console.log(`🔄 Retrying listener (${retryCount}/${maxRetries})...`);
               setTimeout(setupListener, Math.pow(2, retryCount) * 1000);
             } else {
               setWidgets(DEFAULT_WIDGETS);
@@ -572,8 +734,8 @@ export default function MarketLayoutPage() {
     };
 
     setupListener();
+    checkPlatformConfigs();
 
-    // Cleanup on unmount
     return () => {
       isMountedRef.current = false;
       if (unsubscribeRef.current) {
@@ -584,7 +746,13 @@ export default function MarketLayoutPage() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [parseWidgetsFromData]);
+  }, [selectedPlatform, parseWidgetsFromData, checkPlatformConfigs]);
+
+  // Handle platform change
+  const handlePlatformChange = useCallback((platform: PlatformTarget) => {
+    setSelectedPlatform(platform);
+    setSaveStatus("idle");
+  }, []);
 
   // Handle drag end
   const handleDragEnd = useCallback((event: DragEndEvent) => {
@@ -598,7 +766,6 @@ export default function MarketLayoutPage() {
         if (oldIndex === -1 || newIndex === -1) return items;
 
         const newItems = arrayMove(items, oldIndex, newIndex);
-
         return newItems.map((item, index) => ({
           ...item,
           order: index,
@@ -624,14 +791,12 @@ export default function MarketLayoutPage() {
     setSaveStatus("idle");
 
     try {
-      // Validate all widgets before saving
       const validWidgets = widgets.filter(validateWidget);
 
       if (validWidgets.length === 0) {
         throw new Error("No valid widgets to save");
       }
 
-      // Create serializable version
       const serializableWidgets = validWidgets.map((widget) => ({
         id: widget.id,
         name: widget.name || "",
@@ -641,19 +806,31 @@ export default function MarketLayoutPage() {
         description: widget.description || "",
       }));
 
-      const docRef = doc(db, "app_config", "market_layout");
+      const payload = {
+        widgets: serializableWidgets,
+        updatedAt: serverTimestamp(),
+        updatedBy: user.uid,
+        version: Date.now(),
+        platform: selectedPlatform,
+      };
 
-      // Save with timeout protection
+      // Determine which documents to update
+      const docsToUpdate: string[] = [];
+
+      if (selectedPlatform === "both") {
+        // Update all three documents
+        docsToUpdate.push(FIRESTORE_DOCS.both, FIRESTORE_DOCS.flutter, FIRESTORE_DOCS.web);
+      } else {
+        // Update only the selected platform
+        docsToUpdate.push(FIRESTORE_DOCS[selectedPlatform]);
+      }
+
+      // Save to all relevant documents
       await Promise.race([
-        setDoc(
-          docRef,
-          {
-            widgets: serializableWidgets,
-            updatedAt: serverTimestamp(),
-            updatedBy: user.uid,
-            version: Date.now(),
-          },
-          { merge: true }
+        Promise.all(
+          docsToUpdate.map((docName) =>
+            setDoc(doc(db, "app_config", docName), payload, { merge: true })
+          )
         ),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Save timeout")), 10000)
@@ -662,6 +839,8 @@ export default function MarketLayoutPage() {
 
       if (isMountedRef.current) {
         setSaveStatus("success");
+        checkPlatformConfigs(); // Refresh config status
+
         if (saveTimeoutRef.current) {
           clearTimeout(saveTimeoutRef.current);
         }
@@ -672,7 +851,7 @@ export default function MarketLayoutPage() {
         }, 3000);
       }
 
-      console.log("✅ Layout saved successfully");
+      console.log(`✅ Layout saved for ${selectedPlatform}:`, docsToUpdate);
     } catch (error) {
       console.error("❌ Error saving layout:", error);
 
@@ -692,17 +871,15 @@ export default function MarketLayoutPage() {
         setSaving(false);
       }
     }
-  }, [saving, user, widgets, validateWidget]);
+  }, [saving, user, widgets, validateWidget, selectedPlatform, checkPlatformConfigs]);
 
-  // Emergency reset to default layout
+  // Emergency reset
   const handleEmergencyReset = useCallback(async () => {
     if (isResetting || !user) return;
 
     setIsResetting(true);
 
     try {
-      const docRef = doc(db, "app_config", "market_layout");
-
       const defaultData = DEFAULT_WIDGETS.map((w) => ({
         id: w.id,
         name: w.name,
@@ -712,14 +889,28 @@ export default function MarketLayoutPage() {
         description: w.description,
       }));
 
+      const payload = {
+        widgets: defaultData,
+        updatedAt: serverTimestamp(),
+        updatedBy: user.uid,
+        resetReason: "Emergency reset",
+        version: Date.now(),
+        platform: selectedPlatform,
+      };
+
+      // Determine which documents to reset
+      const docsToReset: string[] = [];
+
+      if (selectedPlatform === "both") {
+        docsToReset.push(FIRESTORE_DOCS.both, FIRESTORE_DOCS.flutter, FIRESTORE_DOCS.web);
+      } else {
+        docsToReset.push(FIRESTORE_DOCS[selectedPlatform]);
+      }
+
       await Promise.race([
-        setDoc(docRef, {
-          widgets: defaultData,
-          updatedAt: serverTimestamp(),
-          updatedBy: user.uid,
-          resetReason: "Emergency reset",
-          version: Date.now(),
-        }),
+        Promise.all(
+          docsToReset.map((docName) => setDoc(doc(db, "app_config", docName), payload))
+        ),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Reset timeout")), 10000)
         ),
@@ -728,11 +919,11 @@ export default function MarketLayoutPage() {
       if (isMountedRef.current) {
         setWidgets(DEFAULT_WIDGETS);
         setShowResetModal(false);
-        console.log("✅ Emergency reset completed");
+        checkPlatformConfigs();
+        console.log(`✅ Emergency reset completed for ${selectedPlatform}`);
       }
     } catch (error) {
       console.error("❌ Emergency reset failed:", error);
-      // Still update local state
       if (isMountedRef.current) {
         setWidgets(DEFAULT_WIDGETS);
       }
@@ -741,13 +932,9 @@ export default function MarketLayoutPage() {
         setIsResetting(false);
       }
     }
-  }, [isResetting, user]);
+  }, [isResetting, user, selectedPlatform, checkPlatformConfigs]);
 
-  // Reset to default (local only)
-  const resetLayout = useCallback(() => {
-    setShowResetModal(true);
-  }, []);
-
+  // Loading state
   if (loading) {
     return (
       <ProtectedRoute>
@@ -764,6 +951,7 @@ export default function MarketLayoutPage() {
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+        {/* Header */}
         <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50 shadow-sm">
           <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <div className="flex justify-between items-center py-3">
@@ -793,7 +981,7 @@ export default function MarketLayoutPage() {
                 )}
 
                 <button
-                  onClick={resetLayout}
+                  onClick={() => setShowResetModal(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors"
                   title="Reset to default layout"
                 >
@@ -819,6 +1007,35 @@ export default function MarketLayoutPage() {
         </header>
 
         <main className="max-w-6xl mx-auto px-4 sm:px-6 py-4">
+          {/* Platform Selector */}
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <Layers className="w-4 h-4 text-purple-600" />
+                </div>
+                <h2 className="text-sm font-semibold text-gray-900">Target Platform</h2>
+              </div>
+              <div className="flex items-center gap-2 text-[10px]">
+                {hasFlutterConfig && (
+                  <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full">
+                    Flutter config exists
+                  </span>
+                )}
+                {hasWebConfig && (
+                  <span className="px-2 py-0.5 bg-green-50 text-green-600 rounded-full">
+                    Web config exists
+                  </span>
+                )}
+              </div>
+            </div>
+            <PlatformSelector
+              selected={selectedPlatform}
+              onChange={handlePlatformChange}
+              disabled={saving}
+            />
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Widget Configuration Panel */}
             <div className="lg:col-span-2 space-y-4">
@@ -829,6 +1046,7 @@ export default function MarketLayoutPage() {
                       <Layout className="w-4 h-4 text-blue-600" />
                     </div>
                     <h2 className="text-sm font-semibold text-gray-900">Widget Configuration</h2>
+                    <PlatformBadge platform={selectedPlatform} />
                   </div>
                   <p className="text-[10px] text-gray-500">Drag to reorder, click eye to toggle</p>
                 </div>
@@ -862,9 +1080,7 @@ export default function MarketLayoutPage() {
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Statistics</h3>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="bg-gray-50 rounded-lg p-3 text-center">
-                    <div className="text-xl font-bold text-gray-900">
-                      {widgets.length}
-                    </div>
+                    <div className="text-xl font-bold text-gray-900">{widgets.length}</div>
                     <div className="text-[10px] text-gray-500 font-medium">Total Widgets</div>
                   </div>
                   <div className="bg-green-50 rounded-lg p-3 text-center">
@@ -888,18 +1104,21 @@ export default function MarketLayoutPage() {
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 sticky top-20">
                 <div className="flex items-center gap-2 mb-3">
                   <div className="w-7 h-7 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <Smartphone className="w-4 h-4 text-purple-600" />
+                    {selectedPlatform === "web" ? (
+                      <Monitor className="w-4 h-4 text-purple-600" />
+                    ) : (
+                      <Smartphone className="w-4 h-4 text-purple-600" />
+                    )}
                   </div>
                   <h2 className="text-sm font-semibold text-gray-900">Preview</h2>
+                  <PlatformBadge platform={selectedPlatform} />
                 </div>
 
                 <div className="flex justify-center">
-                  <PhonePreview widgets={widgets} />
+                  <PhonePreview widgets={widgets} platform={selectedPlatform} />
                 </div>
 
-                <p className="text-[10px] text-gray-400 text-center mt-3">
-                  Real-time preview
-                </p>
+                <p className="text-[10px] text-gray-400 text-center mt-3">Real-time preview</p>
               </div>
             </div>
           </div>
@@ -910,6 +1129,7 @@ export default function MarketLayoutPage() {
           onClose={() => setShowResetModal(false)}
           onConfirm={handleEmergencyReset}
           isResetting={isResetting}
+          platform={selectedPlatform}
         />
       </div>
     </ProtectedRoute>
