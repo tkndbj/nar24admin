@@ -39,11 +39,11 @@ import {
 } from "lucide-react";
 import {
   doc,
-  
+
   setDoc,
   onSnapshot,
   serverTimestamp,
-  
+
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 
@@ -69,16 +69,16 @@ interface MarketWidget {
 // Helper function to get icon by widget type
 const getIconByType = (type: string): React.ReactNode => {
   const iconMap: Record<string, React.ReactNode> = {
-    ads_banner: <Image className="w-4 h-4" />,
-    market_bubbles: <Layout className="w-4 h-4" />,
-    thin_banner: <Layout className="w-4 h-4" />,
-    preference_product: <Star className="w-4 h-4" />,
-    dynamic_product_list: <TrendingUp className="w-4 h-4" />,
-    market_banner: <Image className="w-4 h-4" />,
-    shop_horizontal_list: <Store className="w-4 h-4" />,
-    boosted_product_carousel: <Package className="w-4 h-4" />,
+    ads_banner: <Image className="w-3.5 h-3.5" />,
+    market_bubbles: <Layout className="w-3.5 h-3.5" />,
+    thin_banner: <Layout className="w-3.5 h-3.5" />,
+    preference_product: <Star className="w-3.5 h-3.5" />,
+    dynamic_product_list: <TrendingUp className="w-3.5 h-3.5" />,
+    market_banner: <Image className="w-3.5 h-3.5" />,
+    shop_horizontal_list: <Store className="w-3.5 h-3.5" />,
+    boosted_product_carousel: <Package className="w-3.5 h-3.5" />,
   };
-  return iconMap[type] || <Package className="w-4 h-4" />;
+  return iconMap[type] || <Package className="w-3.5 h-3.5" />;
 };
 
 // Default widget configuration
@@ -183,53 +183,53 @@ function SortableWidget({
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-3 p-4 bg-white/10 border border-white/20 rounded-xl transition-all ${
-        isDragging ? "opacity-50 scale-105 shadow-lg" : "hover:bg-white/15"
+      className={`flex items-center gap-2 p-2.5 bg-gray-50 border border-gray-200 rounded-lg transition-all ${
+        isDragging ? "opacity-50 scale-[1.02] shadow-md bg-white" : "hover:bg-gray-100 hover:border-gray-300"
       }`}
     >
       <div
         {...attributes}
         {...listeners}
-        className="cursor-grab active:cursor-grabbing p-1 hover:bg-white/10 rounded"
+        className="cursor-grab active:cursor-grabbing p-1 hover:bg-gray-200 rounded"
       >
-        <GripVertical className="w-4 h-4 text-gray-400" />
+        <GripVertical className="w-3.5 h-3.5 text-gray-400" />
       </div>
 
       <div
-        className={`flex items-center justify-center w-8 h-8 rounded-lg ${
-          widget.isVisible ? "bg-blue-500/20" : "bg-gray-500/20"
+        className={`flex items-center justify-center w-7 h-7 rounded-md ${
+          widget.isVisible ? "bg-blue-100 text-blue-600" : "bg-gray-200 text-gray-400"
         }`}
       >
         {widget.icon}
       </div>
 
-      <div className="flex-1">
+      <div className="flex-1 min-w-0">
         <h4
-          className={`font-semibold text-sm ${
-            widget.isVisible ? "text-white" : "text-gray-400"
+          className={`font-medium text-xs truncate ${
+            widget.isVisible ? "text-gray-900" : "text-gray-400"
           }`}
         >
           {widget.name}
         </h4>
-        <p className="text-xs text-gray-400">{widget.description}</p>
+        <p className="text-[10px] text-gray-500 truncate">{widget.description}</p>
       </div>
 
-      <div className="text-xs text-gray-400 bg-gray-500/20 px-2 py-1 rounded">
+      <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded font-medium">
         #{widget.order + 1}
-      </div>
+      </span>
 
       <button
         onClick={() => onToggleVisibility(widget.id)}
-        className={`p-2 rounded-lg transition-colors ${
+        className={`p-1.5 rounded-md transition-colors ${
           widget.isVisible
-            ? "bg-green-500/20 text-green-400 hover:bg-green-500/30"
-            : "bg-red-500/20 text-red-400 hover:bg-red-500/30"
+            ? "bg-green-100 text-green-600 hover:bg-green-200"
+            : "bg-red-100 text-red-500 hover:bg-red-200"
         }`}
       >
         {widget.isVisible ? (
-          <Eye className="w-4 h-4" />
+          <Eye className="w-3.5 h-3.5" />
         ) : (
-          <EyeOff className="w-4 h-4" />
+          <EyeOff className="w-3.5 h-3.5" />
         )}
       </button>
     </div>
@@ -243,122 +243,114 @@ function PhonePreview({ widgets }: { widgets: MarketWidget[] }) {
     .sort((a, b) => a.order - b.order);
 
   return (
-    <div className="bg-gray-900 rounded-3xl p-4 shadow-2xl">
-      <div className="bg-black rounded-2xl p-1">
+    <div className="bg-gray-800 rounded-2xl p-2 shadow-lg">
+      <div className="bg-gray-900 rounded-xl p-0.5">
         <div
-          className="bg-white rounded-xl overflow-hidden"
-          style={{ width: "300px", height: "600px" }}
+          className="bg-white rounded-lg overflow-hidden"
+          style={{ width: "220px", height: "440px" }}
         >
-          <div className="bg-gray-100 h-8 flex items-center justify-between px-4">
-            <div className="flex items-center gap-1">
-              <div className="w-1 h-1 bg-black rounded-full"></div>
-              <div className="w-1 h-1 bg-black rounded-full"></div>
-              <div className="w-1 h-1 bg-black rounded-full"></div>
+          <div className="bg-gray-100 h-5 flex items-center justify-between px-2">
+            <div className="flex items-center gap-0.5">
+              <div className="w-0.5 h-0.5 bg-gray-800 rounded-full"></div>
+              <div className="w-0.5 h-0.5 bg-gray-800 rounded-full"></div>
+              <div className="w-0.5 h-0.5 bg-gray-800 rounded-full"></div>
             </div>
-            <div className="text-xs font-medium">9:41</div>
-            <div className="flex items-center gap-1">
-              <div className="w-4 h-2 bg-green-500 rounded-sm"></div>
-            </div>
+            <div className="text-[8px] font-medium text-gray-600">9:41</div>
+            <div className="w-3 h-1.5 bg-green-500 rounded-sm"></div>
           </div>
 
-          <div className="bg-gradient-to-r from-orange-400 to-pink-500 h-12 flex items-center justify-center">
-            <div className="text-white font-semibold text-sm">Market</div>
+          <div className="bg-gradient-to-r from-orange-400 to-pink-500 h-8 flex items-center justify-center">
+            <span className="text-white font-semibold text-[10px]">Market</span>
           </div>
 
-          <div className="flex-1 overflow-y-auto bg-gray-50">
+          <div className="flex-1 overflow-y-auto bg-gray-50 text-[8px]">
             {visibleWidgets.map((widget, index) => (
-              <div key={widget.id} className="border-b border-gray-200">
-                <div className="p-3 flex items-center gap-2">
-                  <div className="flex items-center justify-center w-6 h-6 bg-blue-100 rounded">
+              <div key={widget.id} className="border-b border-gray-100">
+                <div className="p-1.5 flex items-center gap-1">
+                  <div className="flex items-center justify-center w-4 h-4 bg-blue-50 rounded text-blue-600">
                     {widget.icon}
                   </div>
-                  <div className="flex-1">
-                    <div className="text-xs font-medium text-gray-700">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[7px] font-medium text-gray-700 truncate">
                       {widget.name}
                     </div>
-                    <div className="text-xs text-gray-500">
-                      Position #{index + 1}
+                    <div className="text-[6px] text-gray-400">
+                      #{index + 1}
                     </div>
                   </div>
                 </div>
-                <div className="mx-3 mb-3">
+                <div className="mx-1.5 mb-1.5">
                   {widget.type === "ads_banner" && (
-                    <div className="bg-gradient-to-r from-purple-200 to-pink-200 h-16 rounded flex items-center justify-center">
-                      <span className="text-xs text-purple-800">Ad Banner</span>
+                    <div className="bg-gradient-to-r from-purple-100 to-pink-100 h-10 rounded flex items-center justify-center">
+                      <span className="text-[6px] text-purple-600">Ad Banner</span>
                     </div>
                   )}
                   {widget.type === "market_bubbles" && (
-                    <div className="flex gap-2">
+                    <div className="flex gap-1">
                       {[1, 2, 3, 4].map((i) => (
                         <div
                           key={i}
-                          className="w-12 h-12 bg-blue-200 rounded-full flex items-center justify-center"
+                          className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center"
                         >
-                          <span className="text-xs">{i}</span>
+                          <span className="text-[6px] text-blue-600">{i}</span>
                         </div>
                       ))}
                     </div>
                   )}
                   {widget.type === "thin_banner" && (
-                    <div className="bg-yellow-200 h-8 rounded flex items-center justify-center">
-                      <span className="text-xs text-yellow-800">
-                        Thin Banner
-                      </span>
+                    <div className="bg-yellow-100 h-4 rounded flex items-center justify-center">
+                      <span className="text-[6px] text-yellow-700">Thin Banner</span>
                     </div>
                   )}
                   {widget.type === "preference_product" && (
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-1">
                       {[1, 2].map((i) => (
                         <div
                           key={i}
-                          className="bg-green-200 h-20 rounded flex items-center justify-center"
+                          className="bg-green-100 h-10 rounded flex items-center justify-center"
                         >
-                          <Package className="w-4 h-4 text-green-800" />
+                          <Package className="w-2.5 h-2.5 text-green-600" />
                         </div>
                       ))}
                     </div>
                   )}
                   {widget.type === "dynamic_product_list" && (
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       {[1, 2].map((i) => (
                         <div
                           key={i}
-                          className="bg-orange-200 h-12 rounded flex items-center justify-center"
+                          className="bg-orange-100 h-6 rounded flex items-center justify-center"
                         >
-                          <span className="text-xs text-orange-800">
-                            Dynamic List {i}
-                          </span>
+                          <span className="text-[6px] text-orange-600">List {i}</span>
                         </div>
                       ))}
                     </div>
                   )}
                   {widget.type === "market_banner" && (
-                    <div className="bg-red-200 h-24 rounded flex items-center justify-center">
-                      <span className="text-xs text-red-800">
-                        Market Banner
-                      </span>
+                    <div className="bg-red-100 h-12 rounded flex items-center justify-center">
+                      <span className="text-[6px] text-red-600">Market Banner</span>
                     </div>
                   )}
                   {widget.type === "shop_horizontal_list" && (
-                    <div className="flex gap-2 overflow-x-auto">
+                    <div className="flex gap-1 overflow-x-auto">
                       {[1, 2, 3].map((i) => (
                         <div
                           key={i}
-                          className="bg-purple-200 w-16 h-16 rounded flex items-center justify-center flex-shrink-0"
+                          className="bg-purple-100 w-8 h-8 rounded flex items-center justify-center flex-shrink-0"
                         >
-                          <Store className="w-4 h-4 text-purple-800" />
+                          <Store className="w-2.5 h-2.5 text-purple-600" />
                         </div>
                       ))}
                     </div>
                   )}
                   {widget.type === "boosted_product_carousel" && (
-                    <div className="flex gap-2 overflow-x-auto">
+                    <div className="flex gap-1 overflow-x-auto">
                       {[1, 2, 3].map((i) => (
                         <div
                           key={i}
-                          className="bg-indigo-200 w-20 h-20 rounded flex items-center justify-center flex-shrink-0"
+                          className="bg-indigo-100 w-10 h-10 rounded flex items-center justify-center flex-shrink-0"
                         >
-                          <Star className="w-4 h-4 text-indigo-800" />
+                          <Star className="w-2.5 h-2.5 text-indigo-600" />
                         </div>
                       ))}
                     </div>
@@ -388,32 +380,34 @@ function EmergencyResetModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-gray-900 border border-red-500/50 rounded-xl p-6 max-w-md w-full mx-4">
-        <div className="flex items-center gap-3 mb-4">
-          <AlertTriangle className="w-6 h-6 text-red-500" />
-          <h3 className="text-xl font-bold text-white">Emergency Reset</h3>
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-white border border-red-200 rounded-xl p-5 max-w-sm w-full mx-4 shadow-xl">
+        <div className="flex items-center gap-2.5 mb-3">
+          <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+            <AlertTriangle className="w-4 h-4 text-red-600" />
+          </div>
+          <h3 className="text-base font-bold text-gray-900">Emergency Reset</h3>
         </div>
-        <p className="text-gray-300 mb-6">
+        <p className="text-sm text-gray-600 mb-5">
           This will reset the layout configuration to default values. All custom
           changes will be lost. This action cannot be undone.
         </p>
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <button
             onClick={onClose}
             disabled={isResetting}
-            className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 text-white rounded-lg transition-colors"
+            className="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={isResetting}
-            className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-800 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+            className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5"
           >
             {isResetting ? (
               <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></div>
                 Resetting...
               </>
             ) : (
@@ -476,7 +470,7 @@ export default function MarketLayoutPage() {
         console.warn("Invalid data format");
         return DEFAULT_WIDGETS;
       }
-      
+
       const dataObj = data as Record<string, unknown>;
       if (!dataObj.widgets || !Array.isArray(dataObj.widgets)) {
         console.warn("No widgets array found in data");
@@ -757,10 +751,10 @@ export default function MarketLayoutPage() {
   if (loading) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-            <p className="text-white text-sm">Loading layout configuration...</p>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
+            <p className="text-gray-600 text-sm">Loading layout configuration...</p>
           </div>
         </div>
       </ProtectedRoute>
@@ -769,72 +763,75 @@ export default function MarketLayoutPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-        <header className="backdrop-blur-xl bg-white/10 border-b border-white/20 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center py-4">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg">
-                  <Smartphone className="w-5 h-5 text-white" />
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+        <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
+            <div className="flex justify-between items-center py-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg shadow">
+                  <Smartphone className="w-4 h-4 text-white" />
                 </div>
-                <h1 className="text-xl font-bold text-white">
-                  Market Layout Management
-                </h1>
+                <div>
+                  <h1 className="text-base font-bold text-gray-900">Market Layout</h1>
+                  <p className="text-[10px] text-gray-500">Widget Configuration</p>
+                </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                {saveStatus === "success" && (
+                  <div className="flex items-center gap-1.5 text-green-600 bg-green-50 px-2 py-1 rounded-md">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span className="text-xs font-medium">Saved</span>
+                  </div>
+                )}
+
+                {saveStatus === "error" && (
+                  <div className="flex items-center gap-1.5 text-red-600 bg-red-50 px-2 py-1 rounded-md">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    <span className="text-xs font-medium">Error</span>
+                  </div>
+                )}
+
                 <button
                   onClick={resetLayout}
-                  className="flex items-center gap-2 px-4 py-2 bg-gray-600/20 hover:bg-gray-600/30 text-gray-300 rounded-lg transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors"
                   title="Reset to default layout"
                 >
-                  <RotateCcw className="w-4 h-4" />
+                  <RotateCcw className="w-3.5 h-3.5" />
                   Reset
                 </button>
 
                 <button
                   onClick={saveLayout}
                   disabled={saving}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-gray-600 disabled:to-gray-600 text-white rounded-lg transition-all duration-200 disabled:cursor-not-allowed"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-gray-400 disabled:to-gray-400 text-white text-xs font-medium rounded-lg transition-all disabled:cursor-not-allowed shadow-sm"
                 >
                   {saving ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></div>
                   ) : (
-                    <Save className="w-4 h-4" />
+                    <Save className="w-3.5 h-3.5" />
                   )}
-                  {saving ? "Saving..." : "Save Changes"}
+                  {saving ? "Saving..." : "Save"}
                 </button>
-
-                {saveStatus === "success" && (
-                  <div className="flex items-center gap-2 text-green-400">
-                    <CheckCircle className="w-4 h-4" />
-                    <span className="text-sm">Saved!</span>
-                  </div>
-                )}
-
-                {saveStatus === "error" && (
-                  <div className="flex items-center gap-2 text-red-400">
-                    <AlertCircle className="w-4 h-4" />
-                    <span className="text-sm">Error!</span>
-                  </div>
-                )}
               </div>
             </div>
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-                <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                  <Layout className="w-5 h-5" />
-                  Widget Configuration
-                </h2>
-
-                <p className="text-sm text-gray-300 mb-4">
-                  Drag to reorder, toggle visibility
-                </p>
+        <main className="max-w-6xl mx-auto px-4 sm:px-6 py-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Widget Configuration Panel */}
+            <div className="lg:col-span-2 space-y-4">
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <Layout className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <h2 className="text-sm font-semibold text-gray-900">Widget Configuration</h2>
+                  </div>
+                  <p className="text-[10px] text-gray-500">Drag to reorder, click eye to toggle</p>
+                </div>
 
                 <DndContext
                   sensors={sensors}
@@ -845,7 +842,7 @@ export default function MarketLayoutPage() {
                     items={widgets.map((w) => w.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    <div className="space-y-3">
+                    <div className="space-y-1.5">
                       {widgets
                         .sort((a, b) => a.order - b.order)
                         .map((widget) => (
@@ -860,43 +857,49 @@ export default function MarketLayoutPage() {
                 </DndContext>
               </div>
 
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-4">
-                <h3 className="text-lg font-semibold text-white mb-3">
-                  Statistics
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-400">
+              {/* Statistics */}
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Statistics</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                    <div className="text-xl font-bold text-gray-900">
+                      {widgets.length}
+                    </div>
+                    <div className="text-[10px] text-gray-500 font-medium">Total Widgets</div>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-3 text-center">
+                    <div className="text-xl font-bold text-green-600">
                       {widgets.filter((w) => w.isVisible).length}
                     </div>
-                    <div className="text-sm text-gray-300">Active Widgets</div>
+                    <div className="text-[10px] text-gray-500 font-medium">Active</div>
                   </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-gray-400">
+                  <div className="bg-red-50 rounded-lg p-3 text-center">
+                    <div className="text-xl font-bold text-red-500">
                       {widgets.filter((w) => !w.isVisible).length}
                     </div>
-                    <div className="text-sm text-gray-300">Hidden Widgets</div>
+                    <div className="text-[10px] text-gray-500 font-medium">Hidden</div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-col items-center">
-              <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl p-6 w-full">
-                <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                  <Smartphone className="w-5 h-5" />
-                  Mobile Preview
-                </h2>
+            {/* Phone Preview */}
+            <div className="lg:col-span-1">
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 sticky top-20">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-7 h-7 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <Smartphone className="w-4 h-4 text-purple-600" />
+                  </div>
+                  <h2 className="text-sm font-semibold text-gray-900">Preview</h2>
+                </div>
 
                 <div className="flex justify-center">
                   <PhonePreview widgets={widgets} />
                 </div>
 
-                <div className="mt-4 text-center">
-                  <p className="text-xs text-gray-400">
-                    Real-time preview - Changes reflect instantly
-                  </p>
-                </div>
+                <p className="text-[10px] text-gray-400 text-center mt-3">
+                  Real-time preview
+                </p>
               </div>
             </div>
           </div>
