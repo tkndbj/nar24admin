@@ -681,6 +681,17 @@ export default function Dashboard() {
                     </div>
                   </button>
                   <button
+                    onClick={() => handleNavigation("homescreen-shoplist")}
+                    className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Store className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
+                      <span className="text-xs font-medium text-gray-900">
+                        Ana Ekran Dükkanları
+                      </span>
+                    </div>
+                  </button>
+                  <button
                     onClick={() => handleNavigation("createcampaing")}
                     className="w-full p-2.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left transition-colors group"
                   >
