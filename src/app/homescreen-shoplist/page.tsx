@@ -44,9 +44,9 @@ import {
   CheckCircle,
   AlertCircle,
   Star,
-  ImageIcon,
   Loader2,
 } from "lucide-react";
+import Image from "next/image";
 
 // ============================================================================
 // TYPES
@@ -150,12 +150,14 @@ function SortableShopCard({
       </span>
 
       {/* Shop Image */}
-      <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+      <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 relative">
         {shop.profileImageUrl || shop.coverImageUrl ? (
-          <img
-            src={shop.profileImageUrl || shop.coverImageUrl}
+          <Image
+            src={shop.profileImageUrl || shop.coverImageUrl || ""}
             alt={shop.name}
-            className="w-full h-full object-cover"
+            fill
+            className="object-cover"
+            unoptimized
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
@@ -214,12 +216,14 @@ function SearchResultCard({
       }`}
     >
       {/* Shop Image */}
-      <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+      <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 relative">
         {shop.profileImageUrl || shop.coverImageUrl ? (
-          <img
-            src={shop.profileImageUrl || shop.coverImageUrl}
+          <Image
+            src={shop.profileImageUrl || shop.coverImageUrl || ""}
             alt={shop.name}
-            className="w-full h-full object-cover"
+            fill
+            className="object-cover"
+            unoptimized
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
@@ -800,9 +804,9 @@ export default function HomescreenShopListPage() {
                 </h3>
                 <ul className="text-xs text-blue-800 space-y-1">
                   <li>• Search for shops by name in the left panel</li>
-                  <li>• Click "Add" to include a shop in featured list</li>
+                  <li>• Click &quot;Add&quot; to include a shop in featured list</li>
                   <li>• Drag and drop to reorder the display sequence</li>
-                  <li>• Click "Save" to publish changes to all apps</li>
+                  <li>• Click &quot;Save&quot; to publish changes to all apps</li>
                   <li>• Maximum {MAX_FEATURED_SHOPS} shops can be featured</li>
                 </ul>
               </div>
