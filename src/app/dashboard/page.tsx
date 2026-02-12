@@ -16,7 +16,7 @@ import {
   Image,
   Layout,
   Zap,
-  List, 
+  List,
   DollarSign,
   Activity,
   Bell,
@@ -107,7 +107,7 @@ const generateDailyMetricData = (): MetricData[] => {
       writes: Math.max(0, Math.round(baseWrites + (Math.random() - 0.5) * 30)),
       functions: Math.max(
         0,
-        Math.round(baseFunctions + (Math.random() - 0.5) * 20)
+        Math.round(baseFunctions + (Math.random() - 0.5) * 20),
       ),
     });
   }
@@ -125,6 +125,7 @@ const NAV_CATEGORIES = [
       { path: "orders", label: "Siparisler", icon: Package },
       { path: "shipment", label: "Teslimat Yonetimi", icon: Truck },
       { path: "pickup-points", label: "Gel-Al Noktalari", icon: MapPin },
+      { path: "paymentissues", label: "Ödeme Sorunları", icon: CreditCard },
     ],
   },
   {
@@ -163,7 +164,11 @@ const NAV_CATEGORIES = [
     color: "orange",
     items: [
       { path: "productapplications", label: "Urun Basvurulari", icon: Package },
-      { path: "editproductapplications", label: "Urun Guncellemeler", icon: Edit2 },
+      {
+        path: "editproductapplications",
+        label: "Urun Guncellemeler",
+        icon: Edit2,
+      },
     ],
   },
   {
@@ -181,15 +186,43 @@ const NAV_CATEGORIES = [
     adminOnly: true,
     items: [
       { path: "notifications", label: "Bildirim Gonder", icon: Bell },
-      { path: "user-activity", label: "Kullanici Aktiviteleri", icon: Activity },
-      { path: "marketscreenfilters", label: "Ana Ekran Filtreleri", icon: Filter },
-      { path: "homescreen-shoplist", label: "Ana Ekran Dukkanlari", icon: Store },
+      {
+        path: "user-activity",
+        label: "Kullanici Aktiviteleri",
+        icon: Activity,
+      },
+      {
+        path: "marketscreenfilters",
+        label: "Ana Ekran Filtreleri",
+        icon: Filter,
+      },
+      {
+        path: "homescreen-shoplist",
+        label: "Ana Ekran Dukkanlari",
+        icon: Store,
+      },
       { path: "createcampaing", label: "Ozel Gun Kampanyalari", icon: Zap },
-      { path: "marketscreenhorizontallist", label: "Yatay Urun Listesi", icon: List },
+      {
+        path: "marketscreenhorizontallist",
+        label: "Yatay Urun Listesi",
+        icon: List,
+      },
       { path: "marketlayout", label: "Ana Ekran Layout", icon: Layout },
-      { path: "listproduct-flowmanagement", label: "Urun Akis Yonetimi", icon: Activity },
-      { path: "cloudfunctionmonitoring", label: "Cloud Functions Takibi", icon: Zap },
-      { path: "search-functionality", label: "Arama Motoru Yönetimi", icon: Search },
+      {
+        path: "listproduct-flowmanagement",
+        label: "Urun Akis Yonetimi",
+        icon: Activity,
+      },
+      {
+        path: "cloudfunctionmonitoring",
+        label: "Cloud Functions Takibi",
+        icon: Zap,
+      },
+      {
+        path: "search-functionality",
+        label: "Arama Motoru Yönetimi",
+        icon: Search,
+      },
     ],
   },
 ];
@@ -343,7 +376,7 @@ export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [dailyMetricsData, setDailyMetricsData] = useState<MetricData[]>([]);
   const [expandedCategories, setExpandedCategories] = useState<string[]>(
-    NAV_CATEGORIES.map((cat) => cat.title)
+    NAV_CATEGORIES.map((cat) => cat.title),
   );
 
   // Pending counts
@@ -403,20 +436,20 @@ export default function Dashboard() {
           getCountFromServer(
             query(
               collection(db, "shopApplications"),
-              where("status", "==", "pending")
-            )
+              where("status", "==", "pending"),
+            ),
           ),
           getCountFromServer(
             query(
               collection(db, "refund-forms"),
-              where("status", "==", "pending")
-            )
+              where("status", "==", "pending"),
+            ),
           ),
           getCountFromServer(
             query(
               collection(db, "help-forms"),
-              where("status", "==", "pending")
-            )
+              where("status", "==", "pending"),
+            ),
           ),
         ]);
 
@@ -430,14 +463,14 @@ export default function Dashboard() {
         const todayOrdersCount = await getCountFromServer(
           query(
             collection(db, "orders"),
-            where("timestamp", ">=", Timestamp.fromDate(today))
-          )
+            where("timestamp", ">=", Timestamp.fromDate(today)),
+          ),
         );
         setTodayOrders(todayOrdersCount.data().count);
 
         // Product applications - count docs in collection
         const productAppsCount = await getCountFromServer(
-          query(collection(db, "productApplications"))
+          query(collection(db, "productApplications")),
         );
         setPendingProductApps(productAppsCount.data().count);
       } catch (error) {
@@ -463,7 +496,7 @@ export default function Dashboard() {
       logger.navigate(label, { path });
       router.push(`/${path}`);
     },
-    [router, logger]
+    [router, logger],
   );
 
   const handleSearch = useCallback(
@@ -473,14 +506,12 @@ export default function Dashboard() {
         router.push(`/searchresults?q=${encodeURIComponent(query.trim())}`);
       }
     },
-    [router, logger]
+    [router, logger],
   );
 
   const toggleCategory = (title: string) => {
     setExpandedCategories((prev) =>
-      prev.includes(title)
-        ? prev.filter((t) => t !== title)
-        : [...prev, title]
+      prev.includes(title) ? prev.filter((t) => t !== title) : [...prev, title],
     );
   };
 
@@ -710,20 +741,66 @@ export default function Dashboard() {
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={dailyMetricsData}>
                       <defs>
-                        <linearGradient id="colorReads" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1} />
-                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                        <linearGradient
+                          id="colorReads"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="5%"
+                            stopColor="#3b82f6"
+                            stopOpacity={0.1}
+                          />
+                          <stop
+                            offset="95%"
+                            stopColor="#3b82f6"
+                            stopOpacity={0}
+                          />
                         </linearGradient>
-                        <linearGradient id="colorWrites" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#22c55e" stopOpacity={0.1} />
-                          <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                        <linearGradient
+                          id="colorWrites"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="5%"
+                            stopColor="#22c55e"
+                            stopOpacity={0.1}
+                          />
+                          <stop
+                            offset="95%"
+                            stopColor="#22c55e"
+                            stopOpacity={0}
+                          />
                         </linearGradient>
-                        <linearGradient id="colorFuncs" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#a855f7" stopOpacity={0.1} />
-                          <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
+                        <linearGradient
+                          id="colorFuncs"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="5%"
+                            stopColor="#a855f7"
+                            stopOpacity={0.1}
+                          />
+                          <stop
+                            offset="95%"
+                            stopColor="#a855f7"
+                            stopOpacity={0}
+                          />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="#f0f0f0"
+                        vertical={false}
+                      />
                       <XAxis
                         dataKey="time"
                         stroke="#9ca3af"
