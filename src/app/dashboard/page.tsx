@@ -189,6 +189,7 @@ const NAV_CATEGORIES = [
       { path: "marketlayout", label: "Ana Ekran Layout", icon: Layout },
       { path: "listproduct-flowmanagement", label: "Urun Akis Yonetimi", icon: Activity },
       { path: "cloudfunctionmonitoring", label: "Cloud Functions Takibi", icon: Zap },
+      { path: "search-functionality", label: "Arama Motoru Yönetimi", icon: Search },
     ],
   },
 ];
