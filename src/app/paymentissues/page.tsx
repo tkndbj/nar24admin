@@ -29,6 +29,13 @@ import {
   Hash,
   Palette,
   Info,
+  Zap,
+  FileText,
+  QrCode,
+  ShoppingCart,
+  Bell,
+  Activity,
+  BarChart3,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
@@ -50,7 +57,7 @@ import { useRouter } from "next/navigation";
 // ============================================================================
 
 interface PaymentIssue {
-  id: string; // orderNumber (doc ID)
+  id: string;
   userId: string;
   status: string;
   amount: number;
@@ -102,11 +109,36 @@ interface PaymentIssue {
   resolvedBy?: string;
 }
 
+interface TaskAlert {
+  id: string;
+  type: string;
+  severity: string;
+  orderNumber: string;
+  orderId: string;
+  userId: string;
+  buyerName: string;
+  amount: number;
+  errorMessage: string;
+  isRead: boolean;
+  isResolved: boolean;
+  timestamp: Timestamp;
+  detectedBy: string;
+  // Fields from alertOnPaymentIssue / detectPaymentAnomalies
+  pendingPaymentId?: string;
+  buyerEmail?: string;
+  buyerPhone?: string;
+  clientAmount?: number;
+  serverCalculation?: Record<string, unknown>;
+  itemCount?: number;
+  itemsSummary?: string[];
+  previousStatus?: string;
+}
+
 interface CartItem {
   productId: string;
   quantity: number;
   selectedColor?: string;
-  [key: string]: unknown; // dynamic attributes
+  [key: string]: unknown;
 }
 
 interface ProductInfo {
@@ -126,6 +158,7 @@ type StatusFilter =
   | "failed"
   | "stuck"
   | "expired"
+  | "task_failures"
   | "resolved";
 
 // ============================================================================
@@ -190,6 +223,75 @@ const STATUS_CONFIG: Record<
     borderColor: "border-green-300",
     icon: CheckCircle2,
     severity: 10,
+  },
+};
+
+const TASK_TYPE_CONFIG: Record<
+  string,
+  {
+    label: string;
+    icon: React.ElementType;
+    color: string;
+    bgColor: string;
+    borderColor: string;
+    description: string;
+  }
+> = {
+  task_receipt_generation_failed: {
+    label: "Fatura Oluşturulamadı",
+    icon: FileText,
+    color: "text-purple-700",
+    bgColor: "bg-purple-50",
+    borderColor: "border-purple-300",
+    description: "Sipariş başarılı ama PDF fatura oluşturulamadı.",
+  },
+  task_qr_code_failed: {
+    label: "QR Kod Oluşturulamadı",
+    icon: QrCode,
+    color: "text-indigo-700",
+    bgColor: "bg-indigo-50",
+    borderColor: "border-indigo-300",
+    description: "Sipariş başarılı ama QR kod oluşturulamadı.",
+  },
+  task_cart_clear_failed: {
+    label: "Sepet Temizlenemedi",
+    icon: ShoppingCart,
+    color: "text-teal-700",
+    bgColor: "bg-teal-50",
+    borderColor: "border-teal-300",
+    description: "Sipariş başarılı ama sepet temizlenemedi.",
+  },
+  task_notifications_failed: {
+    label: "Bildirimler Gönderilemedi",
+    icon: Bell,
+    color: "text-amber-700",
+    bgColor: "bg-amber-50",
+    borderColor: "border-amber-300",
+    description: "Sipariş başarılı ama bildirimler gönderilemedi.",
+  },
+  task_notification_partial_failed: {
+    label: "Bazı Bildirimler Başarısız",
+    icon: Bell,
+    color: "text-yellow-700",
+    bgColor: "bg-yellow-50",
+    borderColor: "border-yellow-300",
+    description: "Sipariş başarılı ama bazı bildirimler gönderilemedi.",
+  },
+  task_activity_tracking_failed: {
+    label: "Aktivite Takibi Başarısız",
+    icon: Activity,
+    color: "text-cyan-700",
+    bgColor: "bg-cyan-50",
+    borderColor: "border-cyan-300",
+    description: "Sipariş başarılı ama kullanıcı aktivitesi kaydedilemedi.",
+  },
+  task_ad_conversion_failed: {
+    label: "Reklam Dönüşümü Başarısız",
+    icon: BarChart3,
+    color: "text-rose-700",
+    bgColor: "bg-rose-50",
+    borderColor: "border-rose-300",
+    description: "Sipariş başarılı ama reklam dönüşüm takibi başarısız.",
   },
 };
 
@@ -340,6 +442,23 @@ function copyToClipboard(text: string) {
   navigator.clipboard.writeText(text);
 }
 
+function isTaskAlert(type: string): boolean {
+  return type.startsWith("task_");
+}
+
+function getTaskConfig(type: string) {
+  return (
+    TASK_TYPE_CONFIG[type] || {
+      label: type.replace("task_", "").replace(/_/g, " "),
+      icon: Zap,
+      color: "text-gray-700",
+      bgColor: "bg-gray-50",
+      borderColor: "border-gray-300",
+      description: "Sipariş başarılı ama bir görev başarısız oldu.",
+    }
+  );
+}
+
 // ============================================================================
 // COMPONENTS
 // ============================================================================
@@ -388,8 +507,29 @@ function StatusBadge({
   );
 }
 
+// --- Task Alert Badge ---
+function TaskAlertBadge({ type }: { type: string }) {
+  const config = getTaskConfig(type);
+  const Icon = config.icon;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${config.bgColor} ${config.color} ${config.borderColor}`}
+    >
+      <Icon className="w-3 h-3" />
+      {config.label}
+    </span>
+  );
+}
+
 // --- Summary Stats ---
-function SummaryStats({ issues }: { issues: PaymentIssue[] }) {
+function SummaryStats({
+  issues,
+  taskAlerts,
+}: {
+  issues: PaymentIssue[];
+  taskAlerts: TaskAlert[];
+}) {
   const critical = issues.filter(
     (i) => i.status === "payment_succeeded_order_failed",
   ).length;
@@ -410,12 +550,14 @@ function SummaryStats({ issues }: { issues: PaymentIssue[] }) {
       Date.now() - i.createdAt.toMillis() > 15 * 60 * 1000,
   ).length;
 
+  const unresolvedTaskAlerts = taskAlerts.filter((a) => !a.isResolved).length;
+
   const totalAtRisk = issues
     .filter((i) => i.status === "payment_succeeded_order_failed")
     .reduce((sum, i) => sum + (i.amount || 0), 0);
 
   return (
-    <div className="grid grid-cols-5 gap-3 mb-4">
+    <div className="grid grid-cols-6 gap-3 mb-4">
       <div className="bg-white border border-gray-100 rounded-lg p-3">
         <div className="flex items-center gap-2 mb-1">
           <div className="p-1.5 rounded-md bg-red-100">
@@ -464,6 +606,21 @@ function SummaryStats({ issues }: { issues: PaymentIssue[] }) {
       </div>
       <div className="bg-white border border-gray-100 rounded-lg p-3">
         <div className="flex items-center gap-2 mb-1">
+          <div className="p-1.5 rounded-md bg-purple-100">
+            <Zap className="w-3.5 h-3.5 text-purple-600" />
+          </div>
+          <span className="text-xs font-medium text-gray-500">
+            Görev Hatası
+          </span>
+        </div>
+        <span
+          className={`text-xl font-bold ${unresolvedTaskAlerts > 0 ? "text-purple-600" : "text-gray-900"}`}
+        >
+          {unresolvedTaskAlerts}
+        </span>
+      </div>
+      <div className="bg-white border border-gray-100 rounded-lg p-3">
+        <div className="flex items-center gap-2 mb-1">
           <div className="p-1.5 rounded-md bg-red-100">
             <DollarSign className="w-3.5 h-3.5 text-red-600" />
           </div>
@@ -491,7 +648,6 @@ function ProductDetail({
 
   return (
     <div className="flex gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
-      {/* Product Image */}
       <div className="w-14 h-14 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
         {productInfo?.imageUrl ? (
           <img
@@ -506,7 +662,6 @@ function ProductDetail({
         )}
       </div>
 
-      {/* Product Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between">
           <div>
@@ -534,7 +689,6 @@ function ProductDetail({
           </span>
         </div>
 
-        {/* Attributes */}
         <div className="flex flex-wrap gap-1.5 mt-2">
           {item.selectedColor && (
             <span className="inline-flex items-center gap-1 text-xs bg-white border border-gray-200 rounded-md px-2 py-0.5">
@@ -553,7 +707,6 @@ function ProductDetail({
           ))}
         </div>
 
-        {/* Product ID (copyable) */}
         <button
           onClick={() => copyToClipboard(item.productId)}
           className="flex items-center gap-1 mt-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
@@ -563,6 +716,384 @@ function ProductDetail({
           <Copy className="w-3 h-3" />
         </button>
       </div>
+    </div>
+  );
+}
+
+// --- Task Alert Card ---
+function TaskAlertCard({
+  alert,
+  onResolve,
+}: {
+  alert: TaskAlert;
+  onResolve: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const config = getTaskConfig(alert.type);
+  const Icon = config.icon;
+
+  return (
+    <div
+      className={`bg-white border rounded-lg overflow-hidden transition-all ${
+        alert.isResolved
+          ? "border-gray-200 opacity-60"
+          : `${config.borderColor} shadow-sm`
+      }`}
+    >
+      {/* Header Row */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full px-4 py-3 flex items-center gap-4 text-left hover:bg-gray-50/50 transition-colors"
+      >
+        {/* Severity indicator */}
+        <div
+          className={`w-1 h-10 rounded-full flex-shrink-0 ${
+            alert.isResolved ? "bg-green-400" : "bg-purple-500"
+          }`}
+        />
+
+        {/* Status Badge */}
+        <div className="w-72 flex-shrink-0">
+          <TaskAlertBadge type={alert.type} />
+        </div>
+
+        {/* Order ID */}
+        <div className="w-48 flex-shrink-0">
+          <p className="text-xs text-gray-500">Sipariş / Order</p>
+          <p className="text-sm font-mono font-medium text-gray-900 truncate">
+            {alert.orderId
+              ? alert.orderId.substring(0, 16) + "..."
+              : alert.orderNumber || "-"}
+          </p>
+        </div>
+
+        {/* Customer */}
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-gray-500">Müşteri</p>
+          <p className="text-sm font-medium text-gray-900 truncate">
+            {alert.buyerName || "Bilinmiyor"}
+          </p>
+        </div>
+
+        {/* Order Status Indicator */}
+        <div className="w-32 flex-shrink-0 text-right">
+          <p className="text-xs text-gray-500">Sipariş</p>
+          <p className="text-sm font-semibold text-green-600 flex items-center justify-end gap-1">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Başarılı
+          </p>
+        </div>
+
+        {/* Time */}
+        <div className="w-28 flex-shrink-0 text-right">
+          <p className="text-xs text-gray-500">Zaman</p>
+          <p className="text-sm text-gray-600">
+            {alert.timestamp ? timeAgo(alert.timestamp) : "-"}
+          </p>
+        </div>
+
+        {/* Resolved badge */}
+        <div className="w-20 flex-shrink-0 text-right">
+          {alert.isResolved ? (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600">
+              <CheckCircle2 className="w-3 h-3" />
+              Çözüldü
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-orange-600">
+              <Clock className="w-3 h-3" />
+              Bekliyor
+            </span>
+          )}
+        </div>
+
+        {/* Expand */}
+        <div className="flex-shrink-0">
+          {expanded ? (
+            <ChevronUp className="w-4 h-4 text-gray-400" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-gray-400" />
+          )}
+        </div>
+      </button>
+
+      {/* Expanded Detail */}
+      {expanded && (
+        <div className="px-4 pb-4 border-t border-gray-100">
+          <div className="grid grid-cols-3 gap-4 mt-4">
+            {/* Column 1: What happened */}
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Ne Oldu?
+                </h4>
+                <div
+                  className={`rounded-lg p-4 border ${config.bgColor} ${config.borderColor}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`p-2 rounded-lg bg-white/80`}>
+                      <Icon className={`w-5 h-5 ${config.color}`} />
+                    </div>
+                    <div>
+                      <p className={`text-sm font-semibold ${config.color}`}>
+                        {config.label}
+                      </p>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {config.description}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Error message */}
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Hata Mesajı
+                </h4>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-sm text-red-800 break-words font-mono">
+                    {alert.errorMessage || "Hata detayı yok"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Detection info */}
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Tespit Bilgisi
+                </h4>
+                <div className="bg-gray-50 rounded-lg p-3 space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Tespit Eden:</span>
+                    <span className="font-mono">
+                      {alert.detectedBy === "task_catch"
+                        ? "Cloud Function catch bloğu"
+                        : alert.detectedBy === "scheduler"
+                          ? "Zamanlanmış tarama"
+                          : alert.detectedBy || "-"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Zaman:</span>
+                    <span className="font-mono">
+                      {alert.timestamp ? formatDate(alert.timestamp) : "-"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Önem:</span>
+                    <span className="font-mono capitalize">
+                      {alert.severity || "low"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Column 2: Order & User info */}
+            <div className="space-y-4">
+              {/* Order success confirmation */}
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Sipariş Durumu
+                </h4>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle2 className="w-5 h-5 text-green-600" />
+                    <span className="text-sm font-semibold text-green-700">
+                      Sipariş Başarıyla Oluşturuldu
+                    </span>
+                  </div>
+                  <p className="text-xs text-green-600">
+                    Ödeme alındı ve sipariş oluşturuldu. Sadece yukarıdaki görev
+                    başarısız oldu. Müşterinin siparişi etkilenmez.
+                  </p>
+                </div>
+              </div>
+
+              {/* User Info */}
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Müşteri Bilgileri
+                </h4>
+                <div className="space-y-2 bg-gray-50 rounded-lg p-3">
+                  <div className="flex items-center gap-2">
+                    <User className="w-3.5 h-3.5 text-gray-400" />
+                    <span className="text-sm text-gray-900">
+                      {alert.buyerName || "-"}
+                    </span>
+                  </div>
+                  {alert.buyerEmail && (
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-3.5 h-3.5 text-gray-400" />
+                      <span className="text-sm text-gray-700">
+                        {alert.buyerEmail}
+                      </span>
+                    </div>
+                  )}
+                  {alert.buyerPhone && (
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-3.5 h-3.5 text-gray-400" />
+                      <span className="text-sm text-gray-700">
+                        {alert.buyerPhone}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Hash className="w-3.5 h-3.5 text-gray-400" />
+                    <span className="text-xs text-gray-500 font-mono">
+                      {alert.userId}
+                    </span>
+                    <button
+                      onClick={() => copyToClipboard(alert.userId)}
+                      className="ml-auto"
+                    >
+                      <Copy className="w-3 h-3 text-gray-400 hover:text-gray-600" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Items summary if present */}
+              {alert.itemsSummary && alert.itemsSummary.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    Ürünler ({alert.itemCount || alert.itemsSummary.length})
+                  </h4>
+                  <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+                    {alert.itemsSummary.map((item, idx) => (
+                      <p key={idx} className="text-xs text-gray-700">
+                        • {item}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Column 3: Actions & IDs */}
+            <div className="space-y-4">
+              {/* Quick IDs */}
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Referans Numaraları
+                </h4>
+                <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                  {alert.orderId && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">Order ID:</span>
+                      <button
+                        onClick={() => copyToClipboard(alert.orderId)}
+                        className="flex items-center gap-1 text-xs font-mono text-gray-700 hover:text-blue-600 transition-colors"
+                      >
+                        {alert.orderId.substring(0, 16)}...
+                        <Copy className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                  {alert.orderNumber && alert.orderNumber !== alert.orderId && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">Sipariş No:</span>
+                      <button
+                        onClick={() => copyToClipboard(alert.orderNumber)}
+                        className="flex items-center gap-1 text-xs font-mono text-gray-700 hover:text-blue-600 transition-colors"
+                      >
+                        {alert.orderNumber.substring(0, 20)}...
+                        <Copy className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">User ID:</span>
+                    <button
+                      onClick={() => copyToClipboard(alert.userId)}
+                      className="flex items-center gap-1 text-xs font-mono text-gray-700 hover:text-blue-600 transition-colors"
+                    >
+                      {alert.userId.substring(0, 16)}...
+                      <Copy className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">Alert ID:</span>
+                    <button
+                      onClick={() => copyToClipboard(alert.id)}
+                      className="flex items-center gap-1 text-xs font-mono text-gray-700 hover:text-blue-600 transition-colors"
+                    >
+                      {alert.id.substring(0, 20)}...
+                      <Copy className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* What to do */}
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Ne Yapılmalı?
+                </h4>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  {alert.type === "task_receipt_generation_failed" && (
+                    <p className="text-xs text-blue-800">
+                      Firebase Console → receiptTasks koleksiyonunda bu
+                      siparişin dokümanını bulun ve status&apos;u
+                      &quot;pending&quot; yaparak retryCount&apos;u sıfırlayın.
+                      Fonksiyon otomatik tekrar deneyecektir.
+                    </p>
+                  )}
+                  {alert.type === "task_qr_code_failed" && (
+                    <p className="text-xs text-blue-800">
+                      QR kod siparişin takibi için gereklidir. Firebase
+                      Console&apos;dan ilgili Cloud Function loglarını kontrol
+                      edin ve gerekirse manuel olarak tetikleyin.
+                    </p>
+                  )}
+                  {alert.type === "task_cart_clear_failed" && (
+                    <p className="text-xs text-blue-800">
+                      Müşterinin sepetinde satın alınan ürünler hâlâ
+                      görünebilir. Kullanıcı sayfayı yenileyince muhtemelen
+                      düzelecektir. Kritik değil.
+                    </p>
+                  )}
+                  {(alert.type === "task_notifications_failed" ||
+                    alert.type === "task_notification_partial_failed") && (
+                    <p className="text-xs text-blue-800">
+                      Satıcılar satış bildirimi almamış olabilir. Sipariş
+                      yönetim panelinden satıcıların siparişi görebildiğini
+                      kontrol edin.
+                    </p>
+                  )}
+                  {alert.type === "task_activity_tracking_failed" && (
+                    <p className="text-xs text-blue-800">
+                      Kullanıcı aktivite kaydı oluşturulamadı. Öneri
+                      algoritmasını etkiler ama sipariş etkilenmez. Düşük
+                      öncelik.
+                    </p>
+                  )}
+                  {alert.type === "task_ad_conversion_failed" && (
+                    <p className="text-xs text-blue-800">
+                      Reklam dönüşüm takibi başarısız oldu. Reklam raporlarını
+                      etkiler ama sipariş etkilenmez. Düşük öncelik.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-2">
+                {!alert.isResolved && (
+                  <button
+                    onClick={() => onResolve(alert.id)}
+                    className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors flex items-center gap-1"
+                  >
+                    <CheckCircle2 className="w-3 h-3" />
+                    Çözüldü Olarak İşaretle
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -604,7 +1135,6 @@ function IssueCard({
         onClick={() => setExpanded(!expanded)}
         className="w-full px-4 py-3 flex items-center gap-4 text-left hover:bg-gray-50/50 transition-colors"
       >
-        {/* Severity indicator */}
         <div
           className={`w-1 h-10 rounded-full flex-shrink-0 ${
             isCritical
@@ -621,12 +1151,10 @@ function IssueCard({
           }`}
         />
 
-        {/* Status */}
         <div className="w-72 flex-shrink-0">
           <StatusBadge status={issue.status} createdAt={issue.createdAt} />
         </div>
 
-        {/* Order Number */}
         <div className="w-48 flex-shrink-0">
           <p className="text-xs text-gray-500">Sipariş No</p>
           <p className="text-sm font-mono font-medium text-gray-900 truncate">
@@ -634,7 +1162,6 @@ function IssueCard({
           </p>
         </div>
 
-        {/* Customer */}
         <div className="flex-1 min-w-0">
           <p className="text-xs text-gray-500">Müşteri</p>
           <p className="text-sm font-medium text-gray-900 truncate">
@@ -642,7 +1169,6 @@ function IssueCard({
           </p>
         </div>
 
-        {/* Amount */}
         <div className="w-32 flex-shrink-0 text-right">
           <p className="text-xs text-gray-500">Tutar</p>
           <p
@@ -652,7 +1178,6 @@ function IssueCard({
           </p>
         </div>
 
-        {/* Time */}
         <div className="w-28 flex-shrink-0 text-right">
           <p className="text-xs text-gray-500">Zaman</p>
           <p className="text-sm text-gray-600">
@@ -660,7 +1185,6 @@ function IssueCard({
           </p>
         </div>
 
-        {/* Expand */}
         <div className="flex-shrink-0">
           {expanded ? (
             <ChevronUp className="w-4 h-4 text-gray-400" />
@@ -676,7 +1200,6 @@ function IssueCard({
           <div className="grid grid-cols-3 gap-4 mt-4">
             {/* Column 1: Customer & Payment Details */}
             <div className="space-y-4">
-              {/* Customer Info */}
               <div>
                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                   Müşteri Bilgileri
@@ -735,7 +1258,6 @@ function IssueCard({
                 </div>
               </div>
 
-              {/* Payment Breakdown */}
               <div>
                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                   Ödeme Detayı
@@ -805,7 +1327,6 @@ function IssueCard({
                 </div>
               </div>
 
-              {/* Address */}
               {issue.cartData?.address && (
                 <div>
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
@@ -857,7 +1378,6 @@ function IssueCard({
 
             {/* Column 3: Error Details & Actions */}
             <div className="space-y-4">
-              {/* Error Info */}
               {(issue.errorMessage || issue.orderError) && (
                 <div>
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
@@ -871,7 +1391,6 @@ function IssueCard({
                 </div>
               )}
 
-              {/* Bank Response (if failed) */}
               {issue.rawResponse && (
                 <div>
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
@@ -916,7 +1435,6 @@ function IssueCard({
                 </div>
               )}
 
-              {/* Timestamps */}
               <div>
                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                   Zaman Bilgileri
@@ -947,7 +1465,6 @@ function IssueCard({
                 </div>
               </div>
 
-              {/* Admin Notes */}
               <div>
                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                   Admin Notları
@@ -979,7 +1496,6 @@ function IssueCard({
                 </div>
               </div>
 
-              {/* Quick Links */}
               <div>
                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                   Hızlı Bağlantılar
@@ -1027,6 +1543,7 @@ export default function PaymentIssuesPage() {
   const router = useRouter();
 
   const [issues, setIssues] = useState<PaymentIssue[]>([]);
+  const [taskAlerts, setTaskAlerts] = useState<TaskAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>("all");
@@ -1036,12 +1553,64 @@ export default function PaymentIssuesPage() {
   >(new Map());
   const [showResolved, setShowResolved] = useState(false);
 
+  // --- Fetch task failure alerts from _payment_alerts ---
+  const fetchTaskAlerts = useCallback(async () => {
+    try {
+      const alertsRef = collection(db, "_payment_alerts");
+
+      let q;
+      if (showResolved) {
+        q = query(alertsRef, orderBy("timestamp", "desc"), limit(200));
+      } else {
+        q = query(
+          alertsRef,
+          where("isResolved", "==", false),
+          orderBy("timestamp", "desc"),
+          limit(200),
+        );
+      }
+
+      const snapshot = await getDocs(q);
+      const alerts: TaskAlert[] = [];
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        alerts.push({
+          id: docSnap.id,
+          type: data.type || "",
+          severity: data.severity || "low",
+          orderNumber: data.orderNumber || "",
+          orderId: data.orderId || "",
+          userId: data.userId || "",
+          buyerName: data.buyerName || "",
+          amount: data.amount || 0,
+          errorMessage: data.errorMessage || "",
+          isRead: data.isRead || false,
+          isResolved: data.isResolved || false,
+          timestamp: data.timestamp,
+          detectedBy: data.detectedBy || "",
+          pendingPaymentId: data.pendingPaymentId,
+          buyerEmail: data.buyerEmail,
+          buyerPhone: data.buyerPhone,
+          clientAmount: data.clientAmount,
+          serverCalculation: data.serverCalculation,
+          itemCount: data.itemCount,
+          itemsSummary: data.itemsSummary,
+          previousStatus: data.previousStatus,
+        });
+      });
+
+      setTaskAlerts(alerts);
+    } catch (error) {
+      console.error("Error fetching task alerts:", error);
+    }
+  }, [showResolved]);
+
   // --- Fetch payment issues ---
   const fetchIssues = useCallback(async () => {
     try {
       const pendingRef = collection(db, "pendingPayments");
 
-      // Fetch problem statuses
       const problemStatuses = [
         "payment_succeeded_order_failed",
         "payment_failed",
@@ -1054,7 +1623,6 @@ export default function PaymentIssuesPage() {
         problemStatuses.push("resolved");
       }
 
-      // Firestore 'in' queries support max 30 values
       const q = query(
         pendingRef,
         where("status", "in", problemStatuses),
@@ -1096,7 +1664,6 @@ export default function PaymentIssuesPage() {
         });
       });
 
-      // Filter out awaiting_3d that are still fresh (< 15 min) and processing (< 5 min)
       const now = Date.now();
       const filteredIssues = fetchedIssues.filter((issue) => {
         if (issue.status === "awaiting_3d" && issue.createdAt) {
@@ -1108,7 +1675,6 @@ export default function PaymentIssuesPage() {
         return true;
       });
 
-      // Sort by severity then time
       filteredIssues.sort((a, b) => {
         const sevA = STATUS_CONFIG[a.status]?.severity ?? 99;
         const sevB = STATUS_CONFIG[b.status]?.severity ?? 99;
@@ -1120,7 +1686,6 @@ export default function PaymentIssuesPage() {
 
       setIssues(filteredIssues);
 
-      // Fetch product info for all items
       const allProductIds = new Set<string>();
       filteredIssues.forEach((issue) => {
         issue.cartData?.items?.forEach((item) => {
@@ -1178,7 +1743,7 @@ export default function PaymentIssuesPage() {
     setProductInfoMap(infoMap);
   };
 
-  // --- Resolve issue ---
+  // --- Resolve payment issue ---
   const handleResolve = async (issueId: string) => {
     try {
       const ref = doc(db, "pendingPayments", issueId);
@@ -1205,6 +1770,24 @@ export default function PaymentIssuesPage() {
     }
   };
 
+  // --- Resolve task alert ---
+  const handleResolveTaskAlert = async (alertId: string) => {
+    try {
+      const ref = doc(db, "_payment_alerts", alertId);
+      await updateDoc(ref, {
+        isResolved: true,
+        resolvedAt: Timestamp.now(),
+        resolvedBy: user?.email || user?.uid || "admin",
+      });
+
+      setTaskAlerts((prev) =>
+        prev.map((a) => (a.id === alertId ? { ...a, isResolved: true } : a)),
+      );
+    } catch (error) {
+      console.error("Error resolving task alert:", error);
+    }
+  };
+
   // --- Add admin note ---
   const handleAddNote = async (issueId: string, note: string) => {
     try {
@@ -1225,25 +1808,37 @@ export default function PaymentIssuesPage() {
   const handleRefresh = () => {
     setRefreshing(true);
     fetchIssues();
+    fetchTaskAlerts();
   };
 
   // --- Initial fetch ---
   useEffect(() => {
-    if (user) fetchIssues();
-  }, [user, fetchIssues]);
+    if (user) {
+      fetchIssues();
+      fetchTaskAlerts();
+    }
+  }, [user, fetchIssues, fetchTaskAlerts]);
+
+  // --- Only task alerts that are actual task failures ---
+  const taskFailureAlerts = useMemo(() => {
+    return taskAlerts.filter((a) => isTaskAlert(a.type));
+  }, [taskAlerts]);
+
+  // --- Non-task alerts (payment-level alerts from alertOnPaymentIssue / detectPaymentAnomalies) ---
+  // These are already covered by the pendingPayments query, so we don't show them separately
 
   // --- Filtered & searched issues ---
   const displayedIssues = useMemo(() => {
     let result = issues;
 
-    // Status filter
+    if (filter === "task_failures") return []; // Task failures shown separately
+
     if (filter !== "all") {
       result = result.filter(
         (i) => getStatusCategory(i.status, i.createdAt) === filter,
       );
     }
 
-    // Search
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
       result = result.filter(
@@ -1259,10 +1854,38 @@ export default function PaymentIssuesPage() {
     return result;
   }, [issues, filter, searchTerm]);
 
+  // --- Filtered task alerts ---
+  const displayedTaskAlerts = useMemo(() => {
+    if (filter !== "all" && filter !== "task_failures") return [];
+
+    let result = taskFailureAlerts;
+
+    if (!showResolved) {
+      result = result.filter((a) => !a.isResolved);
+    }
+
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter(
+        (a) =>
+          a.orderId?.toLowerCase().includes(term) ||
+          a.orderNumber?.toLowerCase().includes(term) ||
+          a.buyerName?.toLowerCase().includes(term) ||
+          a.userId?.toLowerCase().includes(term) ||
+          a.errorMessage?.toLowerCase().includes(term),
+      );
+    }
+
+    return result;
+  }, [taskFailureAlerts, filter, searchTerm, showResolved]);
+
   // --- Filter counts ---
   const filterCounts = useMemo(() => {
+    const unresolvedTaskFailures = taskFailureAlerts.filter(
+      (a) => !a.isResolved,
+    ).length;
     return {
-      all: issues.length,
+      all: issues.length + unresolvedTaskFailures,
       critical: issues.filter(
         (i) => getStatusCategory(i.status, i.createdAt) === "critical",
       ).length,
@@ -1275,9 +1898,10 @@ export default function PaymentIssuesPage() {
       expired: issues.filter(
         (i) => getStatusCategory(i.status, i.createdAt) === "expired",
       ).length,
+      task_failures: unresolvedTaskFailures,
       resolved: issues.filter((i) => i.status === "resolved").length,
     };
-  }, [issues]);
+  }, [issues, taskFailureAlerts]);
 
   return (
     <ProtectedRoute>
@@ -1301,14 +1925,13 @@ export default function PaymentIssuesPage() {
                     Ödeme Sorunları
                   </h1>
                   <p className="text-xs text-gray-500">
-                    Ödeme anomalileri ve hataları
+                    Ödeme anomalileri, hatalar ve görev başarısızlıkları
                   </p>
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
-              {/* Search */}
               <div className="relative w-72">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -1320,7 +1943,6 @@ export default function PaymentIssuesPage() {
                 />
               </div>
 
-              {/* Show resolved toggle */}
               <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
                 <input
                   type="checkbox"
@@ -1334,7 +1956,6 @@ export default function PaymentIssuesPage() {
                 Çözülenleri göster
               </label>
 
-              {/* Refresh */}
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
@@ -1351,8 +1972,7 @@ export default function PaymentIssuesPage() {
 
         {/* Main Content */}
         <main className="max-w-[1600px] mx-auto p-4">
-          {/* Summary Stats */}
-          <SummaryStats issues={issues} />
+          <SummaryStats issues={issues} taskAlerts={taskAlerts} />
 
           {/* Filter Tabs */}
           <div className="flex gap-1 mb-4 bg-white border border-gray-100 rounded-lg p-1">
@@ -1363,6 +1983,7 @@ export default function PaymentIssuesPage() {
                 { key: "stuck", label: "Takılı" },
                 { key: "failed", label: "Başarısız" },
                 { key: "expired", label: "Süresi Dolmuş" },
+                { key: "task_failures", label: "Görev Hataları" },
                 { key: "resolved", label: "Çözüldü" },
               ] as { key: StatusFilter; label: string }[]
             ).map((tab) => (
@@ -1375,6 +1996,7 @@ export default function PaymentIssuesPage() {
                     : "text-gray-600 hover:bg-gray-50"
                 }`}
               >
+                {tab.key === "task_failures" && <Zap className="w-3 h-3" />}
                 {tab.label}
                 {filterCounts[tab.key] > 0 && (
                   <span
@@ -1383,7 +2005,10 @@ export default function PaymentIssuesPage() {
                         ? "bg-white/20 text-white"
                         : tab.key === "critical" && filterCounts.critical > 0
                           ? "bg-red-100 text-red-700"
-                          : "bg-gray-100 text-gray-600"
+                          : tab.key === "task_failures" &&
+                              filterCounts.task_failures > 0
+                            ? "bg-purple-100 text-purple-700"
+                            : "bg-gray-100 text-gray-600"
                     }`}
                   >
                     {filterCounts[tab.key]}
@@ -1401,30 +2026,73 @@ export default function PaymentIssuesPage() {
                 <span className="text-sm">Yükleniyor...</span>
               </div>
             </div>
-          ) : displayedIssues.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 bg-white rounded-lg border border-gray-100">
-              <CheckCircle2 className="w-12 h-12 text-green-400 mb-3" />
-              <p className="text-sm font-medium text-gray-900">
-                Sorun bulunamadı
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                {filter !== "all"
-                  ? "Bu filtrede herhangi bir sorun yok"
-                  : "Tüm ödemeler sorunsuz çalışıyor"}
-              </p>
-            </div>
           ) : (
-            <div className="space-y-2">
-              {displayedIssues.map((issue) => (
-                <IssueCard
-                  key={issue.id}
-                  issue={issue}
-                  productInfoMap={productInfoMap}
-                  onResolve={handleResolve}
-                  onAddNote={handleAddNote}
-                />
-              ))}
-            </div>
+            <>
+              {/* Payment Issues */}
+              {filter !== "task_failures" && displayedIssues.length > 0 && (
+                <div className="space-y-2">
+                  {displayedIssues.map((issue) => (
+                    <IssueCard
+                      key={issue.id}
+                      issue={issue}
+                      productInfoMap={productInfoMap}
+                      onResolve={handleResolve}
+                      onAddNote={handleAddNote}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Task Failure Alerts */}
+              {(filter === "all" || filter === "task_failures") &&
+                displayedTaskAlerts.length > 0 && (
+                  <div
+                    className={
+                      filter === "all" && displayedIssues.length > 0
+                        ? "mt-6"
+                        : ""
+                    }
+                  >
+                    {filter === "all" && displayedTaskAlerts.length > 0 && (
+                      <div className="flex items-center gap-2 mb-3">
+                        <Zap className="w-4 h-4 text-purple-600" />
+                        <h2 className="text-sm font-semibold text-gray-700">
+                          Görev Hataları
+                        </h2>
+                        <span className="text-xs text-gray-500">
+                          Sipariş başarılı ama bir post-order görevi başarısız
+                          oldu
+                        </span>
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      {displayedTaskAlerts.map((alert) => (
+                        <TaskAlertCard
+                          key={alert.id}
+                          alert={alert}
+                          onResolve={handleResolveTaskAlert}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              {/* Empty state */}
+              {displayedIssues.length === 0 &&
+                displayedTaskAlerts.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-20 bg-white rounded-lg border border-gray-100">
+                    <CheckCircle2 className="w-12 h-12 text-green-400 mb-3" />
+                    <p className="text-sm font-medium text-gray-900">
+                      Sorun bulunamadı
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {filter !== "all"
+                        ? "Bu filtrede herhangi bir sorun yok"
+                        : "Tüm ödemeler ve görevler sorunsuz çalışıyor"}
+                    </p>
+                  </div>
+                )}
+            </>
           )}
         </main>
       </div>
