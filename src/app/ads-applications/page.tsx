@@ -100,17 +100,14 @@ export default function AdsApplicationsPage() {
   // Real-time listener for ad submissions
   useEffect(() => {
     let q;
-    
+
     if (filterStatus === "all") {
-      q = query(
-        collection(db, "ad_submissions"),
-        orderBy("createdAt", "desc")
-      );
+      q = query(collection(db, "ad_submissions"), orderBy("createdAt", "desc"));
     } else {
       q = query(
         collection(db, "ad_submissions"),
         where("status", "==", filterStatus),
-        orderBy("createdAt", "desc")
+        orderBy("createdAt", "desc"),
       );
     }
 
@@ -137,7 +134,7 @@ export default function AdsApplicationsPage() {
         sub.shopName.toLowerCase().includes(term) ||
         sub.shopId.toLowerCase().includes(term) ||
         sub.userId.toLowerCase().includes(term) ||
-        sub.id.toLowerCase().includes(term)
+        sub.id.toLowerCase().includes(term),
     );
   }, [submissions, searchTerm]);
 
@@ -157,26 +154,19 @@ export default function AdsApplicationsPage() {
       });
 
       // Send notification to user - FIXED: Changed createdAt to timestamp
-      await addDoc(
-        collection(db, "users", submission.userId, "notifications"),
-        {
-          type: "ad_approved",
-          timestamp: serverTimestamp(), // ✅ CHANGED FROM createdAt
-          isRead: false,
-          adTypeLabel: AD_TYPE_CONFIG[submission.adType].label,
-          message: `${submission.shopName} mağazanız için ${AD_TYPE_CONFIG[submission.adType].label} başvurunuz onaylandı. Ödeme yapmak için tıklayın.`,
-          message_en: `Your ${AD_TYPE_CONFIG[submission.adType].label} application for ${submission.shopName} has been approved. Click to proceed with payment.`,
-          message_tr: `${submission.shopName} mağazanız için ${AD_TYPE_CONFIG[submission.adType].label} başvurunuz onaylandı. Ödeme yapmak için tıklayın.`,
-          adType: submission.adType,
-          duration: submission.duration,
-          price: submission.price,
-          imageUrl: submission.imageUrl,
-          shopId: submission.shopId,
-          paymentLink,
-          submissionId: submission.id,
-          shopName: submission.shopName,
-        }
-      );
+      await addDoc(collection(db, "shop_notifications"), {
+        type: "ad_approved",
+        shopId: submission.shopId,
+        timestamp: serverTimestamp(),
+        isRead: {},
+        adType: submission.adType,
+        duration: submission.duration,
+        price: submission.price,
+        imageUrl: submission.imageUrl,
+        paymentLink,
+        submissionId: submission.id,
+        shopName: submission.shopName,
+      });
 
       // Log admin activity
       logAdminActivity("Reklam başvurusu onaylandı", {
@@ -215,7 +205,7 @@ export default function AdsApplicationsPage() {
       setProcessingId(rejectModal.submissionId);
 
       const submission = submissions.find(
-        (s) => s.id === rejectModal.submissionId
+        (s) => s.id === rejectModal.submissionId,
       );
       if (!submission) return;
 
@@ -227,22 +217,16 @@ export default function AdsApplicationsPage() {
       });
 
       // Send notification to user - FIXED: Changed createdAt to timestamp
-      await addDoc(
-        collection(db, "users", submission.userId, "notifications"),
-        {
-          type: "ad_rejected",
-          timestamp: serverTimestamp(), // ✅ CHANGED FROM createdAt
-          isRead: false,
-          message: `${submission.shopName} mağazanız için ${AD_TYPE_CONFIG[submission.adType].label} başvurunuz reddedildi. Neden: ${rejectionReason.trim()}`,
-          message_en: `Your ${AD_TYPE_CONFIG[submission.adType].label} application for ${submission.shopName} has been rejected. Reason: ${rejectionReason.trim()}`,
-          message_tr: `${submission.shopName} mağazanız için ${AD_TYPE_CONFIG[submission.adType].label} başvurunuz reddedildi. Neden: ${rejectionReason.trim()}`,
-          adType: submission.adType,
-          shopId: submission.shopId,
-          rejectionReason: rejectionReason.trim(),
-          submissionId: submission.id,          
-          shopName: submission.shopName,
-        }
-      );
+      await addDoc(collection(db, "shop_notifications"), {
+        type: "ad_rejected",
+        shopId: submission.shopId,
+        timestamp: serverTimestamp(),
+        isRead: {},
+        adType: submission.adType,
+        rejectionReason: rejectionReason.trim(),
+        submissionId: submission.id,
+        shopName: submission.shopName,
+      });
 
       // Log admin activity
       logAdminActivity("Reklam başvurusu reddedildi", {
@@ -301,7 +285,8 @@ export default function AdsApplicationsPage() {
       },
     };
 
-    const statusConfig = config[status as keyof typeof config] || config.pending;
+    const statusConfig =
+      config[status as keyof typeof config] || config.pending;
 
     return (
       <span
@@ -474,7 +459,9 @@ export default function AdsApplicationsPage() {
                       <div className="flex items-center justify-between text-sm">
                         <div className="flex items-center gap-2 text-gray-600">
                           <Clock className="w-4 h-4" />
-                          <span>{DURATION_CONFIG[submission.duration].label}</span>
+                          <span>
+                            {DURATION_CONFIG[submission.duration].label}
+                          </span>
                         </div>
                         <div className="flex items-center gap-1">
                           <DollarSign className="w-4 h-4 text-gray-900" />
