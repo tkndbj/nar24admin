@@ -29,6 +29,7 @@ import {
   TrendingUp,
   Calendar,
   ArrowLeft,
+  Clock,
 } from "lucide-react";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { Pause, Play, X } from "lucide-react";
@@ -120,6 +121,7 @@ export default function OrdersPage() {
   const [loadingSalesConfig, setLoadingSalesConfig] = useState(true);
   const [togglingPause, setTogglingPause] = useState(false);
   const [showPauseModal, setShowPauseModal] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<CombinedOrder | null>(null);
 
   // Algolia search state
   const [searchInput, setSearchInput] = useState("");
@@ -1261,7 +1263,8 @@ export default function OrdersPage() {
                       return (
                         <tr
                           key={`${order.orderHeader.id}-${item.id}`}
-                          className={rowBgClass}
+                          className={`${rowBgClass} cursor-pointer`}
+                          onClick={() => setSelectedOrder(order)}
                         >
                           <td className="px-2 py-2 text-gray-600 whitespace-nowrap">
                             {idx === 0
@@ -1538,6 +1541,194 @@ export default function OrdersPage() {
     </div>
   </div>
 )}
+
+{/* Order Detail Modal */}
+{selectedOrder && (() => {
+  const o = selectedOrder;
+  const header = o.orderHeader;
+  const date = header.timestamp.toDate();
+
+  // Calculate order-level totals
+  let itemsTotal = 0;
+  let totalCommission = 0;
+  o.items.forEach((item) => {
+    const t = Number(item.calculatedTotal) || Number(item.price) * Number(item.quantity || 1) || 0;
+    itemsTotal += t;
+    totalCommission += (t * (Number(item.ourComission) || 0)) / 100;
+  });
+  const deliveryPrice = Number(header.deliveryPrice) || 0;
+  const couponDiscount = Number(header.couponDiscount) || 0;
+  const grandTotal = itemsTotal + deliveryPrice;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSelectedOrder(null)}>
+      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        {/* Modal Header */}
+        <div className="bg-blue-50 px-6 py-4 border-b border-blue-100 flex items-center justify-between sticky top-0">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-10 h-10 bg-blue-100 rounded-full">
+              <Package className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Sipariş Detayı</h3>
+              <p className="text-xs text-gray-500 font-mono">#{header.id.slice(0, 12)}</p>
+            </div>
+          </div>
+          <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-blue-100 rounded-lg transition-colors">
+            <X className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* Date & Delivery Status */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <Calendar className="w-4 h-4" />
+              <span>{date.toLocaleDateString("tr-TR", { day: "2-digit", month: "long", year: "numeric" })}</span>
+              <span className="text-gray-400">|</span>
+              <Clock className="w-4 h-4" />
+              <span>{date.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}</span>
+            </div>
+            {header.distributionStatus === "delivered" ? (
+              <span className="inline-flex items-center px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">Teslim Edildi</span>
+            ) : header.distributionStatus === "assigned" || header.distributionStatus === "in_progress" || header.distributionStatus === "distributed" ? (
+              <span className="inline-flex items-center px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">Dağıtımda</span>
+            ) : header.allItemsGathered || header.gatheringStatus === "at_warehouse" ? (
+              <span className="inline-flex items-center px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">Depoda</span>
+            ) : header.gatheringStatus === "assigned" ? (
+              <span className="inline-flex items-center px-2.5 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">Toplanıyor</span>
+            ) : (
+              <span className="inline-flex items-center px-2.5 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">Bekliyor</span>
+            )}
+          </div>
+
+          {/* Buyer & Seller Info */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-blue-50 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <User className="w-4 h-4 text-blue-600" />
+                <span className="text-xs font-medium text-blue-900">Alıcı</span>
+              </div>
+              <p className="text-sm font-semibold text-gray-900">{o.items[0]?.buyerName || "—"}</p>
+            </div>
+            <div className="bg-purple-50 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-1">
+                {o.items[0]?.isShopProduct ? (
+                  <Store className="w-4 h-4 text-purple-600" />
+                ) : (
+                  <User className="w-4 h-4 text-green-600" />
+                )}
+                <span className="text-xs font-medium text-purple-900">Satıcı</span>
+              </div>
+              <p className="text-sm font-semibold text-gray-900">{o.items[0]?.sellerName || "—"}</p>
+              <p className="text-xs text-gray-500">{o.items[0]?.isShopProduct ? "Mağaza" : "Bireysel"}</p>
+            </div>
+          </div>
+
+          {/* Delivery & Address */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-orange-50 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Truck className="w-4 h-4 text-orange-600" />
+                <span className="text-xs font-medium text-orange-900">Teslimat</span>
+              </div>
+              <p className="text-sm font-semibold text-gray-900">{getDeliveryLabel(header.deliveryOption)}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <MapPin className="w-4 h-4 text-gray-600" />
+                <span className="text-xs font-medium text-gray-700">Adres</span>
+              </div>
+              <p className="text-sm text-gray-900">{formatAddress(header.address || header.pickupPoint)}</p>
+              {header.address?.phoneNumber && (
+                <p className="text-xs text-gray-500 mt-1">{header.address.phoneNumber}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Products */}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-900 mb-3">Ürünler ({o.items.length})</h4>
+            <div className="space-y-3">
+              {o.items.map((item) => {
+                const colorImage = item.selectedAttributes?.selectedColorImage as string | undefined;
+                const itemTotal = Number(item.calculatedTotal) || Number(item.price) * Number(item.quantity || 1) || 0;
+                return (
+                  <div key={item.id} className="flex gap-4 bg-gray-50 rounded-lg p-3">
+                    {/* Product Image */}
+                    {colorImage ? (
+                      <img
+                        src={colorImage}
+                        alt={item.productName}
+                        className="w-20 h-20 object-cover rounded-lg border border-gray-200 flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Package className="w-8 h-8 text-gray-400" />
+                      </div>
+                    )}
+                    {/* Product Details */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{item.productName}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{formatDynamicAttributes(item.selectedAttributes)}</p>
+                      <div className="flex items-center gap-4 mt-2">
+                        <span className="text-xs text-gray-600">Adet: <span className="font-medium text-gray-900">{item.quantity}</span></span>
+                        <span className="text-xs text-gray-600">Birim: <span className="font-medium text-gray-900">{Number(item.calculatedUnitPrice || item.price || 0).toFixed(2)} TL</span></span>
+                        <span className="text-xs text-gray-600">Komisyon: <span className="font-medium text-purple-700">%{item.ourComission}</span></span>
+                      </div>
+                      <p className="text-sm font-bold text-gray-900 mt-1">{itemTotal.toFixed(2)} TL</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Price Breakdown */}
+          <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Ürün Toplamı</span>
+              <span className="text-gray-900 font-medium">{itemsTotal.toFixed(2)} TL</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Teslimat Ücreti</span>
+              <span className="text-gray-900 font-medium">
+                {header.freeShippingApplied ? (
+                  <span className="flex items-center gap-2">
+                    <span className="line-through text-gray-400">{(header.originalDeliveryPrice || deliveryPrice).toFixed(2)} TL</span>
+                    <span className="text-green-600">Ücretsiz</span>
+                  </span>
+                ) : (
+                  `${deliveryPrice.toFixed(2)} TL`
+                )}
+              </span>
+            </div>
+            {couponDiscount > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Kupon İndirimi {header.couponCode && <span className="text-xs text-gray-400">({header.couponCode})</span>}</span>
+                <span className="text-green-600 font-medium">-{couponDiscount.toFixed(2)} TL</span>
+              </div>
+            )}
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Komisyon Toplamı</span>
+              <span className="text-purple-700 font-medium">{totalCommission.toFixed(2)} TL</span>
+            </div>
+            <div className="border-t border-gray-200 pt-2 flex justify-between text-sm">
+              <span className="font-semibold text-gray-900">Genel Toplam</span>
+              <span className="font-bold text-gray-900 text-base">{grandTotal.toFixed(2)} TL</span>
+            </div>
+          </div>
+
+          {/* Payment Method */}
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <DollarSign className="w-4 h-4" />
+            <span>Ödeme: <span className="font-medium text-gray-900">{header.paymentMethod || "—"}</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+})()}
     </div>
   );
 }

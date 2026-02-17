@@ -3,7 +3,8 @@
     "allow": [
       "mcp__ide__getDiagnostics",
       "Bash(npm run build:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npx next build --no-lint)"
     ]
   }
 }
