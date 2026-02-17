@@ -56,6 +56,7 @@ interface OrderItem {
     string,
     string | number | boolean | string[] | number[]
   >;
+  productImage?: string;
   calculatedTotal: number;
   calculatedUnitPrice: number;
   timestamp: Timestamp;
@@ -1627,14 +1628,14 @@ export default function OrdersPage() {
             <h4 className="text-sm font-semibold text-gray-900 mb-3">Ürünler ({o.items.length})</h4>
             <div className="space-y-3">
               {o.items.map((item) => {
-                const colorImage = item.selectedAttributes?.selectedColorImage as string | undefined;
+                const imageUrl = (item.selectedAttributes?.selectedColorImage as string) || item.productImage;
                 const itemTotal = Number(item.calculatedTotal) || Number(item.price) * Number(item.quantity || 1) || 0;
                 return (
                   <div key={item.id} className="flex gap-4 bg-gray-50 rounded-lg p-3">
                     {/* Product Image */}
-                    {colorImage ? (
+                    {imageUrl ? (
                       <img
-                        src={colorImage}
+                        src={imageUrl}
                         alt={item.productName}
                         className="w-20 h-20 object-cover rounded-lg border border-gray-200 flex-shrink-0"
                       />
