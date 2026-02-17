@@ -12,10 +12,12 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  Eye,
   Calendar,
-  Filter,
   Search,
+  Package,
+  Store,
+  DollarSign,
+  X,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -43,6 +45,10 @@ interface RefundForm {
   createdAt: Timestamp;
   updatedAt?: Timestamp;
   adminNote?: string;
+  productName?: string;
+  sellerName?: string;
+  price?: number;
+  productImage?: string;
 }
 
 export default function RefundFormsPage() {
@@ -51,7 +57,6 @@ export default function RefundFormsPage() {
   const [refundForms, setRefundForms] = useState<RefundForm[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedForm, setSelectedForm] = useState<RefundForm | null>(null);
-  const [showDetailModal, setShowDetailModal] = useState(false);
   const [adminNote, setAdminNote] = useState("");
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -59,7 +64,6 @@ export default function RefundFormsPage() {
     "all" | "pending" | "approved" | "rejected"
   >("all");
 
-  // Fetch refund forms from Firestore
   useEffect(() => {
     const q = query(
       collection(db, "refund-forms"),
@@ -78,16 +82,13 @@ export default function RefundFormsPage() {
     return () => unsubscribe();
   }, []);
 
-  // Filter and search forms
   const filteredForms = useMemo(() => {
     let filtered = refundForms;
 
-    // Status filter
     if (statusFilter !== "all") {
       filtered = filtered.filter((form) => form.status === statusFilter);
     }
 
-    // Search filter
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(
@@ -95,6 +96,8 @@ export default function RefundFormsPage() {
           form.displayName.toLowerCase().includes(term) ||
           form.email.toLowerCase().includes(term) ||
           form.receiptNo.toLowerCase().includes(term) ||
+          form.productName?.toLowerCase().includes(term) ||
+          form.sellerName?.toLowerCase().includes(term) ||
           form.id.toLowerCase().includes(term)
       );
     }
@@ -102,14 +105,16 @@ export default function RefundFormsPage() {
     return filtered;
   }, [refundForms, statusFilter, searchTerm]);
 
-  // Handle form detail view
   const handleViewDetails = (form: RefundForm) => {
     setSelectedForm(form);
     setAdminNote(form.adminNote || "");
-    setShowDetailModal(true);
   };
 
-  // Handle status update
+  const handleCloseModal = () => {
+    setSelectedForm(null);
+    setAdminNote("");
+  };
+
   const handleUpdateStatus = async (
     formId: string,
     newStatus: "approved" | "rejected"
@@ -120,7 +125,6 @@ export default function RefundFormsPage() {
     try {
       const formRef = doc(db, "refund-forms", formId);
 
-      // Get the form data first to access userId
       const formDoc = await getDoc(formRef);
       if (!formDoc.exists()) {
         throw new Error("Form not found");
@@ -128,20 +132,17 @@ export default function RefundFormsPage() {
 
       const formData = formDoc.data() as RefundForm;
 
-      // Update the form status
       await updateDoc(formRef, {
         status: newStatus,
         adminNote: adminNote.trim() || null,
         updatedAt: Timestamp.now(),
       });
 
-      // CREATE NOTIFICATION HERE
-      // Add notification to user's notifications subcollection
       await addDoc(collection(db, "users", formData.userId, "notifications"), {
         type:
           newStatus === "approved"
             ? "refund_request_approved"
-            : "refund_request_rejected", // ✅ More explicit
+            : "refund_request_rejected",
         status: newStatus,
         message:
           newStatus === "approved"
@@ -172,9 +173,7 @@ export default function RefundFormsPage() {
       alert(
         `İade talebi ${newStatus === "approved" ? "onaylandı" : "reddedildi"}`
       );
-      setShowDetailModal(false);
-      setSelectedForm(null);
-      setAdminNote("");
+      handleCloseModal();
     } catch (error) {
       console.error("Error updating status:", error);
       alert("Durum güncellenirken bir hata oluştu");
@@ -183,38 +182,36 @@ export default function RefundFormsPage() {
     }
   };
 
-  // Format date
   const formatDate = (timestamp: Timestamp): string => {
     const date = timestamp.toDate();
     return date.toLocaleString("tr-TR", {
       day: "2-digit",
       month: "2-digit",
-      year: "numeric",
+      year: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
     });
   };
 
-  // Get status badge
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "pending":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
             <Clock className="w-3 h-3" />
             Beklemede
           </span>
         );
       case "approved":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
             <CheckCircle className="w-3 h-3" />
             Onaylandı
           </span>
         );
       case "rejected":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
             <XCircle className="w-3 h-3" />
             Reddedildi
           </span>
@@ -224,7 +221,6 @@ export default function RefundFormsPage() {
     }
   };
 
-  // Calculate statistics
   const stats = useMemo(() => {
     return {
       total: refundForms.length,
@@ -236,154 +232,106 @@ export default function RefundFormsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50">
-        {/* Header */}
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center py-3">
+      <div className="min-h-screen bg-gray-50 p-4">
+        <div className="w-full">
+          {/* Header */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => router.push("/dashboard")}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="flex items-center justify-center w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                 >
                   <ArrowLeft className="w-5 h-5 text-gray-600" />
                 </button>
-                <div className="flex items-center justify-center w-8 h-8 bg-orange-600 rounded-lg">
-                  <FileText className="w-5 h-5 text-white" />
+                <div className="flex items-center justify-center w-10 h-10 bg-orange-600 rounded-lg">
+                  <FileText className="w-6 h-6 text-white" />
                 </div>
-                <h1 className="text-xl font-bold text-gray-900">
-                  İade Talepleri
-                </h1>
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    İade Talepleri
+                  </h1>
+                  <p className="text-sm text-gray-600">
+                    Tüm iade taleplerini görüntüle ve yönet
+                  </p>
+                </div>
               </div>
-
-              <div className="flex items-center gap-2 text-gray-600">
+              <div className="flex items-center gap-2 text-sm text-gray-600">
                 <User className="w-4 h-4" />
-                <span className="text-sm hidden sm:block">{user?.email}</span>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {/* Statistics Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-10 h-10 bg-blue-100 rounded-lg">
-                  <FileText className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600">
-                    Toplam Talep
-                  </h3>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {stats.total}
-                  </p>
-                </div>
+                <span className="hidden sm:block">{user?.email}</span>
               </div>
             </div>
 
-            <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-10 h-10 bg-yellow-100 rounded-lg">
-                  <Clock className="w-5 h-5 text-yellow-600" />
+            {/* Statistics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <FileText className="w-4 h-4 text-blue-600" />
+                  <span className="text-xs font-medium text-blue-900">Toplam</span>
                 </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600">
-                    Beklemede
-                  </h3>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {stats.pending}
-                  </p>
+                <p className="text-xl font-bold text-blue-900">{stats.total}</p>
+              </div>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Clock className="w-4 h-4 text-yellow-600" />
+                  <span className="text-xs font-medium text-yellow-900">Beklemede</span>
                 </div>
+                <p className="text-xl font-bold text-yellow-900">{stats.pending}</p>
+              </div>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                  <span className="text-xs font-medium text-green-900">Onaylanan</span>
+                </div>
+                <p className="text-xl font-bold text-green-900">{stats.approved}</p>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <XCircle className="w-4 h-4 text-red-600" />
+                  <span className="text-xs font-medium text-red-900">Reddedilen</span>
+                </div>
+                <p className="text-xl font-bold text-red-900">{stats.rejected}</p>
               </div>
             </div>
 
-            <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-10 h-10 bg-green-100 rounded-lg">
-                  <CheckCircle className="w-5 h-5 text-green-600" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600">
-                    Onaylanan
-                  </h3>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {stats.approved}
-                  </p>
-                </div>
+            {/* Search & Filter */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="İsim, e-posta, fiş no, ürün veya satıcı ile ara..."
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
               </div>
-            </div>
-
-            <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-10 h-10 bg-red-100 rounded-lg">
-                  <XCircle className="w-5 h-5 text-red-600" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600">
-                    Reddedilen
-                  </h3>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {stats.rejected}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Filters and Search */}
-          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm mb-6">
-            <div className="flex flex-col sm:flex-row gap-4">
-              {/* Search */}
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="İsim, e-posta, fiş no veya ID ile ara..."
-                    className="w-full pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* Status Filter */}
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-gray-600" />
-                <select
-                  value={statusFilter}
-                  onChange={(e) =>
-                    setStatusFilter(
-                      e.target.value as
-                        | "all"
-                        | "pending"
-                        | "approved"
-                        | "rejected"
-                    )
-                  }
-                  className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
-                >
-                  <option value="all">Tüm Durumlar</option>
-                  <option value="pending">Beklemede</option>
-                  <option value="approved">Onaylanan</option>
-                  <option value="rejected">Reddedilen</option>
-                </select>
-              </div>
+              <select
+                value={statusFilter}
+                onChange={(e) =>
+                  setStatusFilter(
+                    e.target.value as "all" | "pending" | "approved" | "rejected"
+                  )
+                }
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+              >
+                <option value="all">Tüm Durumlar</option>
+                <option value="pending">Beklemede</option>
+                <option value="approved">Onaylanan</option>
+                <option value="rejected">Reddedilen</option>
+              </select>
             </div>
           </div>
 
           {/* Table */}
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
             {loading ? (
               <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+                <div className="w-6 h-6 border-2 border-orange-600 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : filteredForms.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-                <FileText className="w-12 h-12 mb-3 text-gray-400" />
+                <FileText className="w-10 h-10 mb-2 text-gray-300" />
                 <p className="text-sm">
                   {searchTerm || statusFilter !== "all"
                     ? "Arama kriterlerine uygun sonuç bulunamadı"
@@ -392,67 +340,61 @@ export default function RefundFormsPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full text-xs">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Tarih
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Kullanıcı
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        E-posta
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Fiş No
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Durum
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        İşlem
-                      </th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-900">Tarih</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-900">Kullanıcı</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-900">Ürün</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-900">Satıcı</th>
+                      <th className="px-3 py-2 text-right font-semibold text-gray-900">Fiyat</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-900">Fiş No</th>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-900">Durum</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {filteredForms.map((form) => (
                       <tr
                         key={form.id}
-                        className="hover:bg-gray-50 transition-colors"
+                        onClick={() => handleViewDetails(form)}
+                        className="hover:bg-gray-50 cursor-pointer transition-colors"
                       >
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex items-center gap-2 text-sm text-gray-900">
-                            <Calendar className="w-4 h-4 text-gray-400" />
-                            {formatDate(form.createdAt)}
+                        <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                          {formatDate(form.createdAt)}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-1.5">
+                            <User className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                            <span className="text-gray-900 font-medium truncate max-w-[120px]">
+                              {form.displayName}
+                            </span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">
-                            {form.displayName}
+                        <td className="px-3 py-2">
+                          <span className="text-gray-900 truncate max-w-[150px] block">
+                            {form.productName || "—"}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-1.5">
+                            <Store className="w-3 h-3 text-purple-600 flex-shrink-0" />
+                            <span className="text-gray-900 truncate max-w-[120px]">
+                              {form.sellerName || "—"}
+                            </span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="text-sm text-gray-600">
-                            {form.email}
-                          </div>
+                        <td className="px-3 py-2 text-right">
+                          <span className="text-gray-900 font-medium">
+                            {form.price != null ? `${form.price.toFixed(2)} TL` : "—"}
+                          </span>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="text-sm font-mono text-gray-900">
+                        <td className="px-3 py-2">
+                          <span className="text-gray-500 font-mono">
                             {form.receiptNo}
-                          </div>
+                          </span>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
+                        <td className="px-3 py-2 text-center">
                           {getStatusBadge(form.status)}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <button
-                            onClick={() => handleViewDetails(form)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-600 rounded-lg transition-colors text-sm font-medium"
-                          >
-                            <Eye className="w-4 h-4" />
-                            Detaylar
-                          </button>
                         </td>
                       </tr>
                     ))}
@@ -461,95 +403,130 @@ export default function RefundFormsPage() {
               </div>
             )}
           </div>
-        </main>
+        </div>
 
         {/* Detail Modal */}
-        {showDetailModal && selectedForm && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        {selectedForm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={handleCloseModal}>
+            <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
-              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-gray-900">
-                    İade Talebi Detayları
-                  </h2>
-                  <button
-                    onClick={() => {
-                      setShowDetailModal(false);
-                      setSelectedForm(null);
-                      setAdminNote("");
-                    }}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                  >
-                    <XCircle className="w-5 h-5 text-gray-600" />
-                  </button>
+              <div className="bg-orange-50 px-6 py-4 border-b border-orange-100 flex items-center justify-between sticky top-0">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-10 h-10 bg-orange-100 rounded-full">
+                    <FileText className="w-5 h-5 text-orange-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">İade Talebi Detayı</h3>
+                    <p className="text-xs text-gray-500 font-mono">#{selectedForm.id.slice(0, 12)}</p>
+                  </div>
                 </div>
+                <button onClick={handleCloseModal} className="p-2 hover:bg-orange-100 rounded-lg transition-colors">
+                  <X className="w-5 h-5 text-gray-600" />
+                </button>
               </div>
 
-              {/* Modal Body */}
-              <div className="p-6 space-y-6">
-                {/* Status */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Durum
-                  </label>
+              <div className="p-6 space-y-5">
+                {/* Status & Date */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <Calendar className="w-4 h-4" />
+                    <span>
+                      {selectedForm.createdAt.toDate().toLocaleDateString("tr-TR", {
+                        day: "2-digit",
+                        month: "long",
+                        year: "numeric",
+                      })}
+                    </span>
+                    <span className="text-gray-400">|</span>
+                    <Clock className="w-4 h-4" />
+                    <span>
+                      {selectedForm.createdAt.toDate().toLocaleTimeString("tr-TR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
                   {getStatusBadge(selectedForm.status)}
                 </div>
 
-                {/* Created Date */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Oluşturma Tarihi
-                  </label>
-                  <div className="flex items-center gap-2 text-gray-900">
-                    <Calendar className="w-4 h-4 text-gray-400" />
-                    {formatDate(selectedForm.createdAt)}
+                {/* Product Info */}
+                {(selectedForm.productName || selectedForm.productImage) && (
+                  <div className="flex gap-4 bg-gray-50 rounded-lg p-3">
+                    {selectedForm.productImage ? (
+                      <img
+                        src={selectedForm.productImage}
+                        alt={selectedForm.productName || "Ürün"}
+                        className="w-20 h-20 object-cover rounded-lg border border-gray-200 flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Package className="w-8 h-8 text-gray-400" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900">{selectedForm.productName || "—"}</p>
+                      {selectedForm.sellerName && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <Store className="w-3.5 h-3.5 text-purple-600" />
+                          <span className="text-xs text-gray-600">{selectedForm.sellerName}</span>
+                        </div>
+                      )}
+                      {selectedForm.price != null && (
+                        <p className="text-sm font-bold text-gray-900 mt-2">{selectedForm.price.toFixed(2)} TL</p>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
 
-                {/* User Info */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      <User className="w-4 h-4 inline mr-1" />
-                      Kullanıcı Adı
-                    </label>
-                    <p className="text-gray-900">{selectedForm.displayName}</p>
+                {/* User & Seller Info */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-blue-50 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <User className="w-4 h-4 text-blue-600" />
+                      <span className="text-xs font-medium text-blue-900">Kullanıcı</span>
+                    </div>
+                    <p className="text-sm font-semibold text-gray-900">{selectedForm.displayName}</p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <Mail className="w-3 h-3 text-gray-400" />
+                      <span className="text-xs text-gray-600">{selectedForm.email}</span>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      <Mail className="w-4 h-4 inline mr-1" />
-                      E-posta
-                    </label>
-                    <p className="text-gray-900">{selectedForm.email}</p>
+                  <div className="bg-purple-50 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Store className="w-4 h-4 text-purple-600" />
+                      <span className="text-xs font-medium text-purple-900">Satıcı</span>
+                    </div>
+                    <p className="text-sm font-semibold text-gray-900">{selectedForm.sellerName || "—"}</p>
+                    {selectedForm.price != null && (
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <DollarSign className="w-3 h-3 text-gray-400" />
+                        <span className="text-xs text-gray-600">{selectedForm.price.toFixed(2)} TL</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Receipt Number */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    <Receipt className="w-4 h-4 inline mr-1" />
-                    Fiş Numarası
-                  </label>
-                  <p className="text-gray-900 font-mono">
-                    {selectedForm.receiptNo}
-                  </p>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Receipt className="w-4 h-4 text-gray-600" />
+                    <span className="text-xs font-medium text-gray-700">Fiş Numarası</span>
+                  </div>
+                  <p className="text-sm font-mono text-gray-900">{selectedForm.receiptNo}</p>
                 </div>
 
                 {/* Description */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    <MessageSquare className="w-4 h-4 inline mr-1" />
-                    Açıklama
-                  </label>
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <p className="text-gray-900 whitespace-pre-wrap">
-                      {selectedForm.description}
-                    </p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <MessageSquare className="w-4 h-4 text-gray-600" />
+                    <span className="text-sm font-semibold text-gray-700">Açıklama</span>
+                  </div>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                    <p className="text-sm text-gray-900 whitespace-pre-wrap">{selectedForm.description}</p>
                   </div>
                 </div>
 
-                {/* Admin Note */}
+                {/* Admin Note - editable for pending */}
                 {selectedForm.status === "pending" && (
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -560,81 +537,61 @@ export default function RefundFormsPage() {
                       onChange={(e) => setAdminNote(e.target.value)}
                       placeholder="Karar için not ekleyin..."
                       rows={3}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 resize-none"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
                     />
                   </div>
                 )}
 
-                {/* Existing Admin Note */}
-                {selectedForm.adminNote && (
+                {/* Existing Admin Note - read only */}
+                {selectedForm.status !== "pending" && selectedForm.adminNote && (
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                       Yönetici Notu
                     </label>
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <p className="text-gray-900">{selectedForm.adminNote}</p>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <p className="text-sm text-gray-900">{selectedForm.adminNote}</p>
                     </div>
                   </div>
                 )}
 
-                {/* User ID */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Kullanıcı ID
-                  </label>
-                  <p className="text-gray-600 font-mono text-sm">
-                    {selectedForm.userId}
-                  </p>
-                </div>
-
-                {/* Form ID */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Talep ID
-                  </label>
-                  <p className="text-gray-600 font-mono text-sm">
-                    {selectedForm.id}
-                  </p>
+                {/* IDs */}
+                <div className="flex gap-4 text-xs text-gray-400">
+                  <span>Kullanıcı: <span className="font-mono">{selectedForm.userId.slice(0, 12)}...</span></span>
+                  <span>Talep: <span className="font-mono">{selectedForm.id.slice(0, 12)}...</span></span>
                 </div>
               </div>
 
-              {/* Modal Footer */}
+              {/* Footer Actions */}
               {selectedForm.status === "pending" && (
-                <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 rounded-b-2xl">
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() =>
-                        handleUpdateStatus(selectedForm.id, "rejected")
-                      }
-                      disabled={updatingStatus}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors disabled:cursor-not-allowed"
-                    >
-                      {updatingStatus ? (
-                        <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
-                      ) : (
-                        <>
-                          <XCircle className="w-5 h-5" />
-                          Reddet
-                        </>
-                      )}
-                    </button>
-                    <button
-                      onClick={() =>
-                        handleUpdateStatus(selectedForm.id, "approved")
-                      }
-                      disabled={updatingStatus}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors disabled:cursor-not-allowed"
-                    >
-                      {updatingStatus ? (
-                        <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
-                      ) : (
-                        <>
-                          <CheckCircle className="w-5 h-5" />
-                          Onayla
-                        </>
-                      )}
-                    </button>
-                  </div>
+                <div className="bg-gray-50 border-t border-gray-200 px-6 py-4 flex gap-3">
+                  <button
+                    onClick={() => handleUpdateStatus(selectedForm.id, "rejected")}
+                    disabled={updatingStatus}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                  >
+                    {updatingStatus ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <XCircle className="w-4 h-4" />
+                        Reddet
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => handleUpdateStatus(selectedForm.id, "approved")}
+                    disabled={updatingStatus}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                  >
+                    {updatingStatus ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <CheckCircle className="w-4 h-4" />
+                        Onayla
+                      </>
+                    )}
+                  </button>
                 </div>
               )}
             </div>
