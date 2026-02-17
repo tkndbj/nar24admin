@@ -2,21 +2,17 @@
 
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useState, useEffect } from "react";
-import { logAdminActivity } from "@/services/activityLogService";
 import {
   collection,
   doc,
   Timestamp,
-  arrayRemove,
   getDoc,
-  writeBatch,
-  arrayUnion,
-  updateDoc,
   getDocs,
   QueryDocumentSnapshot,
   DocumentData,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -52,6 +48,17 @@ import {
   Video,
 } from "lucide-react";
 import { ProductUtils } from "../../models/Product";
+
+// ── Firebase Functions instance (europe-west3) ──
+const functions = getFunctions(undefined, "europe-west3");
+const approveProductApplicationFn = httpsCallable(
+  functions,
+  "approveProductApplication",
+);
+const rejectProductApplicationFn = httpsCallable(
+  functions,
+  "rejectProductApplication",
+);
 
 // Extended interface for product applications (includes fields not in final Product)
 interface ProductApplication {
@@ -143,7 +150,7 @@ function ProductDetailModal({
 }) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<"images" | "colors" | "video">(
-    "images"
+    "images",
   );
   const [selectedColorForPreview, setSelectedColorForPreview] = useState<
     string | null
@@ -400,7 +407,7 @@ function ProductDetailModal({
                                     setActiveImageIndex((prev) =>
                                       prev === 0
                                         ? allImages.length - 1
-                                        : prev - 1
+                                        : prev - 1,
                                     )
                                   }
                                   className="absolute left-1.5 top-1/2 -translate-y-1/2 p-1.5 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
@@ -412,7 +419,7 @@ function ProductDetailModal({
                                     setActiveImageIndex((prev) =>
                                       prev === allImages.length - 1
                                         ? 0
-                                        : prev + 1
+                                        : prev + 1,
                                     )
                                   }
                                   className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
@@ -467,7 +474,9 @@ function ProductDetailModal({
                             key={color}
                             onClick={() =>
                               setSelectedColorForPreview(
-                                selectedColorForPreview === color ? null : color
+                                selectedColorForPreview === color
+                                  ? null
+                                  : color,
                               )
                             }
                             className={`px-2 py-1 rounded text-xs font-medium transition-all ${
@@ -559,7 +568,7 @@ function ProductDetailModal({
                           <span className="line-through text-gray-400">
                             {formatPrice(
                               application.originalPrice,
-                              application.currency
+                              application.currency,
                             )}
                           </span>
                         }
@@ -659,7 +668,7 @@ function ProductDetailModal({
                               value={displayValue}
                             />
                           );
-                        }
+                        },
                       )}
                   </div>
                 </Section>
@@ -921,11 +930,15 @@ export default function ProductApplications() {
   const [activeTab, setActiveTab] = useState<TabType>("dukkan");
 
   // Dükkan tab state
-  const [dukkanApplications, setDukkanApplications] = useState<ProductApplication[]>([]);
+  const [dukkanApplications, setDukkanApplications] = useState<
+    ProductApplication[]
+  >([]);
   const [dukkanLoading, setDukkanLoading] = useState(true);
 
   // Vitrin tab state
-  const [vitrinApplications, setVitrinApplications] = useState<ProductApplication[]>([]);
+  const [vitrinApplications, setVitrinApplications] = useState<
+    ProductApplication[]
+  >([]);
   const [vitrinLoading, setVitrinLoading] = useState(false);
   const [vitrinLoaded, setVitrinLoaded] = useState(false);
 
@@ -938,11 +951,14 @@ export default function ProductApplications() {
   const [shopNames, setShopNames] = useState<Record<string, string>>({});
 
   // Current tab data
-  const applications = activeTab === "dukkan" ? dukkanApplications : vitrinApplications;
+  const applications =
+    activeTab === "dukkan" ? dukkanApplications : vitrinApplications;
   const loading = activeTab === "dukkan" ? dukkanLoading : vitrinLoading;
 
   // Parse document to ProductApplication
-  const parseDocument = (docSnapshot: QueryDocumentSnapshot<DocumentData>): ProductApplication => {
+  const parseDocument = (
+    docSnapshot: QueryDocumentSnapshot<DocumentData>,
+  ): ProductApplication => {
     const data = docSnapshot.data();
     return {
       id: docSnapshot.id,
@@ -957,20 +973,36 @@ export default function ProductApplications() {
       reviewCount: ProductUtils.safeInt(data.reviewCount),
       gender: ProductUtils.safeStringNullable(data.gender),
       bundleIds: ProductUtils.safeStringArray(data.bundleIds),
-      bundlePrice: data.bundlePrice != null ? ProductUtils.safeDouble(data.bundlePrice) : undefined,
-      originalPrice: data.originalPrice != null ? ProductUtils.safeDouble(data.originalPrice) : undefined,
-      discountPercentage: data.discountPercentage != null ? ProductUtils.safeInt(data.discountPercentage) : undefined,
+      bundlePrice:
+        data.bundlePrice != null
+          ? ProductUtils.safeDouble(data.bundlePrice)
+          : undefined,
+      originalPrice:
+        data.originalPrice != null
+          ? ProductUtils.safeDouble(data.originalPrice)
+          : undefined,
+      discountPercentage:
+        data.discountPercentage != null
+          ? ProductUtils.safeInt(data.discountPercentage)
+          : undefined,
       colorQuantities: ProductUtils.safeColorQuantities(data.colorQuantities),
       boostClickCountAtStart: ProductUtils.safeInt(data.boostClickCountAtStart),
       availableColors: ProductUtils.safeStringArray(data.availableColors),
       userId: ProductUtils.safeString(data.userId),
-      discountThreshold: data.discountThreshold != null ? ProductUtils.safeInt(data.discountThreshold) : undefined,
+      discountThreshold:
+        data.discountThreshold != null
+          ? ProductUtils.safeInt(data.discountThreshold)
+          : undefined,
       rankingScore: ProductUtils.safeDouble(data.rankingScore),
       promotionScore: ProductUtils.safeDouble(data.promotionScore),
       ownerId: ProductUtils.safeString(data.ownerId),
       shopId: ProductUtils.safeStringNullable(data.shopId),
-      ilan_no: ProductUtils.safeString(data.ilan_no ?? data.ilanNo ?? docSnapshot.id),
-      ilanNo: ProductUtils.safeString(data.ilan_no ?? data.ilanNo ?? docSnapshot.id),
+      ilan_no: ProductUtils.safeString(
+        data.ilan_no ?? data.ilanNo ?? docSnapshot.id,
+      ),
+      ilanNo: ProductUtils.safeString(
+        data.ilan_no ?? data.ilanNo ?? docSnapshot.id,
+      ),
       searchIndex: ProductUtils.safeStringArray(data.searchIndex),
       createdAt: data.createdAt as Timestamp,
       sellerName: ProductUtils.safeString(data.sellerName, "Unknown"),
@@ -978,16 +1010,24 @@ export default function ProductApplications() {
       subcategory: ProductUtils.safeString(data.subcategory),
       subsubcategory: ProductUtils.safeString(data.subsubcategory),
       quantity: ProductUtils.safeInt(data.quantity),
-      bestSellerRank: data.bestSellerRank != null ? ProductUtils.safeInt(data.bestSellerRank) : undefined,
+      bestSellerRank:
+        data.bestSellerRank != null
+          ? ProductUtils.safeInt(data.bestSellerRank)
+          : undefined,
       sold: Boolean(data.sold),
       clickCount: ProductUtils.safeInt(data.clickCount),
       clickCountAtStart: ProductUtils.safeInt(data.clickCountAtStart),
       favoritesCount: ProductUtils.safeInt(data.favoritesCount),
       cartCount: ProductUtils.safeInt(data.cartCount),
       purchaseCount: ProductUtils.safeInt(data.purchaseCount),
-      deliveryOption: ProductUtils.safeString(data.deliveryOption, "Self Delivery"),
+      deliveryOption: ProductUtils.safeString(
+        data.deliveryOption,
+        "Self Delivery",
+      ),
       boostedImpressionCount: ProductUtils.safeInt(data.boostedImpressionCount),
-      boostImpressionCountAtStart: ProductUtils.safeInt(data.boostImpressionCountAtStart),
+      boostImpressionCountAtStart: ProductUtils.safeInt(
+        data.boostImpressionCountAtStart,
+      ),
       isFeatured: Boolean(data.isFeatured),
       isTrending: Boolean(data.isTrending),
       isBoosted: Boolean(data.isBoosted),
@@ -1008,40 +1048,41 @@ export default function ProductApplications() {
       needsSync: Boolean(data.needsSync),
       updatedAt: data.updatedAt as Timestamp | undefined,
       relatedProductIds: ProductUtils.safeStringArray(data.relatedProductIds),
-      maxQuantity: data.maxQuantity != null ? ProductUtils.safeInt(data.maxQuantity) : undefined,
-      bulkDiscountPercentage: data.bulkDiscountPercentage != null ? ProductUtils.safeInt(data.bulkDiscountPercentage) : undefined,
+      maxQuantity:
+        data.maxQuantity != null
+          ? ProductUtils.safeInt(data.maxQuantity)
+          : undefined,
+      bulkDiscountPercentage:
+        data.bulkDiscountPercentage != null
+          ? ProductUtils.safeInt(data.bulkDiscountPercentage)
+          : undefined,
       campaign: ProductUtils.safeStringNullable(data.campaign),
       campaignName: ProductUtils.safeStringNullable(data.campaignName),
       status: ProductUtils.safeStringNullable(data.status),
     } as ProductApplication;
   };
 
-  // Fetch all applications and filter/sort client-side (simpler, no index needed)
+  // Fetch all applications and filter/sort client-side
   const fetchApplications = async (collectionName: string) => {
     try {
-      // Fetch all documents from collection (no orderBy to avoid index requirement)
       const snapshot = await getDocs(collection(db, collectionName));
       const docs = snapshot.docs;
 
-      // Parse all documents
       const allApplications = docs.map(parseDocument);
 
-      // Filter for pending applications (no status or status === "pending")
       const pendingApplications = allApplications.filter(
-        (app) => !app.status || app.status === "pending"
+        (app) => !app.status || app.status === "pending",
       );
 
-      // Sort by creation date (newest first) - client-side like original
       pendingApplications.sort((a, b) => {
         if (!a.createdAt || !b.createdAt) return 0;
         return b.createdAt.toDate().getTime() - a.createdAt.toDate().getTime();
       });
 
-      // For now, return all pending applications (pagination can be added later if needed)
       return {
         applicationsData: pendingApplications,
         newLastDoc: null,
-        hasMoreData: false
+        hasMoreData: false,
       };
     } catch (error) {
       console.error(`Error fetching from ${collectionName}:`, error);
@@ -1054,7 +1095,9 @@ export default function ProductApplications() {
     const loadDukkanData = async () => {
       setDukkanLoading(true);
       try {
-        const { applicationsData } = await fetchApplications("product_applications");
+        const { applicationsData } = await fetchApplications(
+          "product_applications",
+        );
         setDukkanApplications(applicationsData);
       } catch (error) {
         console.error("Dükkan başvuruları yüklenirken hata:", error);
@@ -1072,7 +1115,9 @@ export default function ProductApplications() {
       const loadVitrinData = async () => {
         setVitrinLoading(true);
         try {
-          const { applicationsData } = await fetchApplications("vitrin_product_applications");
+          const { applicationsData } = await fetchApplications(
+            "vitrin_product_applications",
+          );
           setVitrinApplications(applicationsData);
           setVitrinLoaded(true);
         } catch (error) {
@@ -1088,7 +1133,9 @@ export default function ProductApplications() {
 
   // Get current collection name
   const getCurrentCollectionName = () => {
-    return activeTab === "dukkan" ? "product_applications" : "vitrin_product_applications";
+    return activeTab === "dukkan"
+      ? "product_applications"
+      : "vitrin_product_applications";
   };
 
   // Fetch shop names for applications with shopId
@@ -1123,250 +1170,61 @@ export default function ProductApplications() {
     }
   }, [applications]);
 
-  async function updateCategoryShopsIndex(
-    shopId: string | null | undefined,
-    category: string,
-    subcategory: string,
-    subsubcategory: string,
-    operation: "add" | "remove"
-  ) {
-    // Early return if no shopId (individual products don't need this)
-    if (!shopId || shopId.trim() === "") return;
-
-    try {
-      const shopDoc = await getDoc(doc(db, "shops", shopId));
-      if (!shopDoc.exists()) {
-        console.warn(`Shop ${shopId} not found, skipping category index`);
-        return;
-      }
-
-      const shopData = shopDoc.data();
-      const shopInfo = {
-        shopId: shopId,
-        shopName: shopData.name || "Unknown Shop",
-      };
-
-      // Normalize category strings
-      const normalize = (s: string) => {
-        if (!s || s.trim() === "") return "";
-        return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
-      };
-
-      const categories = [
-        { key: normalize(subsubcategory), level: "subsubcategory" },
-        { key: normalize(subcategory), level: "subcategory" },
-        { key: normalize(category), level: "category" },
-      ].filter((cat) => cat.key !== "");
-
-      // Use batch for atomic operations
-      const batch = writeBatch(db);
-
-      for (const { key, level } of categories) {
-        const docRef = doc(db, "category_shops", key);
-
-        if (operation === "add") {
-          batch.set(
-            docRef,
-            {
-              shops: arrayUnion(shopInfo),
-              level: level,
-              categoryPath: key,
-              lastUpdated: Timestamp.now(),
-            },
-            { merge: true }
-          );
-        } else {
-          batch.set(
-            docRef,
-            {
-              shops: arrayRemove(shopInfo),
-              lastUpdated: Timestamp.now(),
-            },
-            { merge: true }
-          );
-        }
-      }
-
-      await batch.commit();
-      console.log(`✅ Category index updated for shop ${shopId}`);
-    } catch (error) {
-      console.error("Error updating category shops index:", error);
-      // Don't throw - we don't want to fail the entire approval if indexing fails
-    }
-  }
-
+  // =====================================================================
+  // ✅ APPROVE — now delegates to Cloud Function
+  // =====================================================================
   const approveApplication = async (application: ProductApplication) => {
     if (processingIds.has(application.id)) return;
     setProcessingIds((prev) => new Set(prev).add(application.id));
 
-    const currentCollection = getCurrentCollectionName();
-
     try {
-      // ✅ STEP 0: Verify application still exists and is pending
-      const applicationRef = doc(db, currentCollection, application.id);
-      const applicationSnap = await getDoc(applicationRef);
+      const result = await approveProductApplicationFn({
+        applicationId: application.id,
+        sourceCollection: getCurrentCollectionName(),
+      });
 
-      if (!applicationSnap.exists()) {
-        showNotification("Başvuru bulunamadı - zaten işlenmiş olabilir");
-        return;
-      }
-
-      const currentStatus = applicationSnap.data()?.status;
-      if (currentStatus && currentStatus !== "pending") {
-        showNotification("Bu başvuru zaten işlenmiş");
-        return;
-      }
-
-      // ✅ Destructure and EXPLICITLY list ALL excluded fields
-      const {
-        id,
-        ilan_no,
-        ilanNo: _ilanNo, // Also exclude this to avoid duplication
-        createdAt: applicationCreatedAt,
-        phone,
-        region,
-        address,
-        ibanOwnerName,
-        ibanOwnerSurname,
-        iban,
-        needsSync: _needsSync, // Exclude - will set fresh
-        updatedAt: _updatedAt, // Exclude - will set fresh
-        relatedProductIds: _relatedProductIds, // Exclude - will set fresh
-        status: _status, // ✅ CRITICAL: Exclude status field!
-        ...productData
-      } = application;
-
-      // Suppress unused variable warnings
-      void applicationCreatedAt;
-      void phone;
-      void region;
-      void address;
-      void ibanOwnerName;
-      void ibanOwnerSurname;
-      void iban;
-      void _ilanNo;
-      void _needsSync;
-      void _updatedAt;
-      void _relatedProductIds;
-      void _status;
-
-      const newDocId = ilan_no && ilan_no.trim() !== "" ? ilan_no : id;
-      const isVitrin = currentCollection === "vitrin_product_applications";
-      const isShopProduct =
-        productData.shopId && productData.shopId.trim() !== "";
-      // Vitrin products go to vitrin_products, otherwise shop_products or products
-      const targetCollectionName = isVitrin
-        ? "products"
-        : "shop_products"
-
-      // ✅ STEP 1: Check if product already exists (prevent overwrites)
-      const productRef = doc(db, targetCollectionName, newDocId);
-      const existingProduct = await getDoc(productRef);
-
-      if (existingProduct.exists()) {
-        showNotification(
-          `Ürün zaten mevcut (ID: ${newDocId}). Lütfen kontrol edin.`
-        );
-        // Optionally: Mark application as duplicate instead of failing
-        await updateDoc(applicationRef, {
-          status: "duplicate",
-          reviewedAt: Timestamp.now(),
-          existingProductId: newDocId,
-        });
-        return;
-      }
-
-      // ✅ Build payload with explicit field control
-      const payload = {
-        ...productData,
-        id: newDocId,
-        ilanNo: newDocId,
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-        needsSync: true,
-        relatedProductIds: [],
+      const data = result.data as {
+        success: boolean;
+        productId?: string;
+        note?: string;
       };
 
-      // Remove undefined values (keep null values as they may be intentional)
-      const cleanedPayload = Object.fromEntries(
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        Object.entries(payload).filter(([_, value]) => value !== undefined)
-      );
-
-      // ✅ STEP 2: Use BATCH for atomic write
-      const batch = writeBatch(db);
-
-      // Add product
-      batch.set(productRef, cleanedPayload);
-
-      // Mark application as approved
-      batch.update(applicationRef, {
-        status: "approved",
-        reviewedAt: Timestamp.now(),
-        approvedProductId: newDocId,
-        approvedCollection: targetCollectionName,
-      });
-
-      // ✅ COMMIT ATOMICALLY - both succeed or both fail
-      await batch.commit();
-
-      console.log(`✅ Product approved: ${newDocId} in ${targetCollectionName}`);
-
-      // Log admin activity
-      const sellerDisplayName = application.shopId && shopNames[application.shopId]
-        ? shopNames[application.shopId]
-        : application.sellerName;
-      logAdminActivity("Ürün başvurusu onaylandı", {
-        productName: application.productName,
-        sellerName: sellerDisplayName,
-        productId: newDocId,
-      });
-
-      // ✅ STEP 3: Update category index AFTER successful commit
-      // This is non-critical - if it fails, product still exists
-      // Skip for vitrin products as they don't use shop category indexing
-      if (isShopProduct && !isVitrin) {
-        try {
-          await updateCategoryShopsIndex(
-            productData.shopId!,
-            productData.category,
-            productData.subcategory,
-            productData.subsubcategory,
-            "add"
-          );
-        } catch (indexError) {
-          console.error(
-            "Category index update failed (non-critical):",
-            indexError
-          );
-          // Don't fail the approval - product is already created
-        }
+      if (data.note?.includes("duplicate")) {
+        showNotification(
+          `Ürün zaten mevcut (ID: ${data.productId}). Lütfen kontrol edin.`,
+        );
+      } else {
+        showNotification("Ürün başarıyla onaylandı!");
       }
 
       // Remove from local state
       if (activeTab === "dukkan") {
-        setDukkanApplications((prev) => prev.filter((app) => app.id !== application.id));
+        setDukkanApplications((prev) =>
+          prev.filter((app) => app.id !== application.id),
+        );
       } else {
-        setVitrinApplications((prev) => prev.filter((app) => app.id !== application.id));
+        setVitrinApplications((prev) =>
+          prev.filter((app) => app.id !== application.id),
+        );
       }
 
-      showNotification("Ürün başarıyla onaylandı!");
       setShowDetailModal(false);
       setSelectedApplication(null);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Onaylama hatası:", error);
 
-      // ✅ More specific error messages
-      if (error instanceof Error) {
-        if (error.message.includes("permission")) {
-          showNotification("Yetki hatası - lütfen tekrar giriş yapın");
-        } else if (error.message.includes("network")) {
-          showNotification("Ağ hatası - lütfen tekrar deneyin");
-        } else {
-          showNotification(`Hata: ${error.message}`);
-        }
+      // Extract user-friendly message from Cloud Function error
+      const firebaseError = error as { code?: string; message?: string };
+      if (firebaseError.code === "functions/not-found") {
+        showNotification("Başvuru bulunamadı — zaten işlenmiş olabilir");
+      } else if (firebaseError.code === "functions/failed-precondition") {
+        showNotification("Bu başvuru zaten işlenmiş");
+      } else if (firebaseError.code === "functions/permission-denied") {
+        showNotification("Yetki hatası — lütfen tekrar giriş yapın");
       } else {
-        showNotification("Ürün onaylanırken hata oluştu");
+        showNotification(
+          firebaseError.message || "Ürün onaylanırken hata oluştu",
+        );
       }
     } finally {
       setProcessingIds((prev) => {
@@ -1377,57 +1235,48 @@ export default function ProductApplications() {
     }
   };
 
+  // =====================================================================
+  // ✅ REJECT — now delegates to Cloud Function
+  // =====================================================================
   const rejectApplication = async (application: ProductApplication) => {
     if (processingIds.has(application.id)) return;
     setProcessingIds((prev) => new Set(prev).add(application.id));
 
-    const currentCollection = getCurrentCollectionName();
-
     try {
-      // ✅ Verify still pending
-      const applicationRef = doc(db, currentCollection, application.id);
-      const applicationSnap = await getDoc(applicationRef);
-
-      if (!applicationSnap.exists()) {
-        showNotification("Başvuru bulunamadı");
-        return;
-      }
-
-      const currentStatus = applicationSnap.data()?.status;
-      if (currentStatus && currentStatus !== "pending") {
-        showNotification("Bu başvuru zaten işlenmiş");
-        return;
-      }
-
-      // ✅ Consider adding a reason modal
-      await updateDoc(applicationRef, {
-        status: "rejected",
-        reviewedAt: Timestamp.now(),
+      await rejectProductApplicationFn({
+        applicationId: application.id,
+        sourceCollection: getCurrentCollectionName(),
         rejectionReason: "Başvuru reddedildi",
       });
 
-      // Log admin activity
-      const sellerDisplayName = application.shopId && shopNames[application.shopId]
-        ? shopNames[application.shopId]
-        : application.sellerName;
-      logAdminActivity("Ürün başvurusu reddedildi", {
-        productName: application.productName,
-        sellerName: sellerDisplayName,
-      });
+      showNotification("Ürün başvurusu reddedildi");
 
       // Remove from local state
       if (activeTab === "dukkan") {
-        setDukkanApplications((prev) => prev.filter((app) => app.id !== application.id));
+        setDukkanApplications((prev) =>
+          prev.filter((app) => app.id !== application.id),
+        );
       } else {
-        setVitrinApplications((prev) => prev.filter((app) => app.id !== application.id));
+        setVitrinApplications((prev) =>
+          prev.filter((app) => app.id !== application.id),
+        );
       }
 
-      showNotification("Ürün başvurusu reddedildi");
       setShowDetailModal(false);
       setSelectedApplication(null);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Reddetme hatası:", error);
-      showNotification("Ürün reddedilirken hata oluştu");
+
+      const firebaseError = error as { code?: string; message?: string };
+      if (firebaseError.code === "functions/not-found") {
+        showNotification("Başvuru bulunamadı");
+      } else if (firebaseError.code === "functions/failed-precondition") {
+        showNotification("Bu başvuru zaten işlenmiş");
+      } else {
+        showNotification(
+          firebaseError.message || "Ürün reddedilirken hata oluştu",
+        );
+      }
     } finally {
       setProcessingIds((prev) => {
         const newSet = new Set(prev);
@@ -1655,7 +1504,7 @@ export default function ProductApplications() {
                             <div className="text-[10px] text-gray-400 line-through">
                               {formatPrice(
                                 application.originalPrice,
-                                application.currency
+                                application.currency,
                               )}
                             </div>
                           )}
