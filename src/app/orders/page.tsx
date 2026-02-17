@@ -279,16 +279,6 @@ export default function OrdersPage() {
             
             const calculatedUnitPrice = unitPrice;
           
-            console.log("Raw item data from Firestore:", {
-              docId: itemDoc.id,
-              price: itemData.price,
-              quantity: quantity,
-              calculatedTotal,
-              calculatedUnitPrice,
-              ourComission: itemData.ourComission,
-              selectedAttributes: itemData.selectedAttributes,
-            });
-          
             return {
               id: itemDoc.id,
               ...itemData,
@@ -1228,21 +1218,7 @@ export default function OrdersPage() {
                       // ✅ NEW: Get coupon discount (only for first item row)
                       const couponDiscount = idx === 0 ? Number(order.orderHeader.couponDiscount) || 0 : 0;
                   
-                      // Debug log for first item
-                      if (idx === 0) {
-                        console.log("Order Item Debug:", {
-                          orderId: order.orderHeader.id,
-                          itemPrice: item.price,
-                          itemQuantity: item.quantity,
-                          itemTotal,
-                          commissionRate,
-                          deliveryPrice,
-                          couponDiscount,
-                          rawItem: item,
-                        });
-                      }
-                  
-                      // ✅ FIXED: Correct calculations
+                      // Calculate financials
                       const commission = (itemTotal * commissionRate) / 100;
                       const totalWithDelivery = itemTotal + deliveryPrice;
                       const sellerEarnings = itemTotal - commission;
