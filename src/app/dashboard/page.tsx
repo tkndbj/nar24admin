@@ -37,6 +37,7 @@ import {
   Layers,
   Percent,
   CreditCard,
+  Archive,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useActivityLog, createPageLogger } from "@/hooks/useActivityLog";
@@ -169,6 +170,7 @@ const NAV_CATEGORIES = [
         label: "Urun Guncellemeler",
         icon: Edit2,
       },
+      { path: "archived", label: "Arsiv", icon: Archive },
     ],
   },
   {
