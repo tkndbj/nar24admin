@@ -379,22 +379,60 @@ export default function AnalyticsDetailsPage() {
       const { jsPDF } = await import("jspdf");
 
       const element = dashboardRef.current;
-      const canvas = await html2canvas(element, {
+
+      // html2canvas doesn't support oklch() colors (Tailwind v4).
+      // Temporarily inject a stylesheet that forces all oklch values to fallback hex.
+      const fixSheet = document.createElement("style");
+      fixSheet.textContent = `
+        *, *::before, *::after {
+          --tw-ring-color: #6366f1 !important;
+          border-color: inherit;
+        }
+      `;
+      document.head.appendChild(fixSheet);
+
+      // Also walk computed styles and inline any oklch background/color
+      const cloned = element.cloneNode(true) as HTMLElement;
+      cloned.style.position = "absolute";
+      cloned.style.left = "-9999px";
+      cloned.style.top = "0";
+      cloned.style.width = element.offsetWidth + "px";
+      document.body.appendChild(cloned);
+
+      // Replace oklch in inline styles recursively
+      const allEls = cloned.querySelectorAll("*");
+      allEls.forEach((el) => {
+        const htmlEl = el as HTMLElement;
+        const computed = window.getComputedStyle(htmlEl);
+        const bg = computed.backgroundColor;
+        const color = computed.color;
+        const borderColor = computed.borderColor;
+        if (bg && bg.includes("oklch"))
+          htmlEl.style.backgroundColor = "transparent";
+        if (color && color.includes("oklch")) htmlEl.style.color = "#1f2937";
+        if (borderColor && borderColor.includes("oklch"))
+          htmlEl.style.borderColor = "#e5e7eb";
+      });
+
+      const canvas = await html2canvas(cloned, {
         scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: "#f9fafb",
       });
 
+      // Cleanup
+      document.body.removeChild(cloned);
+      document.head.removeChild(fixSheet);
+
       const imgData = canvas.toDataURL("image/png");
-      const imgWidth = 210; // A4 width in mm
+      const imgWidth = 210;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
       const pdf = new jsPDF("p", "mm", "a4");
       let yOffset = 0;
-      const pageHeight = 297; // A4 height in mm
+      const pageHeight = 297;
 
-      // Multi-page support
       while (yOffset < imgHeight) {
         if (yOffset > 0) pdf.addPage();
         pdf.addImage(imgData, "PNG", 0, -yOffset, imgWidth, imgHeight);
