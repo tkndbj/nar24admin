@@ -747,20 +747,20 @@ function CategoryPieChart({ data }: { data: AggCategory[] }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
       <SectionTitle icon={Filter} title="Kategori Dagilimi" />
-      <ResponsiveContainer width="100%" height={300}>
+      <ResponsiveContainer width="100%" height={400}>
         <PieChart>
           <Pie
             data={pieData}
             cx="50%"
             cy="50%"
-            innerRadius={60}
-            outerRadius={100}
+            innerRadius={50}
+            outerRadius={90}
             dataKey="value"
             paddingAngle={2}
             label={({ name, percent }) =>
-              `${name} ${(percent * 100).toFixed(0)}%`
+              `${name.length > 18 ? name.substring(0, 18) + "…" : name} ${(percent * 100).toFixed(0)}%`
             }
-            labelLine={false}
+            labelLine={true}
           >
             {pieData.map((_, idx) => (
               <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
@@ -852,11 +852,11 @@ function BrandBarChart({ data }: { data: AggBrand[] }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
       <SectionTitle icon={Tag} title="En Cok Tiklanan Markalar" />
-      <ResponsiveContainer width="100%" height={300}>
+      <ResponsiveContainer width="100%" height={420}>
         <BarChart
           data={chartData}
           layout="vertical"
-          margin={{ top: 5, right: 10, left: 60, bottom: 5 }}
+          margin={{ top: 5, right: 10, left: 80, bottom: 5 }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
           <XAxis type="number" tick={{ fontSize: 11 }} />
@@ -864,7 +864,7 @@ function BrandBarChart({ data }: { data: AggBrand[] }) {
             type="category"
             dataKey="name"
             tick={{ fontSize: 11 }}
-            width={70}
+            width={90}
           />
           <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
