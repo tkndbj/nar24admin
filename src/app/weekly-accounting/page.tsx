@@ -9,7 +9,6 @@ import {
   ChevronRight,
   DollarSign,
   Loader2,
-  RefreshCw,
   Search,
   Store,
   Users,
@@ -22,6 +21,9 @@ import {
   Circle,
   CheckCircle,
   Info,
+  Download,
+  Banknote,
+  BanknoteIcon,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
@@ -32,13 +34,18 @@ import {
   limit,
   startAfter,
   getDocs,
+  doc,
+  updateDoc,
+  deleteField,
   Timestamp,
   DocumentSnapshot,
+  serverTimestamp,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { db } from "../lib/firebase";
 import { getApp } from "firebase/app";
 import { useRouter } from "next/navigation";
+import * as XLSX from "xlsx";
 
 // ═══════════════════════════════════════════════════════════════
 // TYPES
@@ -64,6 +71,8 @@ interface WeekReport {
   completedAt: Timestamp | null;
   createdAt: Timestamp;
   error: string | null;
+  paidAt?: Timestamp | null;
+  paidBy?: string | null;
 }
 
 interface ShopSale {
@@ -154,7 +163,6 @@ function getWeeksOfMonth(year: number, month: number) {
   return weeks;
 }
 
-/** Check if a week is currently incomplete (hasn't ended yet) */
 function isWeekIncomplete(sunday: Date) {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -220,6 +228,15 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function PaidBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border text-violet-700 bg-violet-50 border-violet-200">
+      <Banknote className="w-3 h-3" />
+      Odendi
+    </span>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ═══════════════════════════════════════════════════════════════
@@ -238,7 +255,7 @@ export default function AccountingPage() {
   );
   const [loadingReports, setLoadingReports] = useState(false);
 
-  // Week selection (for calculate action)
+  // Week selection (for calculate / payment action)
   const [selectedWeekId, setSelectedWeekId] = useState<string | null>(null);
 
   // Expanded week for shop sales
@@ -256,13 +273,8 @@ export default function AccountingPage() {
   // Action states
   const [triggerLoading, setTriggerLoading] = useState(false);
   const [forceRecalculate, setForceRecalculate] = useState(false);
-  const [backfillLoading, setBackfillLoading] = useState(false);
-  const [backfillResults, setBackfillResults] = useState<
-    BackfillResult[] | null
-  >(null);
-  const [showBackfillModal, setShowBackfillModal] = useState(false);
-  const [backfillStartDate, setBackfillStartDate] = useState("");
-  const [backfillEndDate, setBackfillEndDate] = useState("");
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [exportingWeekId, setExportingWeekId] = useState<string | null>(null);
   const [toast, setToast] = useState<{
     message: string;
     type: "success" | "error";
@@ -283,6 +295,20 @@ export default function AccountingPage() {
     [selectedYear, selectedMonth],
   );
 
+  // Is the selected week currently marked as paid?
+  const selectedWeekIsPaid = useMemo(() => {
+    if (!selectedWeekId) return false;
+    const report = weekReports.get(selectedWeekId);
+    return !!report?.paidAt;
+  }, [selectedWeekId, weekReports]);
+
+  // Is the selected week completed? (for payment button enable)
+  const selectedWeekIsCompleted = useMemo(() => {
+    if (!selectedWeekId) return false;
+    const report = weekReports.get(selectedWeekId);
+    return report?.status === "completed";
+  }, [selectedWeekId, weekReports]);
+
   // ── Fetch reports for visible weeks ────────────────────────
   const fetchReports = useCallback(async () => {
     if (!user || monthWeeks.length === 0) return;
@@ -297,8 +323,8 @@ export default function AccountingPage() {
           where("weekId", "in", chunk),
         );
         const snap = await getDocs(q);
-        snap.forEach((doc) => {
-          reportsMap.set(doc.id, doc.data() as WeekReport);
+        snap.forEach((d) => {
+          reportsMap.set(d.id, d.data() as WeekReport);
         });
       }
       setWeekReports(reportsMap);
@@ -449,49 +475,148 @@ export default function AccountingPage() {
     fetchShopSales,
   ]);
 
-  // ── Backfill ───────────────────────────────────────────────
-  const handleBackfill = useCallback(async () => {
-    if (!functions || !backfillStartDate || !backfillEndDate) return;
-    setBackfillLoading(true);
-    setBackfillResults(null);
+  // ── Toggle payment status ──────────────────────────────────
+  const handleTogglePayment = useCallback(async () => {
+    if (!selectedWeekId || !user) return;
+    setPaymentLoading(true);
     try {
-      const fn = httpsCallable(functions, "triggerWeeklyAccounting");
-      const res = await fn({
-        mode: "backfill",
-        startDate: new Date(backfillStartDate).toISOString(),
-        endDate: new Date(backfillEndDate).toISOString(),
-        force: forceRecalculate,
+      const reportRef = doc(db, "weekly_sales_accounting", selectedWeekId);
+
+      if (selectedWeekIsPaid) {
+        // Remove payment
+        await updateDoc(reportRef, {
+          paidAt: deleteField(),
+          paidBy: deleteField(),
+        });
+        setToast({
+          message: `${selectedWeekId} odeme durumu kaldirildi.`,
+          type: "success",
+        });
+      } else {
+        // Mark as paid
+        await updateDoc(reportRef, {
+          paidAt: serverTimestamp(),
+          paidBy: user.uid,
+        });
+        setToast({
+          message: `${selectedWeekId} odendi olarak isaretlendi!`,
+          type: "success",
+        });
+      }
+
+      // Update local state immediately
+      setWeekReports((prev) => {
+        const updated = new Map(prev);
+        const existing = updated.get(selectedWeekId);
+        if (existing) {
+          updated.set(selectedWeekId, {
+            ...existing,
+            paidAt: selectedWeekIsPaid ? null : Timestamp.now(),
+            paidBy: selectedWeekIsPaid ? null : user.uid,
+          });
+        }
+        return updated;
       });
-      const data = res.data as {
-        success: boolean;
-        results: BackfillResult[];
-        summary: { completed: number; skipped: number; failed: number };
-        hasMore: boolean;
-      };
-      setBackfillResults(data.results);
-      setToast({
-        message:
-          `Backfill tamamlandi: ${data.summary.completed} basarili, ${data.summary.skipped} atlandi, ${data.summary.failed} basarisiz` +
-          (data.hasMore ? " (daha fazla var, tekrar calistirin)" : ""),
-        type: data.summary.failed > 0 ? "error" : "success",
-      });
-      fetchReports();
     } catch (err: unknown) {
-      console.error("Backfill error:", err);
+      console.error("Payment toggle error:", err);
       setToast({
-        message: `Backfill hatasi: ${err instanceof Error ? err.message : "Bilinmeyen hata"}`,
+        message: `Hata: ${err instanceof Error ? err.message : "Bilinmeyen hata"}`,
         type: "error",
       });
     } finally {
-      setBackfillLoading(false);
+      setPaymentLoading(false);
     }
-  }, [
-    functions,
-    backfillStartDate,
-    backfillEndDate,
-    forceRecalculate,
-    fetchReports,
-  ]);
+  }, [selectedWeekId, selectedWeekIsPaid, user]);
+
+  // ── Export week to Excel ───────────────────────────────────
+  const handleExportExcel = useCallback(
+    async (weekId: string) => {
+      setExportingWeekId(weekId);
+      try {
+        const report = weekReports.get(weekId);
+
+        // Fetch ALL shop_sales for this week (no pagination)
+        const allSales: ShopSale[] = [];
+        const baseRef = collection(
+          db,
+          "weekly_sales_accounting",
+          weekId,
+          "shop_sales",
+        );
+        const q = query(baseRef, orderBy("totalRevenue", "desc"));
+        const snap = await getDocs(q);
+        snap.forEach((d) => allSales.push(d.data() as ShopSale));
+
+        // Build rows
+        const rows = allSales.map((s, idx) => ({
+          "#": idx + 1,
+          "Satici Adi": s.sellerName,
+          "Satici ID": s.sellerId,
+          Tur: s.isShopProduct ? "Dukkan" : "Bireysel",
+          "Ciro (TL)": s.totalRevenue,
+          "Siparis Sayisi": s.orderCount,
+          Adet: s.totalQuantity,
+          "Komisyon (TL)": s.totalCommission,
+          "Net (TL)": s.netRevenue,
+          "Ort. Siparis (TL)": s.averageOrderValue,
+        }));
+
+        // Summary row
+        rows.push({
+          "#": 0,
+          "Satici Adi": "TOPLAM",
+          "Satici ID": "",
+          Tur: "",
+          "Ciro (TL)": report?.totalRevenue || 0,
+          "Siparis Sayisi": report?.totalOrderCount || 0,
+          Adet: report?.totalQuantity || 0,
+          "Komisyon (TL)": report?.totalCommission || 0,
+          "Net (TL)": report?.netRevenue || 0,
+          "Ort. Siparis (TL)": 0,
+        });
+
+        // Create workbook
+        const ws = XLSX.utils.json_to_sheet(rows);
+
+        // Column widths
+        ws["!cols"] = [
+          { wch: 5 }, // #
+          { wch: 30 }, // Satici Adi
+          { wch: 28 }, // Satici ID
+          { wch: 10 }, // Tur
+          { wch: 15 }, // Ciro
+          { wch: 15 }, // Siparis
+          { wch: 10 }, // Adet
+          { wch: 15 }, // Komisyon
+          { wch: 15 }, // Net
+          { wch: 15 }, // Ort. Siparis
+        ];
+
+        const wb = XLSX.utils.book_new();
+        const weekLabel = report
+          ? `${report.weekStartStr} - ${report.weekEndStr}`
+          : weekId;
+        XLSX.utils.book_append_sheet(wb, ws, "Satici Raporu");
+
+        // Download
+        XLSX.writeFile(wb, `haftalik-rapor-${weekId}.xlsx`);
+
+        setToast({
+          message: `${weekLabel} raporu indirildi!`,
+          type: "success",
+        });
+      } catch (err: unknown) {
+        console.error("Export error:", err);
+        setToast({
+          message: `Excel hatasi: ${err instanceof Error ? err.message : "Bilinmeyen hata"}`,
+          type: "error",
+        });
+      } finally {
+        setExportingWeekId(null);
+      }
+    },
+    [weekReports],
+  );
 
   // ── Month navigation ───────────────────────────────────────
   const goToPrevMonth = () => {
@@ -526,7 +651,7 @@ export default function AccountingPage() {
     }
   }, [toast]);
 
-  // Selected week label for the button
+  // Selected week label for buttons
   const selectedWeekLabel = useMemo(() => {
     if (!selectedWeekId) return null;
     const week = monthWeeks.find((w) => w.weekId === selectedWeekId);
@@ -574,7 +699,7 @@ export default function AccountingPage() {
                 Zorla Yeniden Hesapla
               </label>
 
-              {/* Single calculate button */}
+              {/* Calculate selected week */}
               <button
                 onClick={handleCalculateSelected}
                 disabled={!selectedWeekId || triggerLoading}
@@ -594,13 +719,28 @@ export default function AccountingPage() {
                   : "Secilen Haftayi Hesapla"}
               </button>
 
-              {/* Backfill button */}
+              {/* Payment toggle */}
               <button
-                onClick={() => setShowBackfillModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium transition-all"
+                onClick={handleTogglePayment}
+                disabled={
+                  !selectedWeekId || !selectedWeekIsCompleted || paymentLoading
+                }
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  selectedWeekId && selectedWeekIsCompleted
+                    ? selectedWeekIsPaid
+                      ? "bg-amber-500 hover:bg-amber-600 text-white"
+                      : "bg-violet-600 hover:bg-violet-700 text-white"
+                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                } disabled:opacity-50`}
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Gecmis Verileri Olustur
+                {paymentLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <BanknoteIcon className="w-3.5 h-3.5" />
+                )}
+                {selectedWeekIsPaid
+                  ? "Odemeyi Kaldir"
+                  : "Odendi Olarak Isaretle"}
               </button>
             </div>
           </div>
@@ -659,6 +799,8 @@ export default function AccountingPage() {
                   const isFutureWeek = week.monday > new Date();
                   const incomplete =
                     isCompleted && isWeekIncomplete(week.sunday);
+                  const isPaid = !!report?.paidAt;
+                  const isExporting = exportingWeekId === week.weekId;
 
                   return (
                     <div key={week.weekId}>
@@ -726,7 +868,7 @@ export default function AccountingPage() {
                           )}
                         </button>
 
-                        {/* Date range */}
+                        {/* Date range + badges */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-medium text-gray-900">
@@ -736,7 +878,6 @@ export default function AccountingPage() {
                             <span className="text-xs text-gray-400 font-mono">
                               {week.weekId}
                             </span>
-                            {/* Incomplete warning */}
                             {incomplete && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
                                 <AlertTriangle className="w-3 h-3" />
@@ -746,10 +887,13 @@ export default function AccountingPage() {
                           </div>
                         </div>
 
-                        {/* Status */}
-                        <div className="w-28 flex-shrink-0 px-2">
+                        {/* Status + Paid badges */}
+                        <div className="flex items-center gap-1.5 w-auto flex-shrink-0 px-2">
                           {hasReport ? (
-                            <StatusBadge status={report.status} />
+                            <>
+                              <StatusBadge status={report.status} />
+                              {isPaid && <PaidBadge />}
+                            </>
                           ) : isFutureWeek ? (
                             <span className="text-xs text-gray-400">
                               Gelecek
@@ -800,12 +944,32 @@ export default function AccountingPage() {
                             <div className="w-[292px]" />
                           )}
                         </div>
+
+                        {/* Excel export button */}
+                        <div className="w-10 flex-shrink-0 pl-2 flex justify-end">
+                          {isCompleted && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleExportExcel(week.weekId);
+                              }}
+                              disabled={isExporting}
+                              className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all disabled:opacity-50"
+                              title="Excel olarak indir"
+                            >
+                              {isExporting ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Download className="w-4 h-4" />
+                              )}
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {/* Expanded Shop Sales */}
                       {isExpanded && isCompleted && (
                         <div className="bg-gray-50/80 border-t border-gray-100 px-4 py-4">
-                          {/* Incomplete info box */}
                           {incomplete && (
                             <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg mb-3">
                               <Info className="w-4 h-4 text-amber-600 flex-shrink-0" />
@@ -1010,162 +1174,6 @@ export default function AccountingPage() {
             )}
           </div>
         </main>
-
-        {/* Backfill Modal */}
-        {showBackfillModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-gray-900">
-                    Gecmis Verileri Toplu Olustur (Backfill)
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Belirlenen tarih araligindaki tum haftalarin raporlarini
-                    olusturur. Tamamlanmis haftalar atlanir.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowBackfillModal(false);
-                    setBackfillResults(null);
-                  }}
-                  className="text-gray-400 hover:text-gray-600 p-1"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="px-5 py-4 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Baslangic Tarihi
-                    </label>
-                    <input
-                      type="date"
-                      value={backfillStartDate}
-                      onChange={(e) => setBackfillStartDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Bitis Tarihi
-                    </label>
-                    <input
-                      type="date"
-                      value={backfillEndDate}
-                      onChange={(e) => setBackfillEndDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                    />
-                  </div>
-                </div>
-
-                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={forceRecalculate}
-                    onChange={(e) => setForceRecalculate(e.target.checked)}
-                    className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 w-3.5 h-3.5"
-                  />
-                  Tamamlanmis haftalari da yeniden hesapla (Force)
-                </label>
-
-                <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                  <p className="text-xs text-amber-800">
-                    Bu islem uzun surebilir. Maksimum 52 hafta tek seferde
-                    islenir. Daha fazlasi icin birden fazla kez calistirin.
-                  </p>
-                </div>
-
-                {backfillResults && (
-                  <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg">
-                    <table className="w-full text-xs">
-                      <thead className="bg-gray-50 sticky top-0">
-                        <tr>
-                          <th className="text-left px-2 py-1.5 font-medium text-gray-500">
-                            Hafta
-                          </th>
-                          <th className="text-left px-2 py-1.5 font-medium text-gray-500">
-                            Durum
-                          </th>
-                          <th className="text-right px-2 py-1.5 font-medium text-gray-500">
-                            Ciro
-                          </th>
-                          <th className="text-right px-2 py-1.5 font-medium text-gray-500">
-                            Siparis
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {backfillResults.map((r) => (
-                          <tr key={r.weekId}>
-                            <td className="px-2 py-1.5 font-mono">
-                              {r.weekId}
-                            </td>
-                            <td className="px-2 py-1.5">
-                              <StatusBadge
-                                status={
-                                  r.status === "skipped" ? "pending" : r.status
-                                }
-                              />
-                              {r.reason && (
-                                <span className="text-gray-400 ml-1">
-                                  ({r.reason})
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-2 py-1.5 text-right">
-                              {r.totalRevenue
-                                ? formatCurrency(r.totalRevenue)
-                                : "—"}
-                            </td>
-                            <td className="px-2 py-1.5 text-right">
-                              {r.orderCount?.toLocaleString() || "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              <div className="px-5 py-3 border-t border-gray-100 bg-gray-50 flex justify-end gap-2">
-                <button
-                  onClick={() => {
-                    setShowBackfillModal(false);
-                    setBackfillResults(null);
-                  }}
-                  className="px-4 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
-                >
-                  Kapat
-                </button>
-                <button
-                  onClick={handleBackfill}
-                  disabled={
-                    backfillLoading || !backfillStartDate || !backfillEndDate
-                  }
-                  className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-all"
-                >
-                  {backfillLoading ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Isleniyor...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      Backfill Baslat
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </ProtectedRoute>
   );
