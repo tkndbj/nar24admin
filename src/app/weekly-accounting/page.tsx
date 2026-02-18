@@ -9,12 +9,9 @@ import {
   ChevronRight,
   DollarSign,
   Loader2,
-  Play,
   RefreshCw,
   Search,
-  ShoppingCart,
   Store,
-  TrendingUp,
   Users,
   CheckCircle2,
   XCircle,
@@ -22,6 +19,9 @@ import {
   AlertTriangle,
   Zap,
   ChevronLeft,
+  Circle,
+  CheckCircle,
+  Info,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
@@ -133,13 +133,10 @@ function getWeekId(monday: Date) {
   return `${y}-${m}-${d}`;
 }
 
-/** Generate all weeks that overlap with the given month */
 function getWeeksOfMonth(year: number, month: number) {
   const weeks: { weekId: string; monday: Date; sunday: Date }[] = [];
   const firstOfMonth = new Date(year, month, 1);
   const lastOfMonth = new Date(year, month + 1, 0);
-
-  // Start from the Monday of the week containing the 1st
   const { monday: firstMonday } = getWeekBoundsLocal(firstOfMonth);
   const current = new Date(firstMonday);
 
@@ -147,7 +144,6 @@ function getWeeksOfMonth(year: number, month: number) {
     const monday = new Date(current);
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
-
     weeks.push({
       weekId: getWeekId(monday),
       monday: new Date(monday),
@@ -156,6 +152,15 @@ function getWeeksOfMonth(year: number, month: number) {
     current.setDate(current.getDate() + 7);
   }
   return weeks;
+}
+
+/** Check if a week is currently incomplete (hasn't ended yet) */
+function isWeekIncomplete(sunday: Date) {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const sundayEnd = new Date(sunday);
+  sundayEnd.setHours(23, 59, 59, 999);
+  return now <= sundayEnd;
 }
 
 function formatCurrency(amount: number) {
@@ -215,37 +220,6 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function StatMini({
-  label,
-  value,
-  icon: Icon,
-  color,
-}: {
-  label: string;
-  value: string | number;
-  icon: React.ElementType;
-  color: string;
-}) {
-  const colors: Record<string, string> = {
-    blue: "bg-blue-50 text-blue-600",
-    green: "bg-emerald-50 text-emerald-600",
-    purple: "bg-purple-50 text-purple-600",
-    orange: "bg-orange-50 text-orange-600",
-    red: "bg-red-50 text-red-600",
-  };
-  return (
-    <div className="bg-white border border-gray-100 rounded-lg p-3">
-      <div className="flex items-center gap-2 mb-1">
-        <div className={`p-1 rounded ${colors[color]}`}>
-          <Icon className="w-3.5 h-3.5" />
-        </div>
-        <span className="text-xs text-gray-500">{label}</span>
-      </div>
-      <p className="text-lg font-bold text-gray-900">{value}</p>
-    </div>
-  );
-}
-
 // ═══════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ═══════════════════════════════════════════════════════════════
@@ -264,6 +238,9 @@ export default function AccountingPage() {
   );
   const [loadingReports, setLoadingReports] = useState(false);
 
+  // Week selection (for calculate action)
+  const [selectedWeekId, setSelectedWeekId] = useState<string | null>(null);
+
   // Expanded week for shop sales
   const [expandedWeekId, setExpandedWeekId] = useState<string | null>(null);
   const [shopSales, setShopSales] = useState<ShopSale[]>([]);
@@ -276,8 +253,9 @@ export default function AccountingPage() {
     "totalRevenue" | "orderCount" | "totalQuantity"
   >("totalRevenue");
 
-  // Manual trigger states
+  // Action states
   const [triggerLoading, setTriggerLoading] = useState(false);
+  const [forceRecalculate, setForceRecalculate] = useState(false);
   const [backfillLoading, setBackfillLoading] = useState(false);
   const [backfillResults, setBackfillResults] = useState<
     BackfillResult[] | null
@@ -285,7 +263,6 @@ export default function AccountingPage() {
   const [showBackfillModal, setShowBackfillModal] = useState(false);
   const [backfillStartDate, setBackfillStartDate] = useState("");
   const [backfillEndDate, setBackfillEndDate] = useState("");
-  const [forceRecalculate, setForceRecalculate] = useState(false);
   const [toast, setToast] = useState<{
     message: string;
     type: "success" | "error";
@@ -293,7 +270,6 @@ export default function AccountingPage() {
 
   const SHOPS_PER_PAGE = 20;
 
-  // Firebase Functions instance
   const functions = useMemo(() => {
     try {
       return getFunctions(getApp(), "europe-west3");
@@ -302,7 +278,6 @@ export default function AccountingPage() {
     }
   }, []);
 
-  // Weeks for the selected month
   const monthWeeks = useMemo(
     () => getWeeksOfMonth(selectedYear, selectedMonth),
     [selectedYear, selectedMonth],
@@ -312,12 +287,9 @@ export default function AccountingPage() {
   const fetchReports = useCallback(async () => {
     if (!user || monthWeeks.length === 0) return;
     setLoadingReports(true);
-
     try {
       const weekIds = monthWeeks.map((w) => w.weekId);
       const reportsMap = new Map<string, WeekReport>();
-
-      // Firestore `in` query limited to 30 items — chunk if needed
       for (let i = 0; i < weekIds.length; i += 30) {
         const chunk = weekIds.slice(i, i + 30);
         const q = query(
@@ -329,7 +301,6 @@ export default function AccountingPage() {
           reportsMap.set(doc.id, doc.data() as WeekReport);
         });
       }
-
       setWeekReports(reportsMap);
     } catch (err) {
       console.error("Error fetching week reports:", err);
@@ -358,7 +329,6 @@ export default function AccountingPage() {
           orderBy(shopSortField, "desc"),
           limit(SHOPS_PER_PAGE),
         );
-
         if (!reset && lastShopDoc) {
           q = query(
             baseRef,
@@ -367,10 +337,8 @@ export default function AccountingPage() {
             limit(SHOPS_PER_PAGE),
           );
         }
-
         const snap = await getDocs(q);
         const sales = snap.docs.map((d) => d.data() as ShopSale);
-
         if (reset) {
           setShopSales(sales);
           setShopPage(0);
@@ -378,7 +346,6 @@ export default function AccountingPage() {
           setShopSales((prev) => [...prev, ...sales]);
           setShopPage((prev) => prev + 1);
         }
-
         setLastShopDoc(
           snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null,
         );
@@ -392,7 +359,6 @@ export default function AccountingPage() {
     [shopSortField, lastShopDoc],
   );
 
-  // When expanding a week
   const handleExpandWeek = useCallback(
     (weekId: string) => {
       if (expandedWeekId === weekId) {
@@ -410,7 +376,6 @@ export default function AccountingPage() {
     [expandedWeekId, fetchShopSales],
   );
 
-  // When sort changes, refetch
   useEffect(() => {
     if (expandedWeekId) {
       setLastShopDoc(null);
@@ -419,7 +384,6 @@ export default function AccountingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shopSortField]);
 
-  // Filter shops client-side by search
   const filteredShops = useMemo(() => {
     if (!shopSearchTerm.trim()) return shopSales;
     const term = shopSearchTerm.toLowerCase();
@@ -430,21 +394,42 @@ export default function AccountingPage() {
     );
   }, [shopSales, shopSearchTerm]);
 
-  // ── Manual trigger: current week ───────────────────────────
-  const handleTriggerCurrentWeek = useCallback(async () => {
-    if (!functions) return;
+  // ── Toggle week selection ──────────────────────────────────
+  const handleToggleWeekSelect = useCallback((weekId: string) => {
+    setSelectedWeekId((prev) => (prev === weekId ? null : weekId));
+  }, []);
+
+  // ── Calculate selected week ────────────────────────────────
+  const handleCalculateSelected = useCallback(async () => {
+    if (!functions || !selectedWeekId) return;
     setTriggerLoading(true);
     try {
       const fn = httpsCallable(functions, "triggerWeeklyAccounting");
-      const res = await fn({ mode: "current", force: forceRecalculate });
+      const res = await fn({
+        mode: "single",
+        weekId: selectedWeekId,
+        force: forceRecalculate,
+      });
       const data = res.data as { success: boolean; results: BackfillResult[] };
 
       if (data.success) {
-        setToast({
-          message: "Bu haftanin raporu olusturuldu!",
-          type: "success",
-        });
+        const result = data.results[0];
+        if (result.status === "skipped") {
+          setToast({
+            message: `${selectedWeekId} zaten tamamlanmis. "Zorla Yeniden Hesapla" secenegini isaretleyip tekrar deneyin.`,
+            type: "error",
+          });
+        } else {
+          setToast({
+            message: `${selectedWeekId} raporu basariyla olusturuldu!`,
+            type: "success",
+          });
+        }
         fetchReports();
+        if (expandedWeekId === selectedWeekId) {
+          setLastShopDoc(null);
+          fetchShopSales(selectedWeekId, true);
+        }
       }
     } catch (err: unknown) {
       console.error("Trigger error:", err);
@@ -455,56 +440,14 @@ export default function AccountingPage() {
     } finally {
       setTriggerLoading(false);
     }
-  }, [functions, forceRecalculate, fetchReports]);
-
-  // ── Manual trigger: single specific week ───────────────────
-  const handleTriggerSpecificWeek = useCallback(
-    async (weekId: string) => {
-      if (!functions) return;
-      setTriggerLoading(true);
-      try {
-        const fn = httpsCallable(functions, "triggerWeeklyAccounting");
-        const res = await fn({
-          mode: "single",
-          weekId,
-          force: forceRecalculate,
-        });
-        const data = res.data as {
-          success: boolean;
-          results: BackfillResult[];
-        };
-
-        if (data.success) {
-          const result = data.results[0];
-          if (result.status === "skipped") {
-            setToast({
-              message: `${weekId} zaten tamamlanmis. Zorla yeniden hesaplamak icin 'Force' secenegini kullanin.`,
-              type: "error",
-            });
-          } else {
-            setToast({
-              message: `${weekId} raporu olusturuldu!`,
-              type: "success",
-            });
-          }
-          fetchReports();
-          if (expandedWeekId === weekId) {
-            setLastShopDoc(null);
-            fetchShopSales(weekId, true);
-          }
-        }
-      } catch (err: unknown) {
-        console.error("Trigger error:", err);
-        setToast({
-          message: `Hata: ${err instanceof Error ? err.message : "Bilinmeyen hata"}`,
-          type: "error",
-        });
-      } finally {
-        setTriggerLoading(false);
-      }
-    },
-    [functions, forceRecalculate, fetchReports, expandedWeekId, fetchShopSales],
-  );
+  }, [
+    functions,
+    selectedWeekId,
+    forceRecalculate,
+    fetchReports,
+    expandedWeekId,
+    fetchShopSales,
+  ]);
 
   // ── Backfill ───────────────────────────────────────────────
   const handleBackfill = useCallback(async () => {
@@ -525,7 +468,6 @@ export default function AccountingPage() {
         summary: { completed: number; skipped: number; failed: number };
         hasMore: boolean;
       };
-
       setBackfillResults(data.results);
       setToast({
         message:
@@ -560,6 +502,7 @@ export default function AccountingPage() {
       setSelectedMonth((m) => m - 1);
     }
     setExpandedWeekId(null);
+    setSelectedWeekId(null);
     setShopSales([]);
   };
 
@@ -571,6 +514,7 @@ export default function AccountingPage() {
       setSelectedMonth((m) => m + 1);
     }
     setExpandedWeekId(null);
+    setSelectedWeekId(null);
     setShopSales([]);
   };
 
@@ -582,22 +526,13 @@ export default function AccountingPage() {
     }
   }, [toast]);
 
-  // Summary stats for the month
-  const monthStats = useMemo(() => {
-    let revenue = 0;
-    let orders = 0;
-    let sellers = 0;
-    let completedWeeks = 0;
-    weekReports.forEach((r) => {
-      if (r.status === "completed") {
-        revenue += r.totalRevenue || 0;
-        orders += r.totalOrderCount || 0;
-        sellers = Math.max(sellers, r.sellerCount || 0);
-        completedWeeks++;
-      }
-    });
-    return { revenue, orders, sellers, completedWeeks };
-  }, [weekReports]);
+  // Selected week label for the button
+  const selectedWeekLabel = useMemo(() => {
+    if (!selectedWeekId) return null;
+    const week = monthWeeks.find((w) => w.weekId === selectedWeekId);
+    if (!week) return selectedWeekId;
+    return `${formatDate(week.monday)} – ${formatDate(week.sunday)}`;
+  }, [selectedWeekId, monthWeeks]);
 
   return (
     <ProtectedRoute>
@@ -629,7 +564,7 @@ export default function AccountingPage() {
 
             <div className="flex items-center gap-2">
               {/* Force checkbox */}
-              <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none mr-1">
                 <input
                   type="checkbox"
                   checked={forceRecalculate}
@@ -639,18 +574,24 @@ export default function AccountingPage() {
                 Zorla Yeniden Hesapla
               </label>
 
-              {/* Current week button */}
+              {/* Single calculate button */}
               <button
-                onClick={handleTriggerCurrentWeek}
-                disabled={triggerLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-all"
+                onClick={handleCalculateSelected}
+                disabled={!selectedWeekId || triggerLoading}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  selectedWeekId
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                } disabled:opacity-50`}
               >
                 {triggerLoading ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
-                  <Play className="w-3.5 h-3.5" />
+                  <Zap className="w-3.5 h-3.5" />
                 )}
-                Bu Haftayi Hesapla
+                {selectedWeekId
+                  ? `Secilen Haftayi Hesapla (${selectedWeekLabel})`
+                  : "Secilen Haftayi Hesapla"}
               </button>
 
               {/* Backfill button */}
@@ -668,7 +609,7 @@ export default function AccountingPage() {
         {/* Toast */}
         {toast && (
           <div
-            className={`fixed top-16 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium max-w-md animate-in slide-in-from-right ${
+            className={`fixed top-16 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium max-w-md ${
               toast.type === "success"
                 ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
                 : "bg-red-50 text-red-800 border border-red-200"
@@ -679,34 +620,6 @@ export default function AccountingPage() {
         )}
 
         <main className="max-w-[1400px] mx-auto p-4">
-          {/* Month Summary Stats */}
-          <div className="grid grid-cols-4 gap-3 mb-4">
-            <StatMini
-              label="Aylik Ciro"
-              value={formatCurrency(monthStats.revenue)}
-              icon={TrendingUp}
-              color="green"
-            />
-            <StatMini
-              label="Toplam Siparis"
-              value={monthStats.orders.toLocaleString()}
-              icon={ShoppingCart}
-              color="blue"
-            />
-            <StatMini
-              label="Aktif Satici"
-              value={monthStats.sellers.toLocaleString()}
-              icon={Store}
-              color="purple"
-            />
-            <StatMini
-              label="Tamamlanan Hafta"
-              value={`${monthStats.completedWeeks} / ${monthWeeks.length}`}
-              icon={CheckCircle2}
-              color="orange"
-            />
-          </div>
-
           {/* Month Navigator */}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50">
@@ -716,14 +629,12 @@ export default function AccountingPage() {
               >
                 <ChevronLeft className="w-4 h-4 text-gray-600" />
               </button>
-
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-gray-500" />
                 <h2 className="text-sm font-semibold text-gray-900">
                   {MONTHS_TR[selectedMonth]} {selectedYear}
                 </h2>
               </div>
-
               <button
                 onClick={goToNextMonth}
                 className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors"
@@ -742,41 +653,82 @@ export default function AccountingPage() {
                 {monthWeeks.map((week) => {
                   const report = weekReports.get(week.weekId);
                   const isExpanded = expandedWeekId === week.weekId;
+                  const isSelected = selectedWeekId === week.weekId;
                   const hasReport = !!report;
                   const isCompleted = report?.status === "completed";
                   const isFutureWeek = week.monday > new Date();
+                  const incomplete =
+                    isCompleted && isWeekIncomplete(week.sunday);
 
                   return (
                     <div key={week.weekId}>
                       {/* Week Row */}
                       <div
                         className={`flex items-center px-4 py-3 transition-colors ${
-                          isCompleted
-                            ? "hover:bg-emerald-50/50 cursor-pointer"
-                            : hasReport
-                              ? "hover:bg-gray-50 cursor-pointer"
+                          isSelected
+                            ? "bg-emerald-50/60"
+                            : isExpanded
+                              ? "bg-gray-50/80"
                               : "hover:bg-gray-50"
-                        } ${isExpanded ? "bg-emerald-50/30" : ""}`}
-                        onClick={() => {
-                          if (hasReport && report.status !== "processing") {
-                            handleExpandWeek(week.weekId);
-                          }
-                        }}
+                        }`}
                       >
-                        {/* Expand indicator */}
-                        <div className="w-6 mr-2 flex-shrink-0">
+                        {/* Select toggle */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isFutureWeek)
+                              handleToggleWeekSelect(week.weekId);
+                          }}
+                          disabled={isFutureWeek}
+                          className={`mr-3 flex-shrink-0 transition-colors ${
+                            isFutureWeek
+                              ? "text-gray-200 cursor-not-allowed"
+                              : isSelected
+                                ? "text-emerald-600"
+                                : "text-gray-300 hover:text-gray-400"
+                          }`}
+                          title={
+                            isFutureWeek
+                              ? "Gelecek hafta"
+                              : isSelected
+                                ? "Secimi kaldir"
+                                : "Haftayi sec"
+                          }
+                        >
+                          {isSelected ? (
+                            <CheckCircle className="w-5 h-5" />
+                          ) : (
+                            <Circle className="w-5 h-5" />
+                          )}
+                        </button>
+
+                        {/* Expand toggle */}
+                        <button
+                          onClick={() => {
+                            if (hasReport && report.status !== "processing") {
+                              handleExpandWeek(week.weekId);
+                            }
+                          }}
+                          className={`w-6 mr-2 flex-shrink-0 ${
+                            hasReport && report.status !== "processing"
+                              ? "cursor-pointer text-gray-400 hover:text-gray-600"
+                              : "text-transparent cursor-default"
+                          }`}
+                        >
                           {hasReport && report.status !== "processing" ? (
                             isExpanded ? (
-                              <ChevronDown className="w-4 h-4 text-gray-400" />
+                              <ChevronDown className="w-4 h-4" />
                             ) : (
-                              <ChevronRight className="w-4 h-4 text-gray-400" />
+                              <ChevronRight className="w-4 h-4" />
                             )
-                          ) : null}
-                        </div>
+                          ) : (
+                            <span className="w-4 h-4 block" />
+                          )}
+                        </button>
 
                         {/* Date range */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-medium text-gray-900">
                               {formatDate(week.monday)} –{" "}
                               {formatDate(week.sunday)}
@@ -784,6 +736,13 @@ export default function AccountingPage() {
                             <span className="text-xs text-gray-400 font-mono">
                               {week.weekId}
                             </span>
+                            {/* Incomplete warning */}
+                            {incomplete && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                                <AlertTriangle className="w-3 h-3" />
+                                Eksik rapor. Hafta bitince tekrar hesaplanmali.
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -838,37 +797,7 @@ export default function AccountingPage() {
                               </p>
                             </div>
                           ) : (
-                            <div className="w-[292px]" /> /* spacer */
-                          )}
-                        </div>
-
-                        {/* Action button */}
-                        <div className="w-24 flex-shrink-0 pl-3 flex justify-end">
-                          {!isFutureWeek && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleTriggerSpecificWeek(week.weekId);
-                              }}
-                              disabled={triggerLoading}
-                              className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all ${
-                                isCompleted && !forceRecalculate
-                                  ? "text-gray-400 cursor-not-allowed"
-                                  : "text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800"
-                              }`}
-                              title={
-                                isCompleted && !forceRecalculate
-                                  ? "Zaten tamamlandi. Zorla yeniden hesaplamak icin 'Force' secenegini aktiflestiriniz."
-                                  : "Bu haftayi hesapla"
-                              }
-                            >
-                              {triggerLoading ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <Zap className="w-3 h-3" />
-                              )}
-                              Hesapla
-                            </button>
+                            <div className="w-[292px]" />
                           )}
                         </div>
                       </div>
@@ -876,6 +805,20 @@ export default function AccountingPage() {
                       {/* Expanded Shop Sales */}
                       {isExpanded && isCompleted && (
                         <div className="bg-gray-50/80 border-t border-gray-100 px-4 py-4">
+                          {/* Incomplete info box */}
+                          {incomplete && (
+                            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg mb-3">
+                              <Info className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                              <p className="text-xs text-amber-800">
+                                Bu hafta henuz bitmedi. Gosterilen veriler
+                                sadece simdiye kadarki siparisleri icerir. Hafta
+                                bittikten sonra{" "}
+                                <strong>Zorla Yeniden Hesapla</strong> ile
+                                guncellemeniz onerilir.
+                              </p>
+                            </div>
+                          )}
+
                           {/* Controls */}
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-3">
@@ -895,7 +838,6 @@ export default function AccountingPage() {
                                 />
                               </div>
                             </div>
-
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-gray-500">
                                 Sirala:
@@ -1031,7 +973,6 @@ export default function AccountingPage() {
                                 </table>
                               </div>
 
-                              {/* Load More */}
                               {hasMoreShops && !shopSearchTerm && (
                                 <div className="flex justify-center mt-3">
                                   <button
@@ -1054,9 +995,9 @@ export default function AccountingPage() {
 
                               <p className="text-xs text-gray-400 mt-2 text-center">
                                 {filteredShops.length} satici gosteriliyor
-                                {shopSearchTerm ? ` (filtreli)` : ""}
-                                {" / "}
-                                toplam {report?.sellerCount || "?"} satici
+                                {shopSearchTerm ? " (filtreli)" : ""}
+                                {" / toplam "}
+                                {report?.sellerCount || "?"} satici
                               </p>
                             </>
                           )}
@@ -1139,7 +1080,6 @@ export default function AccountingPage() {
                   </p>
                 </div>
 
-                {/* Backfill Results */}
                 {backfillResults && (
                   <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg">
                     <table className="w-full text-xs">
