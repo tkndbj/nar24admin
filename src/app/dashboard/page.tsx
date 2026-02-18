@@ -130,6 +130,14 @@ const NAV_CATEGORIES = [
     ],
   },
   {
+    title: "Muhasebe",
+    icon: DollarSign,
+    color: "green",
+    items: [
+      { path: "weekly-accounting", label: "Haftalık Satış Raporları", icon: BarChart3 },
+    ],
+  },
+  {
     title: "Yardim & Iade",
     icon: HelpCircle,
     color: "red",
@@ -182,11 +190,11 @@ const NAV_CATEGORIES = [
     ],
   },
   {
-    title: "Muhasebe",
-    icon: DollarSign,
-    color: "green",
+    title: "Analiz Merkezi",
+    icon: Activity,
+    color: "indigo",
     items: [
-      { path: "weekly-accounting", label: "Haftalık Satış Raporları", icon: BarChart3 },
+      { path: "analytics-center", label: "Genel Analizler", icon: BarChart3 },
     ],
   },
   {
