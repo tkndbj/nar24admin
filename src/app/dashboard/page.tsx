@@ -195,6 +195,7 @@ const NAV_CATEGORIES = [
     color: "indigo",
     items: [
       { path: "analytics-center", label: "Genel Analizler", icon: BarChart3 },
+      { path: "analytics-center/details", label: "Aylık Analiz Özeti", icon: FileText },
     ],
   },
   {
