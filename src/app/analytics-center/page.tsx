@@ -27,6 +27,9 @@ import {
   Heart,
   SearchIcon,
   ArrowUpDown,
+  Filter,
+  Tag,
+  Users,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
@@ -63,6 +66,7 @@ interface AnalyticsReport {
   totalCartAdds: number;
   totalFavorites: number;
   totalSearches: number;
+  totalPurchaseEvents: number;
   totalEvents: number;
   uniqueProducts: number;
   uniqueUsers: number;
@@ -79,6 +83,17 @@ interface AnalyticsReport {
 
   // Search
   topSearchTerms: SearchTerm[];
+
+  // Conversion funnel
+  conversionFunnels: ConversionFunnel[];
+
+  // Brand analytics
+  topClickedBrands: BrandEngagement[];
+  topSellingBrands: BrandSales[];
+  brandHighClickLowSale: BrandComparison[];
+
+  // Gender breakdown
+  genderBreakdown: GenderBreakdown[];
 }
 
 interface CategoryEngagement {
@@ -89,6 +104,7 @@ interface CategoryEngagement {
   views: number;
   cartAdds: number;
   favorites: number;
+  purchases: number;
 }
 
 interface SellerEngagement {
@@ -126,6 +142,52 @@ interface CategoryComparison {
 interface SearchTerm {
   term: string;
   count: number;
+}
+
+interface ConversionFunnel {
+  category: string;
+  views: number;
+  clicks: number;
+  cartAdds: number;
+  purchases: number;
+  viewToClickRate: number;
+  clickToCartRate: number;
+  cartToPurchaseRate: number;
+  overallConversion: number;
+}
+
+interface BrandEngagement {
+  brand: string;
+  clicks: number;
+  views: number;
+  cartAdds: number;
+  favorites: number;
+  purchases: number;
+}
+
+interface BrandSales {
+  brand: string;
+  purchases: number;
+  clicks: number;
+  conversionRate: number;
+}
+
+interface BrandComparison {
+  brand: string;
+  clicks: number;
+  purchases: number;
+  clickToPurchaseRatio: number;
+}
+
+interface GenderBreakdown {
+  gender: string;
+  clicks: number;
+  views: number;
+  cartAdds: number;
+  favorites: number;
+  purchases: number;
+  uniqueUsers: number;
+  totalEngagement: number;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -337,7 +399,14 @@ export default function AnalyticsCenterPage() {
 
   // Tab for expanded view
   const [activeTab, setActiveTab] = useState<
-    "categories" | "sellers" | "sales" | "insights" | "search"
+    | "categories"
+    | "sellers"
+    | "sales"
+    | "insights"
+    | "search"
+    | "funnel"
+    | "brands"
+    | "gender"
   >("categories");
 
   const functions = useMemo(() => {
@@ -740,11 +809,22 @@ function ExpandedAnalytics({
   incomplete: boolean;
   activeTab: string;
   setActiveTab: (
-    t: "categories" | "sellers" | "sales" | "insights" | "search",
+    t:
+      | "categories"
+      | "sellers"
+      | "sales"
+      | "insights"
+      | "search"
+      | "funnel"
+      | "brands"
+      | "gender",
   ) => void;
 }) {
   const tabs = [
     { key: "categories", label: "Kategori Analizi", icon: BarChart3 },
+    { key: "funnel", label: "Donusum Hunisi", icon: Filter },
+    { key: "brands", label: "Marka Analizi", icon: Tag },
+    { key: "gender", label: "Cinsiyet Analizi", icon: Users },
     { key: "sellers", label: "Satici Etkilesimi", icon: Store },
     { key: "sales", label: "Satis Siralamasi", icon: ShoppingCart },
     { key: "insights", label: "Icerikler", icon: ArrowUpDown },
@@ -793,11 +873,11 @@ function ExpandedAnalytics({
           label="Urun Cesidi"
           value={report.uniqueProducts}
         />
-        <StatCard icon={Eye} label="Kullanici" value={report.uniqueUsers} />
+        <StatCard icon={Users} label="Kullanici" value={report.uniqueUsers} />
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 mb-4 border-b border-gray-200 pb-px">
+      <div className="flex items-center gap-1 mb-4 border-b border-gray-200 pb-px overflow-x-auto">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.key;
@@ -805,7 +885,7 @@ function ExpandedAnalytics({
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-lg transition-all border-b-2 ${
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-lg transition-all border-b-2 whitespace-nowrap ${
                 isActive
                   ? "border-indigo-600 text-indigo-700 bg-white"
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
@@ -822,6 +902,15 @@ function ExpandedAnalytics({
       {activeTab === "categories" && (
         <CategoriesTab data={report.topClickedCategories} />
       )}
+      {activeTab === "funnel" && <FunnelTab data={report.conversionFunnels} />}
+      {activeTab === "brands" && (
+        <BrandsTab
+          clicked={report.topClickedBrands}
+          selling={report.topSellingBrands}
+          insight={report.brandHighClickLowSale}
+        />
+      )}
+      {activeTab === "gender" && <GenderTab data={report.genderBreakdown} />}
       {activeTab === "sellers" && (
         <SellersTab data={report.topClickedSellers} />
       )}
@@ -1331,6 +1420,535 @@ function SearchTab({ data }: { data: SearchTerm[] }) {
             </span>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TAB: Conversion Funnel
+// ═══════════════════════════════════════════════════════════════
+
+function FunnelTab({ data }: { data: ConversionFunnel[] }) {
+  if (!data || data.length === 0)
+    return <EmptyState text="Donusum hunisi verisi yok" />;
+
+  return (
+    <div>
+      <SectionHeader
+        icon={Filter}
+        title="Kategori Bazli Donusum Hunisi"
+        badge={`Top ${data.length}`}
+      />
+      <p className="text-xs text-gray-500 mb-3">
+        Her kategori icin goruntulenme → tiklanma → sepete ekleme → satin alma
+        donusum oranlari.
+      </p>
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 w-8">
+                #
+              </th>
+              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500">
+                Kategori
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                <span className="flex items-center justify-end gap-1">
+                  <Eye className="w-3 h-3" /> Grntle
+                </span>
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-16">
+                → %
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                <span className="flex items-center justify-end gap-1">
+                  <MousePointerClick className="w-3 h-3" /> Tik
+                </span>
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-16">
+                → %
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                <span className="flex items-center justify-end gap-1">
+                  <ShoppingCart className="w-3 h-3" /> Sepet
+                </span>
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-16">
+                → %
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                <span className="flex items-center justify-end gap-1">
+                  <CheckCircle className="w-3 h-3" /> Satis
+                </span>
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                Genel %
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {data.map((f, idx) => (
+              <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                <td className="px-3 py-2.5 text-xs text-gray-400">{idx + 1}</td>
+                <td className="px-3 py-2.5 font-medium text-gray-900 text-sm">
+                  {f.category}
+                </td>
+                <td className="px-3 py-2.5 text-right text-gray-700">
+                  {formatNumber(f.views)}
+                </td>
+                <td className="px-3 py-2.5 text-right">
+                  <RateBadge rate={f.viewToClickRate} />
+                </td>
+                <td className="px-3 py-2.5 text-right text-gray-700">
+                  {formatNumber(f.clicks)}
+                </td>
+                <td className="px-3 py-2.5 text-right">
+                  <RateBadge rate={f.clickToCartRate} />
+                </td>
+                <td className="px-3 py-2.5 text-right text-gray-700">
+                  {formatNumber(f.cartAdds)}
+                </td>
+                <td className="px-3 py-2.5 text-right">
+                  <RateBadge rate={f.cartToPurchaseRate} />
+                </td>
+                <td className="px-3 py-2.5 text-right font-semibold text-gray-900">
+                  {formatNumber(f.purchases)}
+                </td>
+                <td className="px-3 py-2.5 text-right">
+                  <span
+                    className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                      f.overallConversion >= 5
+                        ? "bg-emerald-100 text-emerald-700"
+                        : f.overallConversion >= 1
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-red-100 text-red-700"
+                    }`}
+                  >
+                    %{f.overallConversion}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function RateBadge({ rate }: { rate: number }) {
+  const color =
+    rate >= 30
+      ? "text-emerald-600"
+      : rate >= 10
+        ? "text-amber-600"
+        : "text-red-500";
+  return <span className={`text-xs font-medium ${color}`}>%{rate}</span>;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TAB: Brand Analytics
+// ═══════════════════════════════════════════════════════════════
+
+function BrandsTab({
+  clicked,
+  selling,
+  insight,
+}: {
+  clicked: BrandEngagement[];
+  selling: BrandSales[];
+  insight: BrandComparison[];
+}) {
+  const hasClicked = clicked && clicked.length > 0;
+  const hasSelling = selling && selling.length > 0;
+  const hasInsight = insight && insight.length > 0;
+
+  if (!hasClicked && !hasSelling)
+    return (
+      <EmptyState text="Marka verisi yok. Urunlerde brand alani tanimli mi?" />
+    );
+
+  const maxClicks = hasClicked ? clicked[0].clicks : 1;
+
+  return (
+    <div className="space-y-6">
+      {/* Top clicked brands */}
+      {hasClicked && (
+        <div>
+          <SectionHeader
+            icon={MousePointerClick}
+            title="En Cok Tiklanan Markalar"
+            badge={`Top ${clicked.length}`}
+          />
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 w-8">
+                    #
+                  </th>
+                  <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500">
+                    Marka
+                  </th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                    Tiklanma
+                  </th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                    Grntle
+                  </th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                    Sepet
+                  </th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                    Favori
+                  </th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                    Satis
+                  </th>
+                  <th className="px-3 py-2 text-xs font-semibold text-gray-500 w-32">
+                    Oran
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {clicked.map((b, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-3 py-2.5 text-xs text-gray-400">
+                      {idx + 1}
+                    </td>
+                    <td className="px-3 py-2.5 font-medium text-gray-900 text-sm">
+                      {b.brand}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-gray-900">
+                      {formatNumber(b.clicks)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-gray-700">
+                      {formatNumber(b.views)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-gray-700">
+                      {formatNumber(b.cartAdds)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-gray-700">
+                      {formatNumber(b.favorites)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-emerald-600 font-medium">
+                      {formatNumber(b.purchases)}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="w-full bg-gray-100 rounded-full h-2">
+                        <div
+                          className="bg-orange-500 h-2 rounded-full transition-all"
+                          style={{ width: `${(b.clicks / maxClicks) * 100}%` }}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Top selling brands */}
+      {hasSelling && (
+        <div>
+          <SectionHeader
+            icon={TrendingUp}
+            title="En Cok Satan Markalar"
+            badge={`Top ${selling.length}`}
+          />
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 w-8">
+                    #
+                  </th>
+                  <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500">
+                    Marka
+                  </th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                    Satis
+                  </th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                    Tiklanma
+                  </th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-24">
+                    Donusum %
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {selling.map((b, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-3 py-2.5 text-xs text-gray-400">
+                      {idx + 1}
+                    </td>
+                    <td className="px-3 py-2.5 font-medium text-gray-900 text-sm">
+                      {b.brand}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-emerald-600">
+                      {formatNumber(b.purchases)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-gray-700">
+                      {formatNumber(b.clicks)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <span
+                        className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
+                          b.conversionRate >= 10
+                            ? "bg-emerald-100 text-emerald-700"
+                            : b.conversionRate >= 3
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        %{b.conversionRate}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Brand insight: high click low sale */}
+      {hasInsight && (
+        <div>
+          <SectionHeader
+            icon={TrendingDown}
+            title="Cok Tiklanan, Az Satan Markalar"
+            badge="Dikkat"
+          />
+          <p className="text-xs text-gray-500 mb-2">
+            Yuksek ilgi gorup satisa donusmeyen markalar. Fiyat veya urun
+            kalitesi kontrol edilmeli.
+          </p>
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-red-50/50 border-b border-gray-200">
+                  <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500">
+                    Marka
+                  </th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                    Tik
+                  </th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                    Satis
+                  </th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-24">
+                    Tik/Satis
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {insight.map((b, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 font-medium text-gray-900 text-sm">
+                      {b.brand}
+                    </td>
+                    <td className="px-3 py-2 text-right text-gray-700">
+                      {formatNumber(b.clicks)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-gray-700">
+                      {formatNumber(b.purchases)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <span
+                        className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
+                          b.clickToPurchaseRatio >= 999
+                            ? "bg-red-100 text-red-700"
+                            : b.clickToPurchaseRatio > 50
+                              ? "bg-orange-100 text-orange-700"
+                              : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {b.clickToPurchaseRatio >= 999
+                          ? "∞"
+                          : `${b.clickToPurchaseRatio}x`}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TAB: Gender Breakdown
+// ═══════════════════════════════════════════════════════════════
+
+const GENDER_LABELS: Record<string, string> = {
+  male: "Erkek",
+  female: "Kadin",
+  unisex: "Unisex",
+  kids: "Cocuk",
+  boy: "Erkek Cocuk",
+  girl: "Kiz Cocuk",
+};
+
+const GENDER_COLORS: Record<string, string> = {
+  male: "bg-blue-500",
+  female: "bg-pink-500",
+  unisex: "bg-purple-500",
+  kids: "bg-amber-500",
+  boy: "bg-sky-500",
+  girl: "bg-rose-500",
+};
+
+function GenderTab({ data }: { data: GenderBreakdown[] }) {
+  if (!data || data.length === 0)
+    return (
+      <EmptyState text="Cinsiyet verisi yok. Urunlerde gender alani tanimli mi?" />
+    );
+
+  const totalEngagement = data.reduce((s, g) => s + g.totalEngagement, 0);
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader icon={Users} title="Cinsiyet Bazli Etkilesim Dagilimi" />
+
+      {/* Visual distribution bar */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="flex rounded-full h-6 overflow-hidden mb-3">
+          {data.map((g) => {
+            const pct =
+              totalEngagement > 0
+                ? (g.totalEngagement / totalEngagement) * 100
+                : 0;
+            const color = GENDER_COLORS[g.gender] || "bg-gray-400";
+            return pct > 0 ? (
+              <div
+                key={g.gender}
+                className={`${color} transition-all relative group`}
+                style={{ width: `${pct}%` }}
+                title={`${GENDER_LABELS[g.gender] || g.gender}: %${pct.toFixed(1)}`}
+              >
+                {pct > 8 && (
+                  <span className="absolute inset-0 flex items-center justify-center text-white text-xs font-bold">
+                    %{pct.toFixed(0)}
+                  </span>
+                )}
+              </div>
+            ) : null;
+          })}
+        </div>
+        <div className="flex items-center gap-4 flex-wrap">
+          {data.map((g) => {
+            const color = GENDER_COLORS[g.gender] || "bg-gray-400";
+            const pct =
+              totalEngagement > 0
+                ? ((g.totalEngagement / totalEngagement) * 100).toFixed(1)
+                : "0";
+            return (
+              <div key={g.gender} className="flex items-center gap-1.5">
+                <div className={`w-3 h-3 rounded-full ${color}`} />
+                <span className="text-xs text-gray-700 font-medium">
+                  {GENDER_LABELS[g.gender] || g.gender} — %{pct}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Detailed breakdown table */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500">
+                Cinsiyet
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                Goruntulenme
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                Tiklanma
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                Sepet
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                Favori
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                Satis
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-20">
+                Kullanici
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-24">
+                Toplam
+              </th>
+              <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-16">
+                Pay %
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {data.map((g) => {
+              const pct =
+                totalEngagement > 0
+                  ? ((g.totalEngagement / totalEngagement) * 100).toFixed(1)
+                  : "0";
+              return (
+                <tr
+                  key={g.gender}
+                  className="hover:bg-gray-50 transition-colors"
+                >
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-3 h-3 rounded-full ${GENDER_COLORS[g.gender] || "bg-gray-400"}`}
+                      />
+                      <span className="font-medium text-gray-900">
+                        {GENDER_LABELS[g.gender] || g.gender}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-gray-700">
+                    {formatNumber(g.views)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-gray-700">
+                    {formatNumber(g.clicks)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-gray-700">
+                    {formatNumber(g.cartAdds)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-gray-700">
+                    {formatNumber(g.favorites)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-emerald-600">
+                    {formatNumber(g.purchases)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-gray-700">
+                    {formatNumber(g.uniqueUsers)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-gray-900">
+                    {formatNumber(g.totalEngagement)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    <span className="text-xs font-semibold text-indigo-600">
+                      %{pct}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
