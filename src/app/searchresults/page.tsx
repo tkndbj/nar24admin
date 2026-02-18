@@ -146,7 +146,7 @@ function SearchResultsContent() {
         searchResults.push({
           id: firestoreDocId,
           type: "shop",
-          name: shop.shopName,
+          name: shop.shopName || shop.name || "",
           description: shop.location?.city || "",
           address: shop.location?.addressLine1 || "",
           phone: "",
