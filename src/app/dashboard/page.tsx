@@ -182,6 +182,14 @@ const NAV_CATEGORIES = [
     ],
   },
   {
+    title: "Muhasebe",
+    icon: DollarSign,
+    color: "green",
+    items: [
+      { path: "weekly-accounting", label: "Haftalık Satış Raporları", icon: BarChart3 },
+    ],
+  },
+  {
     title: "Nar24 Yonetimi",
     icon: Settings,
     color: "indigo",
