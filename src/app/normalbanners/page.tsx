@@ -15,13 +15,11 @@ import {
   X,
   Store as StoreIcon,
   Link as LinkIcon,
-  Calendar,
   Pause,
   Play,
   Clock,
   Eye,
   Download,
-  Filter,
 } from "lucide-react";
 import {
   collection,
@@ -43,6 +41,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { compressImage, formatFileSize } from "@/utils/imageCompression";
 import SearchModal, { type SearchSelection } from "@/components/SearchModal";
+
 // ============================================================================
 // TYPE DEFINITIONS
 // ============================================================================
@@ -109,6 +108,19 @@ const PAGE_SIZE = 20;
 const ACTIVE_ADS_COLLECTION = "market_banners";
 const SUBMISSIONS_COLLECTION = "ad_submissions";
 
+const STATUS_TABS = [
+  { value: "active", label: "Aktif" },
+  { value: "manual", label: "Manuel" },
+  { value: "pending", label: "Beklemede" },
+  { value: "expired", label: "Süresi Dolan" },
+] as const;
+
+const LINK_TABS = [
+  { value: "all", label: "Tümü" },
+  { value: "linked", label: "Bağlantılı" },
+  { value: "unlinked", label: "Bağlantısız" },
+] as const;
+
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
@@ -149,19 +161,19 @@ const getDurationLabel = (duration: string | undefined): string => {
 const getStatusColor = (status: AdStatus | "manual"): string => {
   switch (status) {
     case "pending":
-      return "bg-yellow-100 text-yellow-800 border-yellow-200";
+      return "bg-amber-50 text-amber-700";
     case "approved":
-      return "bg-blue-100 text-blue-800 border-blue-200";
+      return "bg-blue-50 text-blue-700";
     case "active":
-      return "bg-green-100 text-green-800 border-green-200";
+      return "bg-emerald-50 text-emerald-700";
     case "expired":
-      return "bg-gray-100 text-gray-800 border-gray-200";
+      return "bg-gray-100 text-gray-500";
     case "rejected":
-      return "bg-red-100 text-red-800 border-red-200";
+      return "bg-red-50 text-red-700";
     case "manual":
-      return "bg-purple-100 text-purple-800 border-purple-200";
+      return "bg-indigo-50 text-indigo-700";
     default:
-      return "bg-gray-100 text-gray-800 border-gray-200";
+      return "bg-gray-100 text-gray-500";
   }
 };
 
@@ -215,30 +227,27 @@ const ImageModal: React.FC<ImageModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center">
-      <div className="absolute top-0 left-0 right-0 bg-black/50 backdrop-blur-sm p-4 z-10">
-        <div className="flex items-center justify-between text-white">
-          <div>
-            <h3 className="text-lg font-semibold">{bannerName}</h3>
-            <p className="text-sm text-gray-300">Banner Görseli</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={downloadImage}
-              className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-            >
-              <Download className="w-4 h-4" />
-              <span className="text-sm">İndir</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+      <div className="absolute top-0 left-0 right-0 p-3 z-10 flex items-center justify-between">
+        <div className="text-white">
+          <p className="text-sm font-medium">{bannerName}</p>
+          <p className="text-[11px] text-gray-400">Banner Görseli</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={downloadImage}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/10 hover:bg-white/20 rounded text-xs text-white transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            İndir
+          </button>
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-white/20 rounded transition-colors"
+          >
+            <X className="w-4 h-4 text-white" />
+          </button>
         </div>
       </div>
-
       <div className="relative max-w-7xl max-h-full p-16">
         <img
           src={imageUrl}
@@ -247,6 +256,114 @@ const ImageModal: React.FC<ImageModalProps> = ({
         />
       </div>
     </div>
+  );
+};
+
+// ============================================================================
+// AD ROW COMPONENT
+// ============================================================================
+
+const AdRow: React.FC<{
+  ad: MarketBannerAd;
+  onViewImage: () => void;
+  onToggleStatus: () => void;
+  onDelete: () => void;
+  onAddLink: () => void;
+  onRemoveLink: () => void;
+}> = ({ ad, onViewImage, onToggleStatus, onDelete, onAddLink, onRemoveLink }) => {
+  const hasLink = ad.linkedShopId || ad.linkedProductId;
+
+  return (
+    <tr className="group hover:bg-gray-50/50 transition-colors">
+      {/* Thumbnail (square) */}
+      <td className="pl-3 pr-2 py-2">
+        <button
+          onClick={onViewImage}
+          className="relative w-10 h-10 rounded overflow-hidden bg-gray-100 group/img block flex-shrink-0"
+        >
+          <Image src={ad.imageUrl} alt="Banner" fill className="object-cover" />
+          <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover/img:opacity-100">
+            <Eye className="w-3 h-3 text-white" />
+          </div>
+        </button>
+      </td>
+
+      {/* Status */}
+      <td className="px-2 py-2">
+        {ad.isActive ? (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700">
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+            Yayında
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-gray-100 text-gray-500">
+            Duraklatıldı
+          </span>
+        )}
+      </td>
+
+      {/* Type */}
+      <td className="px-2 py-2">
+        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${getStatusColor(ad.isManual ? "manual" : "active")}`}>
+          {ad.isManual ? "Manuel" : "Kullanıcı"}
+        </span>
+      </td>
+
+      {/* Link */}
+      <td className="px-2 py-2">
+        {hasLink ? (
+          <div className="flex items-center gap-1.5">
+            <LinkIcon className="w-3 h-3 text-gray-400 flex-shrink-0" />
+            <span className="text-xs text-gray-700 truncate max-w-[120px]">{ad.linkedName}</span>
+          </div>
+        ) : (
+          <button
+            onClick={onAddLink}
+            className="text-[11px] text-indigo-600 hover:text-indigo-700 font-medium"
+          >
+            + Bağlantı Ekle
+          </button>
+        )}
+      </td>
+
+      {/* Date */}
+      <td className="px-2 py-2">
+        <span className="text-[11px] text-gray-400 tabular-nums">{formatDate(ad.createdAt)}</span>
+      </td>
+
+      {/* Actions */}
+      <td className="pl-2 pr-3 py-2">
+        <div className="flex items-center justify-end gap-0.5">
+          <button
+            onClick={onToggleStatus}
+            className={`p-1.5 rounded transition-colors ${
+              ad.isActive
+                ? "text-orange-500 hover:bg-orange-50"
+                : "text-emerald-600 hover:bg-emerald-50"
+            }`}
+            title={ad.isActive ? "Duraklat" : "Aktif Et"}
+          >
+            {ad.isActive ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+          </button>
+          {hasLink && (
+            <button
+              onClick={onRemoveLink}
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+              title="Bağlantıyı Kaldır"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            onClick={onDelete}
+            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+            title="Sil"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </td>
+    </tr>
   );
 };
 
@@ -280,7 +397,6 @@ export default function MarketBannerPage() {
   // DATA FETCHING
   // ============================================================================
 
-  // Fetch active ads
   useEffect(() => {
     const q = query(
       collection(db, ACTIVE_ADS_COLLECTION),
@@ -301,7 +417,6 @@ export default function MarketBannerPage() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch submissions (pending, approved, expired)
   useEffect(() => {
     const q = query(
       collection(db, SUBMISSIONS_COLLECTION),
@@ -354,7 +469,7 @@ export default function MarketBannerPage() {
       if (file.type.startsWith("image/")) {
         try {
           const result = await compressImage(file, {
-            maxWidth: 800, // Square format!
+            maxWidth: 800,
             maxHeight: 800,
             quality: 0.85,
             format: "image/jpeg",
@@ -423,10 +538,8 @@ export default function MarketBannerPage() {
     if (!confirm("Bu reklamı silmek istediğinizden emin misiniz?")) return;
 
     try {
-      // Delete from active ads
       await deleteDoc(doc(db, ACTIVE_ADS_COLLECTION, adId));
 
-      // If has submission, update it
       if (submissionId) {
         await updateDoc(doc(db, SUBMISSIONS_COLLECTION, submissionId), {
           status: "expired" as AdStatus,
@@ -450,21 +563,18 @@ export default function MarketBannerPage() {
     }
   ) => {
     try {
-      // Prepare data with the correct field names for Flutter app
       const updateData: Record<string, string | null> = {
         linkType: linkData.linkType,
         linkedName: linkData.linkedName,
       };
 
-      // Save to the field names that Flutter expects
       if (linkData.linkType === "shop") {
         updateData.linkedShopId = linkData.linkId;
-        updateData.linkedProductId = null; // Clear the other field
+        updateData.linkedProductId = null;
       } else if (linkData.linkType === "shop_product") {
         updateData.linkedProductId = linkData.linkId;
-        updateData.linkedShopId = null; // Clear the other field
+        updateData.linkedShopId = null;
       } else {
-        // Clearing link
         updateData.linkedShopId = null;
         updateData.linkedProductId = null;
       }
@@ -483,7 +593,6 @@ export default function MarketBannerPage() {
       return;
 
     try {
-      // Create active ad
       const adRef = await addDoc(collection(db, ACTIVE_ADS_COLLECTION), {
         imageUrl: submission.imageUrl,
         isActive: true,
@@ -500,7 +609,6 @@ export default function MarketBannerPage() {
         createdAt: serverTimestamp(),
       });
 
-      // Update submission
       await updateDoc(doc(db, SUBMISSIONS_COLLECTION, submission.id), {
         status: "active" as AdStatus,
         activeAdId: adRef.id,
@@ -536,12 +644,10 @@ export default function MarketBannerPage() {
     let filtered = [...activeAds];
 
     if (filters.status === "manual") {
-      // Show manual ads that are active
       filtered = filtered.filter(
         (ad) => ad.isManual === true && ad.isActive === true
       );
     } else if (filters.status === "active") {
-      // Show ALL active ads (including manual ones)
       filtered = filtered.filter((ad) => ad.isActive === true);
     }
 
@@ -552,7 +658,6 @@ export default function MarketBannerPage() {
         (ad) => !ad.linkedShopId && !ad.linkedProductId
       );
     }
-    // If hasLink === "all", don't filter (show all ads regardless of link)
 
     return filtered;
   }, [activeAds, filters]);
@@ -581,144 +686,76 @@ export default function MarketBannerPage() {
   const filteredPausedManualAds = getFilteredPausedManualAds();
   const filteredSubmissions = getFilteredSubmissions();
 
+  // Stats
+  const statsActive = activeAds.filter((ad) => ad.isActive).length;
+  const statsPending = submissions.filter((sub) => sub.status === "pending").length;
+  const statsManual = activeAds.filter((ad) => ad.isManual).length;
+  const statsExpired = submissions.filter((sub) => sub.status === "expired").length;
+
   // ============================================================================
   // RENDER
   // ============================================================================
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
+      <div className="min-h-screen bg-gray-50/50">
         {/* Header */}
-        <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-40 shadow-sm">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+          <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
+            <div className="flex items-center justify-between h-14">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => router.push("/dashboard")}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="flex items-center gap-1.5 text-gray-500 hover:text-gray-900 transition-colors text-sm"
                 >
-                  <ArrowLeft className="w-5 h-5 text-gray-600" />
+                  <ArrowLeft className="w-4 h-4" />
+                  Geri
                 </button>
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900">
+                <div className="w-px h-5 bg-gray-200" />
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-7 h-7 bg-indigo-600 rounded-md">
+                    <Grid3X3 className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <h1 className="text-sm font-semibold text-gray-900">
                     Market Banner Yönetimi
                   </h1>
-                  <p className="text-sm text-gray-600">
-                    Market sayfası banner yönetimi
-                  </p>
                 </div>
               </div>
 
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Plus className="w-4 h-4" />
-                <span className="font-medium">Manuel Banner Ekle</span>
+                <Plus className="w-3.5 h-3.5" />
+                Manuel Banner Ekle
               </button>
             </div>
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto px-6 py-6 space-y-6">
-          {/* Stats */}
-          <div className="grid grid-cols-4 gap-4">
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <CheckCircle className="w-5 h-5 text-green-600" />
+        <main className="max-w-[1400px] mx-auto px-4 sm:px-6 py-4 space-y-4">
+          {/* Stats Bar */}
+          <div className="grid grid-cols-4 gap-3">
+            {[
+              { label: "Aktif", value: statsActive, color: "text-emerald-600", bg: "bg-emerald-50", icon: <CheckCircle className="w-3.5 h-3.5" /> },
+              { label: "Bekleyen", value: statsPending, color: "text-amber-600", bg: "bg-amber-50", icon: <Clock className="w-3.5 h-3.5" /> },
+              { label: "Manuel", value: statsManual, color: "text-indigo-600", bg: "bg-indigo-50", icon: <Grid3X3 className="w-3.5 h-3.5" /> },
+              { label: "Süresi Dolan", value: statsExpired, color: "text-gray-500", bg: "bg-gray-100", icon: <AlertCircle className="w-3.5 h-3.5" /> },
+            ].map((stat) => (
+              <div key={stat.label} className="bg-white border border-gray-200 rounded-lg px-3 py-2.5 flex items-center gap-3">
+                <div className={`w-8 h-8 ${stat.bg} rounded-md flex items-center justify-center ${stat.color}`}>
+                  {stat.icon}
+                </div>
+                <div>
+                  <p className="text-lg font-semibold text-gray-900 leading-none tabular-nums">{stat.value}</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">{stat.label}</p>
                 </div>
               </div>
-              <p className="text-sm text-gray-600 mb-1">Aktif Reklamlar</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {activeAds.filter((ad) => ad.isActive).length}
-              </p>
-            </div>
-
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                  <Clock className="w-5 h-5 text-yellow-600" />
-                </div>
-              </div>
-              <p className="text-sm text-gray-600 mb-1">Bekleyen Başvurular</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {submissions.filter((sub) => sub.status === "pending").length}
-              </p>
-            </div>
-
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                  <Grid3X3 className="w-5 h-5 text-orange-600" />
-                </div>
-              </div>
-              <p className="text-sm text-gray-600 mb-1">Manuel Reklamlar</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {activeAds.filter((ad) => ad.isManual).length}
-              </p>
-            </div>
-
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between mb-2">
-                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                  <AlertCircle className="w-5 h-5 text-gray-600" />
-                </div>
-              </div>
-              <p className="text-sm text-gray-600 mb-1">Süresi Dolan</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {submissions.filter((sub) => sub.status === "expired").length}
-              </p>
-            </div>
+            ))}
           </div>
 
-          {/* Filters */}
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-            <div className="flex items-center gap-4">
-              <Filter className="w-5 h-5 text-gray-600" />
-              <div className="flex items-center gap-2 flex-1">
-                <span className="text-sm font-medium text-gray-700">
-                  Durum:
-                </span>
-                <select
-                  value={filters.status}
-                  onChange={(e) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      status: e.target.value as FilterState["status"],
-                    }))
-                  }
-                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                >
-                  <option value="manual">Manuel</option>
-                  <option value="pending">Beklemede</option>
-                  <option value="active">Aktif</option>
-                  <option value="expired">Süresi Dolan</option>
-                </select>
-
-                <span className="text-sm font-medium text-gray-700 ml-4">
-                  Bağlantı:
-                </span>
-                <select
-                  value={filters.hasLink}
-                  onChange={(e) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      hasLink: e.target.value as FilterState["hasLink"],
-                    }))
-                  }
-                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                >
-                  <option value="all">Tümü</option>
-                  <option value="linked">Bağlantılı</option>
-                  <option value="unlinked">Bağlantısız</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Upload Area */}
+          {/* Upload Drop Zone */}
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -726,19 +763,17 @@ export default function MarketBannerPage() {
             }}
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
+            onClick={() => fileInputRef.current?.click()}
+            className={`border border-dashed rounded-lg px-4 py-5 text-center cursor-pointer transition-colors ${
               dragOver
-                ? "border-orange-500 bg-orange-50"
-                : "border-gray-300 bg-white"
+                ? "border-indigo-400 bg-indigo-50"
+                : "border-gray-300 bg-white hover:border-gray-400"
             }`}
           >
-            <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600 mb-2">
-              Görseli sürükleyip bırakın veya seçmek için tıklayın
-            </p>
-            <p className="text-sm text-gray-500">
-              PNG, JPG formatları desteklenmektedir (Kare format önerilir:
-              800x800px)
+            <Upload className="w-6 h-6 text-gray-300 mx-auto mb-1.5" />
+            <p className="text-xs text-gray-500">
+              Görseli sürükleyin veya tıklayın
+              <span className="text-gray-400 ml-1">(PNG, JPG — kare format 800x800)</span>
             </p>
             <input
               ref={fileInputRef}
@@ -749,422 +784,303 @@ export default function MarketBannerPage() {
             />
           </div>
 
-          {/* Active Ads List - Hide when "Beklemede" or "Süresi Dolan" filter is selected */}
-          {filters.status !== "pending" && filters.status !== "expired" && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-              <div className="p-6 border-b border-gray-200">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    Aktif & Manuel Reklamlar
-                  </h2>
-                  <span className="text-sm text-gray-600">
-                    {filteredActiveAds.length} reklam
-                  </span>
-                </div>
+          {/* Main Content Card with Filters */}
+          <div className="bg-white border border-gray-200 rounded-lg">
+            {/* Toolbar */}
+            <div className="flex items-center justify-between gap-4 px-3 py-2 border-b border-gray-100">
+              <div className="flex items-center gap-0.5">
+                {STATUS_TABS.map((tab) => (
+                  <button
+                    key={tab.value}
+                    onClick={() =>
+                      setFilters((prev) => ({
+                        ...prev,
+                        status: tab.value as FilterState["status"],
+                      }))
+                    }
+                    className={`px-2.5 py-1.5 rounded text-xs font-medium whitespace-nowrap transition-colors ${
+                      filters.status === tab.value
+                        ? "bg-indigo-50 text-indigo-700"
+                        : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+                <div className="w-px h-4 bg-gray-200 mx-1" />
+                {LINK_TABS.map((tab) => (
+                  <button
+                    key={tab.value}
+                    onClick={() =>
+                      setFilters((prev) => ({
+                        ...prev,
+                        hasLink: tab.value as FilterState["hasLink"],
+                      }))
+                    }
+                    className={`px-2.5 py-1.5 rounded text-xs font-medium whitespace-nowrap transition-colors ${
+                      filters.hasLink === tab.value
+                        ? "bg-gray-100 text-gray-900"
+                        : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
 
-              {loading ? (
-                <div className="p-12 text-center">
-                  <Loader2 className="w-8 h-8 text-orange-600 animate-spin mx-auto mb-4" />
-                  <p className="text-gray-600">Yükleniyor...</p>
-                </div>
-              ) : filteredActiveAds.length === 0 ? (
-                <div className="p-12 text-center">
-                  <Grid3X3 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600">Henüz aktif reklam yok</p>
-                </div>
-              ) : (
-                <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filteredActiveAds.map((ad) => (
-                    <div
-                      key={ad.id}
-                      className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
-                    >
-                      {/* Square Banner Image */}
-                      <div className="relative w-full aspect-square bg-gray-100 group">
-                        <Image
-                          src={ad.imageUrl}
-                          alt="Market Banner"
-                          fill
-                          className="object-cover"
-                        />
+              <span className="text-[11px] text-gray-400 tabular-nums">
+                {filters.status !== "pending" && filters.status !== "expired"
+                  ? `${filteredActiveAds.length} reklam`
+                  : `${filteredSubmissions.length} başvuru`}
+              </span>
+            </div>
 
-                        {/* Hover Overlay */}
-                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          <button
-                            onClick={() =>
+            {/* Loading */}
+            {loading && (
+              <div className="flex items-center justify-center py-16">
+                <div className="flex items-center gap-2 text-gray-400 text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Yükleniyor...
+                </div>
+              </div>
+            )}
+
+            {/* ===================== ACTIVE / MANUAL ADS TABLE ===================== */}
+            {!loading && filters.status !== "pending" && filters.status !== "expired" && (
+              <>
+                {filteredActiveAds.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mb-3">
+                      <Grid3X3 className="w-5 h-5 text-gray-300" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-900 mb-1">Reklam bulunamadı</p>
+                    <p className="text-xs text-gray-400">Bu filtrelere uygun reklam yok</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-[11px] font-medium text-gray-400 uppercase tracking-wider">
+                          <th className="pl-3 pr-2 py-2.5">Görsel</th>
+                          <th className="px-2 py-2.5">Durum</th>
+                          <th className="px-2 py-2.5">Tip</th>
+                          <th className="px-2 py-2.5">Bağlantı</th>
+                          <th className="px-2 py-2.5">Tarih</th>
+                          <th className="pl-2 pr-3 py-2.5 text-right">İşlem</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {filteredActiveAds.map((ad) => (
+                          <AdRow
+                            key={ad.id}
+                            ad={ad}
+                            onViewImage={() =>
                               setImageModal({
                                 isOpen: true,
                                 imageUrl: ad.imageUrl,
                                 bannerName: `MarketBanner_${ad.id.slice(-6)}`,
                               })
                             }
-                            className="p-2 bg-white/90 hover:bg-white rounded-lg transition-colors"
-                            title="Görseli Görüntüle"
-                          >
-                            <Eye className="w-4 h-4 text-gray-900" />
-                          </button>
-                        </div>
-
-                        {/* Status Badge */}
-                        <div className="absolute top-3 left-3">
-                          {ad.isActive ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200 shadow-lg">
-                              <div className="w-1.5 h-1.5 bg-green-600 rounded-full animate-pulse" />
-                              Yayında
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200 shadow-lg">
-                              Duraklatıldı
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Type Badge */}
-                        <div className="absolute top-3 right-3">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border shadow-lg ${getStatusColor(
-                              ad.isManual ? "manual" : "active"
-                            )}`}
-                          >
-                            {ad.isManual ? "Manuel" : "Kullanıcı"}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Banner Info */}
-                      <div className="p-4 space-y-3">
-                        <div className="flex items-center gap-3">
-                          <Grid3X3 className="w-5 h-5 text-orange-600" />
-                          <h3 className="text-lg font-medium text-gray-900">
-                            Market Banner
-                          </h3>
-                        </div>
-
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Calendar className="w-4 h-4" />
-                          <span>{formatDate(ad.createdAt)}</span>
-                        </div>
-
-                        {/* Link Info */}
-                        {ad.linkedShopId || ad.linkedProductId ? (
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <LinkIcon className="w-4 h-4" />
-                            {ad.linkedName}
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => {
+                            onToggleStatus={() => toggleAdStatus(ad.id, ad.isActive)}
+                            onDelete={() => deleteAd(ad.id, ad.submissionId)}
+                            onAddLink={() => {
                               setLinkingAdId(ad.id);
                               setIsSearchOpen(true);
                             }}
-                            className="flex items-center gap-2 text-sm text-orange-600 hover:text-orange-700 font-medium"
-                          >
-                            <LinkIcon className="w-4 h-4" />
-                            Bağlantı Ekle
-                          </button>
-                        )}
+                            onRemoveLink={() =>
+                              updateAdLink(ad.id, {
+                                linkType: null,
+                                linkId: null,
+                                linkedName: null,
+                              })
+                            }
+                          />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
-                        {/* Action Buttons */}
-                        <div className="flex items-center gap-2 pt-2 border-t">
-                          <button
-                            onClick={() => toggleAdStatus(ad.id, ad.isActive)}
-                            className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-lg transition-colors ${
-                              ad.isActive
-                                ? "text-orange-600 hover:bg-orange-50"
-                                : "text-green-600 hover:bg-green-50"
-                            }`}
-                            title={ad.isActive ? "Duraklat" : "Aktif Et"}
-                          >
-                            {ad.isActive ? (
-                              <>
-                                <Pause className="w-4 h-4" />
-                                <span className="text-sm">Duraklat</span>
-                              </>
-                            ) : (
-                              <>
-                                <Play className="w-4 h-4" />
-                                <span className="text-sm">Aktif Et</span>
-                              </>
-                            )}
-                          </button>
-
-                          {(ad.linkedShopId || ad.linkedProductId) && (
-                            <button
-                              onClick={() =>
+                {/* Paused Manual Ads (only in Manual tab) */}
+                {filters.status === "manual" && filteredPausedManualAds.length > 0 && (
+                  <>
+                    <div className="px-3 py-2 border-t border-gray-100">
+                      <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">
+                        Duraklatılmış ({filteredPausedManualAds.length})
+                      </p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <tbody className="divide-y divide-gray-50">
+                          {filteredPausedManualAds.map((ad) => (
+                            <AdRow
+                              key={ad.id}
+                              ad={ad}
+                              onViewImage={() =>
+                                setImageModal({
+                                  isOpen: true,
+                                  imageUrl: ad.imageUrl,
+                                  bannerName: `MarketBanner_${ad.id.slice(-6)}`,
+                                })
+                              }
+                              onToggleStatus={() => toggleAdStatus(ad.id, ad.isActive)}
+                              onDelete={() => deleteAd(ad.id, ad.submissionId)}
+                              onAddLink={() => {
+                                setLinkingAdId(ad.id);
+                                setIsSearchOpen(true);
+                              }}
+                              onRemoveLink={() =>
                                 updateAdLink(ad.id, {
                                   linkType: null,
                                   linkId: null,
                                   linkedName: null,
                                 })
                               }
-                              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                              title="Bağlantıyı Kaldır"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-
-                          <button
-                            onClick={() => deleteAd(ad.id, ad.submissionId)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Sil"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
+                            />
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                  </>
+                )}
+              </>
+            )}
 
-          {/* Paused Manual Ads - Show only when "Manuel" filter is selected */}
-          {filters.status === "manual" && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-              <div className="p-6 border-b border-gray-200">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    Manuel & Beklemede
-                  </h2>
-                  <span className="text-sm text-gray-600">
-                    {filteredPausedManualAds.length} reklam
-                  </span>
-                </div>
-              </div>
-
-              {filteredPausedManualAds.length === 0 ? (
-                <div className="p-12 text-center">
-                  <Pause className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600">
-                    Henüz duraklatılmış manuel reklam yok
-                  </p>
-                </div>
-              ) : (
-                <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filteredPausedManualAds.map((ad) => (
-                    <div
-                      key={ad.id}
-                      className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
-                    >
-                      {/* Square Banner Image */}
-                      <div className="relative w-full aspect-square bg-gray-100 group">
-                        <Image
-                          src={ad.imageUrl}
-                          alt="Market Banner"
-                          fill
-                          className="object-cover"
-                        />
-
-                        {/* Hover Overlay */}
-                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          <button
-                            onClick={() =>
-                              setImageModal({
-                                isOpen: true,
-                                imageUrl: ad.imageUrl,
-                                bannerName: `MarketBanner_${ad.id.slice(-6)}`,
-                              })
-                            }
-                            className="p-2 bg-white/90 hover:bg-white rounded-lg transition-colors"
-                            title="Görseli Görüntüle"
+            {/* ===================== SUBMISSIONS TABLE ===================== */}
+            {!loading && (filters.status === "pending" || filters.status === "expired") && (
+              <>
+                {filteredSubmissions.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mb-3">
+                      <Clock className="w-5 h-5 text-gray-300" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-900 mb-1">Başvuru bulunamadı</p>
+                    <p className="text-xs text-gray-400">Bu filtrelere uygun başvuru yok</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-[11px] font-medium text-gray-400 uppercase tracking-wider">
+                          <th className="pl-3 pr-2 py-2.5">Görsel</th>
+                          <th className="px-2 py-2.5">Mağaza</th>
+                          <th className="px-2 py-2.5">Süre</th>
+                          <th className="px-2 py-2.5">Fiyat</th>
+                          <th className="px-2 py-2.5">Durum</th>
+                          <th className="px-2 py-2.5">Bitiş</th>
+                          <th className="px-2 py-2.5">Tarih</th>
+                          <th className="pl-2 pr-3 py-2.5 text-right">İşlem</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {filteredSubmissions.map((submission) => (
+                          <tr
+                            key={submission.id}
+                            className="group hover:bg-gray-50/50 transition-colors"
                           >
-                            <Eye className="w-4 h-4 text-gray-900" />
-                          </button>
-                        </div>
-
-                        {/* Status Badge - Paused */}
-                        <div className="absolute top-3 left-3">
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200 shadow-lg">
-                            Duraklatıldı
-                          </span>
-                        </div>
-
-                        {/* Type Badge */}
-                        <div className="absolute top-3 right-3">
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border shadow-lg bg-purple-100 text-purple-800 border-purple-200">
-                            Manuel
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Banner Info */}
-                      <div className="p-4 space-y-3">
-                        <div className="flex items-center gap-3">
-                          <Grid3X3 className="w-5 h-5 text-orange-600" />
-                          <h3 className="text-lg font-medium text-gray-900">
-                            Market Banner
-                          </h3>
-                        </div>
-
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Calendar className="w-4 h-4" />
-                          <span>{formatDate(ad.createdAt)}</span>
-                        </div>
-
-                        {/* Link Info */}
-                        {ad.linkedShopId || ad.linkedProductId ? (
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <LinkIcon className="w-4 h-4" />
-                            {ad.linkedName}
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setLinkingAdId(ad.id);
-                              setIsSearchOpen(true);
-                            }}
-                            className="flex items-center gap-2 text-sm text-orange-600 hover:text-orange-700 font-medium"
-                          >
-                            <LinkIcon className="w-4 h-4" />
-                            Bağlantı Ekle
-                          </button>
-                        )}
-
-                        {/* Action Buttons */}
-                        <div className="flex items-center gap-2 pt-2 border-t">
-                          <button
-                            onClick={() => toggleAdStatus(ad.id, ad.isActive)}
-                            className="flex-1 flex items-center justify-center gap-2 p-2 rounded-lg transition-colors text-green-600 hover:bg-green-50"
-                            title="Aktif Et"
-                          >
-                            <Play className="w-4 h-4" />
-                            <span className="text-sm">Aktif Et</span>
-                          </button>
-
-                          {ad.linkedShopId ||
-                            (ad.linkedProductId && (
+                            {/* Thumbnail (square) */}
+                            <td className="pl-3 pr-2 py-2">
                               <button
                                 onClick={() =>
-                                  updateAdLink(ad.id, {
-                                    linkType: null,
-                                    linkId: null,
-                                    linkedName: null,
+                                  setImageModal({
+                                    isOpen: true,
+                                    imageUrl: submission.imageUrl,
+                                    bannerName: `Submission_${submission.id.slice(-6)}`,
                                   })
                                 }
-                                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                                title="Bağlantıyı Kaldır"
+                                className="relative w-10 h-10 rounded overflow-hidden bg-gray-100 group/img block flex-shrink-0"
                               >
-                                <X className="w-4 h-4" />
+                                <Image
+                                  src={submission.imageUrl}
+                                  alt="Submission"
+                                  fill
+                                  className="object-cover"
+                                />
+                                <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover/img:opacity-100">
+                                  <Eye className="w-3 h-3 text-white" />
+                                </div>
                               </button>
-                            ))}
+                            </td>
 
-                          <button
-                            onClick={() => deleteAd(ad.id, ad.submissionId)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Sil"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                            {/* Shop */}
+                            <td className="px-2 py-2">
+                              <div className="flex items-center gap-1.5">
+                                <StoreIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                                <span className="font-medium text-gray-900 text-xs truncate max-w-[120px]">
+                                  {submission.shopName}
+                                </span>
+                              </div>
+                            </td>
 
-          {/* Submissions Section - Hide when "Manuel" filter is selected */}
-          {filters.status !== "manual" && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-              <div className="p-6 border-b border-gray-200">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    Kullanıcı Başvuruları
-                  </h2>
-                  <span className="text-sm text-gray-600">
-                    {filteredSubmissions.length} başvuru
-                  </span>
-                </div>
-              </div>
+                            {/* Duration */}
+                            <td className="px-2 py-2">
+                              <span className="text-xs text-gray-600">
+                                {getDurationLabel(submission.duration)}
+                              </span>
+                            </td>
 
-              {filteredSubmissions.length === 0 ? (
-                <div className="p-12 text-center">
-                  <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600">Henüz başvuru yok</p>
-                </div>
-              ) : (
-                <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filteredSubmissions.map((submission) => (
-                    <div
-                      key={submission.id}
-                      className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
-                    >
-                      <div className="relative w-full aspect-square bg-gray-100">
-                        <Image
-                          src={submission.imageUrl}
-                          alt="Submission"
-                          fill
-                          className="object-cover cursor-pointer"
-                          onClick={() =>
-                            setImageModal({
-                              isOpen: true,
-                              imageUrl: submission.imageUrl,
-                              bannerName: `Submission_${submission.id.slice(
-                                -6
-                              )}`,
-                            })
-                          }
-                        />
-                        <div className="absolute top-3 right-3">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border shadow-lg ${getStatusColor(
-                              submission.status
-                            )}`}
-                          >
-                            {getStatusLabel(submission.status)}
-                          </span>
-                        </div>
-                      </div>
+                            {/* Price */}
+                            <td className="px-2 py-2">
+                              <span className="text-xs font-semibold text-gray-900 tabular-nums">
+                                {formatPrice(submission.price)}
+                              </span>
+                            </td>
 
-                      <div className="p-4 space-y-3">
-                        <div className="flex items-center gap-2">
-                          <StoreIcon className="w-4 h-4 text-gray-600" />
-                          <span className="font-medium text-gray-900 truncate">
-                            {submission.shopName}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-4 text-sm">
-                          <span className="text-gray-600">
-                            {getDurationLabel(submission.duration)}
-                          </span>
-                          <span className="font-semibold text-gray-900">
-                            {formatPrice(submission.price)}
-                          </span>
-                        </div>
-                        {submission.expiresAt && (
-                          <div className="text-xs text-gray-600">
-                            Bitiş: {formatDate(submission.expiresAt)}
-                          </div>
-                        )}
+                            {/* Status */}
+                            <td className="px-2 py-2">
+                              <span
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${getStatusColor(
+                                  submission.status
+                                )}`}
+                              >
+                                {getStatusLabel(submission.status)}
+                              </span>
+                            </td>
 
-                        <div className="flex items-center gap-2 pt-2 border-t">
-                          {submission.status === "pending" && (
-                            <button
-                              onClick={() => activateSubmission(submission)}
-                              className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
-                            >
-                              Aktif Et
-                            </button>
-                          )}
-                          <button
-                            onClick={() => deleteSubmission(submission.id)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Sil"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                            {/* Expires */}
+                            <td className="px-2 py-2">
+                              <span className="text-[11px] text-gray-400 tabular-nums">
+                                {formatDate(submission.expiresAt)}
+                              </span>
+                            </td>
+
+                            {/* Created */}
+                            <td className="px-2 py-2">
+                              <span className="text-[11px] text-gray-400 tabular-nums">
+                                {formatDate(submission.createdAt)}
+                              </span>
+                            </td>
+
+                            {/* Actions */}
+                            <td className="pl-2 pr-3 py-2 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                {submission.status === "pending" && (
+                                  <button
+                                    onClick={() => activateSubmission(submission)}
+                                    className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded text-[11px] font-medium transition-colors"
+                                  >
+                                    <Play className="w-3 h-3" />
+                                    Aktif Et
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => deleteSubmission(submission.id)}
+                                  className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                  title="Sil"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </main>
 
         {/* Image Modal */}
@@ -1177,15 +1093,11 @@ export default function MarketBannerPage() {
 
         {/* Upload Overlay */}
         {uploading && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-8 text-center shadow-2xl">
-              <Loader2 className="w-12 h-12 text-orange-600 animate-spin mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                Banner Yükleniyor
-              </h3>
-              <p className="text-gray-600">
-                İşlem tamamlanana kadar lütfen bekleyin...
-              </p>
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg px-6 py-5 text-center shadow-xl">
+              <Loader2 className="w-6 h-6 text-indigo-600 animate-spin mx-auto mb-2" />
+              <p className="text-sm font-medium text-gray-900">Banner Yükleniyor</p>
+              <p className="text-xs text-gray-400 mt-1">Lütfen bekleyin...</p>
             </div>
           </div>
         )}
@@ -1201,7 +1113,6 @@ export default function MarketBannerPage() {
         placeholder="Mağaza veya mağaza ürünü ara..."
         onSelect={(selection: SearchSelection) => {
           if (!linkingAdId) return;
-          // SearchModal’dan gelen seçimi kaydet
           updateAdLink(linkingAdId, {
             linkType: selection.type === "shop" ? "shop" : "shop_product",
             linkId: selection.id,

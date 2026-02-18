@@ -43,7 +43,7 @@ interface AdSubmission {
   adType: "topBanner" | "thinBanner" | "marketBanner";
   duration: "oneWeek" | "twoWeeks" | "oneMonth";
   imageUrl: string;
-  status: "pending" | "approved" | "rejected" | "paid" | "active";
+  status: "pending" | "approved" | "rejected" | "paid" | "active" | "expired";
   price: number;
   createdAt: Timestamp;
   reviewedAt?: Timestamp;
@@ -54,19 +54,19 @@ interface AdSubmission {
 const AD_TYPE_CONFIG = {
   topBanner: {
     label: "Top Banner",
-    color: "bg-blue-100 text-blue-700 border-blue-200",
+    color: "bg-blue-50 text-blue-700",
     icon: "📊",
     description: "Appears at the top of market screen with dominant color",
   },
   thinBanner: {
     label: "Thin Banner",
-    color: "bg-orange-100 text-orange-700 border-orange-200",
+    color: "bg-orange-50 text-orange-700",
     icon: "📏",
     description: "Horizontal thin banner below the top banner",
   },
   marketBanner: {
     label: "Market Banner",
-    color: "bg-purple-100 text-purple-700 border-purple-200",
+    color: "bg-purple-50 text-purple-700",
     icon: "🎯",
     description: "Square banners in the market grid section",
   },
@@ -77,6 +77,16 @@ const DURATION_CONFIG = {
   twoWeeks: { label: "2 Hafta", days: 14 },
   oneMonth: { label: "1 Ay", days: 30 },
 };
+
+const STATUS_TABS = [
+  { value: "pending", label: "Bekleyen" },
+  { value: "approved", label: "Onaylanan" },
+  { value: "rejected", label: "Reddedilen" },
+  { value: "paid", label: "Ödenen" },
+  { value: "active", label: "Aktif" },
+  { value: "expired", label: "Süresi Dolmuş" },
+  { value: "all", label: "Tümü" },
+];
 
 export default function AdsApplicationsPage() {
   const router = useRouter();
@@ -260,28 +270,33 @@ export default function AdsApplicationsPage() {
     const config = {
       pending: {
         label: "Beklemede",
-        color: "bg-yellow-100 text-yellow-700 border-yellow-200",
+        color: "bg-amber-50 text-amber-700",
         icon: <Clock className="w-3 h-3" />,
       },
       approved: {
         label: "Onaylandı",
-        color: "bg-green-100 text-green-700 border-green-200",
+        color: "bg-emerald-50 text-emerald-700",
         icon: <CheckCircle className="w-3 h-3" />,
       },
       rejected: {
         label: "Reddedildi",
-        color: "bg-red-100 text-red-700 border-red-200",
+        color: "bg-red-50 text-red-700",
         icon: <XCircle className="w-3 h-3" />,
       },
       paid: {
         label: "Ödendi",
-        color: "bg-blue-100 text-blue-700 border-blue-200",
+        color: "bg-blue-50 text-blue-700",
         icon: <DollarSign className="w-3 h-3" />,
       },
       active: {
         label: "Aktif",
-        color: "bg-green-100 text-green-700 border-green-200",
+        color: "bg-emerald-50 text-emerald-700",
         icon: <CheckCircle className="w-3 h-3" />,
+      },
+      expired: {
+        label: "Süresi Dolmuş",
+        color: "bg-gray-100 text-gray-500",
+        icon: <Clock className="w-3 h-3" />,
       },
     };
 
@@ -290,7 +305,7 @@ export default function AdsApplicationsPage() {
 
     return (
       <span
-        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border ${statusConfig.color}`}
+        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium ${statusConfig.color}`}
       >
         {statusConfig.icon}
         {statusConfig.label}
@@ -300,248 +315,269 @@ export default function AdsApplicationsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-50/50">
         {/* Header */}
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+          <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
+            <div className="flex items-center justify-between h-14">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => router.back()}
-                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-100"
+                  className="flex items-center gap-1.5 text-gray-500 hover:text-gray-900 transition-colors text-sm"
                 >
                   <ArrowLeft className="w-4 h-4" />
-                  <span className="font-medium">Geri</span>
+                  Geri
                 </button>
-
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-8 h-8 bg-purple-600 rounded-lg">
-                    <ImageIcon className="w-4 h-4 text-white" />
+                <div className="w-px h-5 bg-gray-200" />
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-7 h-7 bg-purple-600 rounded-md">
+                    <ImageIcon className="w-3.5 h-3.5 text-white" />
                   </div>
-                  <div>
-                    <h1 className="text-xl font-semibold text-gray-900">
-                      Reklam Başvuruları
-                    </h1>
-                    <p className="text-sm text-gray-500">
-                      Kullanıcı reklam başvurularını yönetin
-                    </p>
-                  </div>
+                  <h1 className="text-sm font-semibold text-gray-900">
+                    Reklam Başvuruları
+                  </h1>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
-                <div className="bg-purple-50 px-4 py-2 rounded-lg border border-purple-200">
-                  <span className="text-sm text-purple-700 font-medium">
-                    {loading ? "..." : `${filteredSubmissions.length} Başvuru`}
-                  </span>
-                </div>
-              </div>
+              <span className="text-xs text-gray-500 tabular-nums">
+                {loading ? "..." : `${filteredSubmissions.length} başvuru`}
+              </span>
             </div>
           </div>
         </header>
 
         {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-6 py-6">
-          {/* Filters and Search */}
-          <div className="mb-6 flex flex-col sm:flex-row gap-4">
-            {/* Search */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Mağaza adı, ID ile ara..."
-                className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm"
-              />
-            </div>
+        <main className="max-w-[1400px] mx-auto px-4 sm:px-6 py-4">
+          {/* Toolbar: Tabs + Search */}
+          <div className="bg-white border border-gray-200 rounded-lg mb-4">
+            <div className="flex items-center justify-between gap-4 px-3 py-2 border-b border-gray-100">
+              {/* Status Tabs */}
+              <div className="flex items-center gap-0.5 overflow-x-auto">
+                {STATUS_TABS.map((tab) => (
+                  <button
+                    key={tab.value}
+                    onClick={() => setFilterStatus(tab.value)}
+                    className={`px-2.5 py-1.5 rounded text-xs font-medium whitespace-nowrap transition-colors ${
+                      filterStatus === tab.value
+                        ? "bg-purple-50 text-purple-700"
+                        : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
 
-            {/* Status Filter */}
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-gray-500" />
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm"
-              >
-                <option value="pending">Bekleyen</option>
-                <option value="approved">Onaylanan</option>
-                <option value="rejected">Reddedilen</option>
-                <option value="paid">Ödenen</option>
-                <option value="active">Aktif</option>
-                <option value="all">Tümü</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Loading State */}
-          {loading && (
-            <div className="flex items-center justify-center py-12">
-              <div className="flex items-center gap-3 text-gray-600">
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Başvurular yükleniyor...</span>
+              {/* Search */}
+              <div className="relative min-w-[200px]">
+                <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Ara..."
+                  className="w-full pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500"
+                />
               </div>
             </div>
-          )}
 
-          {/* Empty State */}
-          {!loading && filteredSubmissions.length === 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
-                <ImageIcon className="w-8 h-8 text-gray-400" />
+            {/* Loading State */}
+            {loading && (
+              <div className="flex items-center justify-center py-16">
+                <div className="flex items-center gap-2 text-gray-400 text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Yükleniyor...
+                </div>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Başvuru bulunamadı
-              </h3>
-              <p className="text-gray-500">
-                {searchTerm
-                  ? "Arama kriterlerine uygun başvuru bulunamadı"
-                  : "Henüz başvuru yapılmamış"}
-              </p>
-            </div>
-          )}
+            )}
 
-          {/* Submissions Grid */}
-          {!loading && filteredSubmissions.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {filteredSubmissions.map((submission) => (
-                <div
-                  key={submission.id}
-                  className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-shadow"
-                >
-                  {/* Image */}
-                  <div className="relative aspect-video bg-gray-100 group">
-                    <Image
-                      src={submission.imageUrl}
-                      alt="Ad submission"
-                      fill
-                      className="object-cover"
-                    />
-                    <button
-                      onClick={() => setSelectedImage(submission.imageUrl)}
-                      className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100"
-                    >
-                      <div className="bg-white rounded-full p-3">
-                        <Eye className="w-5 h-5 text-gray-900" />
-                      </div>
-                    </button>
-                  </div>
+            {/* Empty State */}
+            {!loading && filteredSubmissions.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mb-3">
+                  <ImageIcon className="w-5 h-5 text-gray-300" />
+                </div>
+                <p className="text-sm font-medium text-gray-900 mb-1">
+                  Başvuru bulunamadı
+                </p>
+                <p className="text-xs text-gray-400">
+                  {searchTerm
+                    ? "Arama kriterlerine uygun başvuru yok"
+                    : "Henüz başvuru yapılmamış"}
+                </p>
+              </div>
+            )}
 
-                  {/* Content */}
-                  <div className="p-4">
-                    {/* Header */}
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Store className="w-4 h-4 text-gray-500" />
-                          <h3 className="font-semibold text-gray-900">
-                            {submission.shopName}
-                          </h3>
-                        </div>
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border ${
-                            AD_TYPE_CONFIG[submission.adType].color
-                          }`}
-                        >
-                          <span>{AD_TYPE_CONFIG[submission.adType].icon}</span>
-                          {AD_TYPE_CONFIG[submission.adType].label}
-                        </span>
-                      </div>
-                      {getStatusBadge(submission.status)}
-                    </div>
+            {/* Table */}
+            {!loading && filteredSubmissions.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-[11px] font-medium text-gray-400 uppercase tracking-wider">
+                      <th className="pl-3 pr-2 py-2.5">Görsel</th>
+                      <th className="px-2 py-2.5">Mağaza</th>
+                      <th className="px-2 py-2.5">Reklam Tipi</th>
+                      <th className="px-2 py-2.5">Süre</th>
+                      <th className="px-2 py-2.5">Fiyat</th>
+                      <th className="px-2 py-2.5">Tarih</th>
+                      <th className="px-2 py-2.5">Durum</th>
+                      <th className="pl-2 pr-3 py-2.5 text-right">İşlem</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filteredSubmissions.map((submission) => (
+                      <tr
+                        key={submission.id}
+                        className="group hover:bg-gray-50/50 transition-colors"
+                      >
+                        {/* Thumbnail */}
+                        <td className="pl-3 pr-2 py-2.5">
+                          <button
+                            onClick={() =>
+                              setSelectedImage(submission.imageUrl)
+                            }
+                            className="relative w-12 h-8 rounded overflow-hidden bg-gray-100 group/img flex-shrink-0 block"
+                          >
+                            <Image
+                              src={submission.imageUrl}
+                              alt="Ad"
+                              fill
+                              className="object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover/img:opacity-100">
+                              <Eye className="w-3 h-3 text-white" />
+                            </div>
+                          </button>
+                        </td>
 
-                    {/* Info */}
-                    <div className="space-y-2 mb-4">
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Calendar className="w-4 h-4" />
-                        <span>{formatDate(submission.createdAt)}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2 text-gray-600">
-                          <Clock className="w-4 h-4" />
-                          <span>
+                        {/* Shop */}
+                        <td className="px-2 py-2.5">
+                          <div className="flex items-center gap-1.5">
+                            <Store className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                            <span className="font-medium text-gray-900 text-xs truncate max-w-[140px]">
+                              {submission.shopName}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Ad Type */}
+                        <td className="px-2 py-2.5">
+                          <span
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                              AD_TYPE_CONFIG[submission.adType].color
+                            }`}
+                          >
+                            <span className="text-[10px]">
+                              {AD_TYPE_CONFIG[submission.adType].icon}
+                            </span>
+                            {AD_TYPE_CONFIG[submission.adType].label}
+                          </span>
+                        </td>
+
+                        {/* Duration */}
+                        <td className="px-2 py-2.5">
+                          <span className="text-xs text-gray-600">
                             {DURATION_CONFIG[submission.duration].label}
                           </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <DollarSign className="w-4 h-4 text-gray-900" />
-                          <span className="font-bold text-gray-900">
-                            {submission.price.toLocaleString("tr-TR")} TL
+                        </td>
+
+                        {/* Price */}
+                        <td className="px-2 py-2.5">
+                          <span className="text-xs font-semibold text-gray-900 tabular-nums">
+                            {submission.price.toLocaleString("tr-TR")} ₺
                           </span>
-                        </div>
-                      </div>
-                    </div>
+                        </td>
 
-                    {/* Description */}
-                    <p className="text-xs text-gray-500 mb-4">
-                      {AD_TYPE_CONFIG[submission.adType].description}
-                    </p>
+                        {/* Date */}
+                        <td className="px-2 py-2.5">
+                          <span className="text-[11px] text-gray-400 tabular-nums">
+                            {formatDate(submission.createdAt)}
+                          </span>
+                        </td>
 
-                    {/* Rejection Reason */}
-                    {submission.status === "rejected" &&
-                      submission.rejectionReason && (
-                        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                          <div className="flex items-start gap-2">
-                            <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
-                            <div>
-                              <p className="text-xs font-medium text-red-900 mb-1">
-                                Red Nedeni:
-                              </p>
-                              <p className="text-xs text-red-700">
-                                {submission.rejectionReason}
-                              </p>
-                            </div>
+                        {/* Status */}
+                        <td className="px-2 py-2.5">
+                          <div className="flex flex-col gap-1">
+                            {getStatusBadge(submission.status)}
+                            {submission.status === "rejected" &&
+                              submission.rejectionReason && (
+                                <span
+                                  className="text-[10px] text-red-500 truncate max-w-[120px] block"
+                                  title={submission.rejectionReason}
+                                >
+                                  {submission.rejectionReason}
+                                </span>
+                              )}
+                            {submission.status === "approved" && (
+                              <span className="text-[10px] text-gray-400">
+                                Ödeme bekleniyor
+                              </span>
+                            )}
+                            {submission.status === "paid" && (
+                              <span className="text-[10px] text-blue-500">
+                                Ödeme tamamlandı
+                              </span>
+                            )}
+                            {submission.status === "active" && (
+                              <span className="text-[10px] text-emerald-500">
+                                Reklam aktif
+                              </span>
+                            )}
+                            {submission.status === "expired" && (
+                              <span className="text-[10px] text-gray-400">
+                                Süre doldu
+                              </span>
+                            )}
                           </div>
-                        </div>
-                      )}
+                        </td>
 
-                    {/* Actions */}
-                    {submission.status === "pending" && (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleApprove(submission)}
-                          disabled={processingId === submission.id}
-                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed text-sm"
-                        >
-                          {processingId === submission.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <>
-                              <CheckCircle className="w-4 h-4" />
-                              Onayla
-                            </>
+                        {/* Actions */}
+                        <td className="pl-2 pr-3 py-2.5 text-right">
+                          {submission.status === "pending" && (
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => handleApprove(submission)}
+                                disabled={processingId === submission.id}
+                                className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded text-[11px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                {processingId === submission.id ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <>
+                                    <CheckCircle className="w-3 h-3" />
+                                    Onayla
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                onClick={() => handleRejectClick(submission)}
+                                disabled={processingId === submission.id}
+                                className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded text-[11px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                <XCircle className="w-3 h-3" />
+                                Reddet
+                              </button>
+                            </div>
                           )}
-                        </button>
-                        <button
-                          onClick={() => handleRejectClick(submission)}
-                          disabled={processingId === submission.id}
-                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed text-sm"
-                        >
-                          <XCircle className="w-4 h-4" />
-                          Reddet
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Info for approved/paid/active */}
-                    {(submission.status === "approved" ||
-                      submission.status === "paid" ||
-                      submission.status === "active") && (
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <p className="text-xs text-blue-900">
-                          {submission.status === "approved" &&
-                            "✅ Onaylandı - Ödeme bekleniyor"}
-                          {submission.status === "paid" &&
-                            "💳 Ödeme tamamlandı"}
-                          {submission.status === "active" && "🎉 Reklam aktif"}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                          {submission.status !== "pending" && (
+                            <button
+                              onClick={() =>
+                                setSelectedImage(submission.imageUrl)
+                              }
+                              className="inline-flex items-center gap-1 px-2 py-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded text-[11px] transition-colors"
+                            >
+                              <Eye className="w-3 h-3" />
+                              Görüntüle
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </main>
 
         {/* Image Modal */}
@@ -570,18 +606,18 @@ export default function AdsApplicationsPage() {
 
         {/* Rejection Modal */}
         {rejectModal.isOpen && (
-          <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40 z-[100] flex items-center justify-center p-4">
             <div
-              className="bg-white rounded-xl max-w-md w-full shadow-2xl"
+              className="bg-white rounded-lg max-w-sm w-full shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
+                  <h3 className="text-sm font-semibold text-gray-900">
                     Başvuruyu Reddet
                   </h3>
-                  <p className="text-sm text-gray-500 mt-1">
+                  <p className="text-[11px] text-gray-400 mt-0.5">
                     {rejectModal.shopName}
                   </p>
                 </div>
@@ -593,41 +629,36 @@ export default function AdsApplicationsPage() {
                       shopName: "",
                     })
                   }
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="p-1 hover:bg-gray-100 rounded transition-colors"
                 >
-                  <X className="w-5 h-5 text-gray-500" />
+                  <X className="w-4 h-4 text-gray-400" />
                 </button>
               </div>
 
               {/* Modal Body */}
-              <div className="p-6">
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-900 mb-2">
-                    Red Nedeni *
-                  </label>
-                  <textarea
-                    value={rejectionReason}
-                    onChange={(e) => setRejectionReason(e.target.value)}
-                    placeholder="Başvurunun neden reddedildiğini açıklayın..."
-                    rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm resize-none"
-                  />
-                  <p className="text-xs text-gray-500 mt-2">
-                    Bu mesaj kullanıcıya bildirim olarak gönderilecektir.
-                  </p>
-                </div>
+              <div className="px-4 py-3">
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                  Red Nedeni *
+                </label>
+                <textarea
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  placeholder="Başvurunun neden reddedildiğini açıklayın..."
+                  rows={3}
+                  className="w-full px-2.5 py-2 border border-gray-200 rounded text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-red-500 focus:border-red-500 resize-none"
+                />
+                <p className="text-[10px] text-gray-400 mt-1">
+                  Bu mesaj kullanıcıya bildirim olarak gönderilecektir.
+                </p>
 
-                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
-                  <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
-                  <p className="text-xs text-red-700">
-                    Bu işlem geri alınamaz. Kullanıcı reddetme sebebini
-                    görebilecektir.
-                  </p>
+                <div className="flex items-center gap-1.5 mt-3 p-2 bg-red-50 rounded text-[11px] text-red-600">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  Bu işlem geri alınamaz.
                 </div>
               </div>
 
               {/* Modal Footer */}
-              <div className="flex gap-3 p-6 border-t border-gray-200">
+              <div className="flex gap-2 px-4 py-3 border-t border-gray-100">
                 <button
                   onClick={() =>
                     setRejectModal({
@@ -637,20 +668,20 @@ export default function AdsApplicationsPage() {
                     })
                   }
                   disabled={!!processingId}
-                  className="flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-900 font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  className="flex-1 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 text-xs font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   İptal
                 </button>
                 <button
                   onClick={handleRejectConfirm}
                   disabled={!rejectionReason.trim() || !!processingId}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed text-sm"
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white text-xs font-medium rounded transition-colors disabled:cursor-not-allowed"
                 >
                   {processingId === rejectModal.submissionId ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-3 h-3 animate-spin" />
                   ) : (
                     <>
-                      <XCircle className="w-4 h-4" />
+                      <XCircle className="w-3 h-3" />
                       Reddet
                     </>
                   )}
