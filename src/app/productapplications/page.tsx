@@ -106,11 +106,10 @@ interface ProductApplication {
   boostedImpressionCount: number;
   boostImpressionCountAtStart: number;
   isFeatured: boolean;
-  isTrending: boolean;
+
   isBoosted: boolean;
   boostStartTime?: Date;
-  boostEndTime?: Date;
-  dailyClickCount: number;
+  boostEndTime?: Date;  
   lastClickDate?: Date;
   paused: boolean;
   colorImages: Record<string, string[]>;
@@ -843,7 +842,7 @@ function ProductDetailModal({
 
               {/* Flags */}
               {(application.isFeatured ||
-                application.isTrending ||
+               
                 application.isBoosted ||
                 application.paused) && (
                 <Section title="Durum Etiketleri" icon={Tag}>
@@ -851,9 +850,7 @@ function ProductDetailModal({
                     {application.isFeatured && (
                       <Badge variant="warning">⭐ Öne Çıkan</Badge>
                     )}
-                    {application.isTrending && (
-                      <Badge variant="info">📈 Trend</Badge>
-                    )}
+                   
                     {application.isBoosted && (
                       <Badge variant="success">🚀 Boost Edilmiş</Badge>
                     )}
@@ -1029,11 +1026,11 @@ export default function ProductApplications() {
         data.boostImpressionCountAtStart,
       ),
       isFeatured: Boolean(data.isFeatured),
-      isTrending: Boolean(data.isTrending),
+     
       isBoosted: Boolean(data.isBoosted),
       boostStartTime: ProductUtils.safeDateNullable(data.boostStartTime),
       boostEndTime: ProductUtils.safeDateNullable(data.boostEndTime),
-      dailyClickCount: ProductUtils.safeInt(data.dailyClickCount),
+      
       lastClickDate: ProductUtils.safeDateNullable(data.lastClickDate),
       paused: Boolean(data.paused),
       colorImages: ProductUtils.safeColorImages(data.colorImages),
