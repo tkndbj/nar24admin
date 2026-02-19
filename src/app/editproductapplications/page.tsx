@@ -799,7 +799,27 @@ export default function EditProductApplicationsPage() {
         colorImages: hasColors && hasColorImages ? application.colorImages : {},
         colorQuantities:
           hasColors && hasColorQuantities ? application.colorQuantities : {},
-        attributes: application.attributes,
+        attributes: (() => {
+          const cleaned = { ...(application.attributes ?? {}) };
+          const specKeys = [
+            "clothingSizes",
+            "clothingFit",
+            "clothingTypes",
+            "clothingType",
+            "pantSizes",
+            "pantFabricTypes",
+            "pantFabricType",
+            "footwearSizes",
+            "jewelryMaterials",
+            "consoleBrand",
+            "curtainMaxWidth",
+            "curtainMaxHeight",
+            "productType",
+            "gender",
+          ];
+          specKeys.forEach((key) => delete cleaned[key]);
+          return cleaned;
+        })(),
         gender: (() => {
           if (application.gender) return application.gender;
           if (application.originalProductData?.gender)
