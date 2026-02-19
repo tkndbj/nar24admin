@@ -13,6 +13,13 @@ import {
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import {
+  SpecFieldValues,
+  SPEC_FIELDS,
+  SpecFieldKey,
+  getFieldLabel,
+  extractSpecFields,
+} from "@/config/productSpecSchema";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -61,7 +68,7 @@ const rejectProductApplicationFn = httpsCallable(
 );
 
 // Extended interface for product applications (includes fields not in final Product)
-interface ProductApplication {
+interface ProductApplication extends SpecFieldValues {
   id: string;
   ilan_no: string;
   ilanNo: string;
@@ -106,10 +113,9 @@ interface ProductApplication {
   boostedImpressionCount: number;
   boostImpressionCountAtStart: number;
   isFeatured: boolean;
-
   isBoosted: boolean;
   boostStartTime?: Date;
-  boostEndTime?: Date;  
+  boostEndTime?: Date;
   lastClickDate?: Date;
   paused: boolean;
   colorImages: Record<string, string[]>;
@@ -129,6 +135,7 @@ interface ProductApplication {
   campaign?: string;
   campaignName?: string;
   status?: string;
+  // ✅ No manual spec fields — SpecFieldValues covers them all
 }
 
 // Detail Modal Component
@@ -260,45 +267,6 @@ function ProductDetailModal({
         {children}
       </span>
     );
-  };
-
-  // Get attribute display name
-  const getAttributeDisplayName = (key: string): string => {
-    const attributeNames: Record<string, string> = {
-      gender: "Cinsiyet",
-      clothingSizes: "Beden",
-      clothingSize: "Beden",
-      clothingFit: "Kalıp",
-      clothingType: "Giysi Tipi",
-      footwearSizes: "Ayakkabı Numarası",
-      footwearGender: "Cinsiyet",
-      pantSizes: "Pantolon Bedeni",
-      jewelryType: "Takı Tipi",
-      jewelryMaterial: "Malzeme",
-      jewelryMaterials: "Malzemeler",
-      computerComponent: "Bilgisayar Parçası",
-      consoleBrand: "Konsol Markası",
-      consoleVariant: "Konsol Varyantı",
-      kitchenAppliance: "Mutfak Aleti",
-      whiteGood: "Beyaz Eşya",
-      fantasyWearType: "Fantezi Giyim Tipi",
-      selectedFantasyWearType: "Fantezi Giyim Tipi",
-    };
-    return (
-      attributeNames[key] ||
-      key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, " $1")
-    );
-  };
-
-  // Format attribute value
-  const formatAttributeValue = (value: unknown): string => {
-    if (Array.isArray(value)) {
-      return value.join(", ");
-    }
-    if (typeof value === "boolean") {
-      return value ? "Evet" : "Hayır";
-    }
-    return String(value);
   };
 
   return (
@@ -645,30 +613,58 @@ function ProductDetailModal({
                 </div>
               </Section>
 
-              {/* Gender & Attributes */}
               {(application.gender ||
-                (application.attributes &&
-                  Object.keys(application.attributes).length > 0)) && (
+                Object.keys(SPEC_FIELDS).some(
+                  (key) =>
+                    (application as unknown as Record<string, unknown>)[key] !=
+                    null,
+                ) ||
+                Object.keys(application.attributes || {}).length > 0) && (
                 <Section title="Ürün Özellikleri" icon={Tag}>
                   <div className="space-y-1">
                     {application.gender && (
                       <DetailRow label="Cinsiyet" value={application.gender} />
                     )}
-                    {application.attributes &&
-                      Object.entries(application.attributes).map(
-                        ([key, value]) => {
-                          if (key === "gender" || !value) return null;
-                          const displayValue = formatAttributeValue(value);
-                          if (!displayValue || displayValue === "") return null;
-                          return (
-                            <DetailRow
-                              key={key}
-                              label={getAttributeDisplayName(key)}
-                              value={displayValue}
-                            />
-                          );
-                        },
-                      )}
+
+                    {/* ✅ Schema-driven: automatically shows any spec field that has a value */}
+                    {(Object.keys(SPEC_FIELDS) as SpecFieldKey[]).map((key) => {
+                      const value = (
+                        application as unknown as Record<string, unknown>
+                      )[key];
+                      if (value == null) return null;
+                      const displayValue = Array.isArray(value)
+                        ? value.join(", ")
+                        : String(value);
+                      if (!displayValue) return null;
+                      return (
+                        <DetailRow
+                          key={key}
+                          label={SPEC_FIELDS[key].label}
+                          value={displayValue}
+                        />
+                      );
+                    })}
+
+                    {/* Old format fallback for backward compat */}
+                    {Object.entries(application.attributes || {}).map(
+                      ([key, value]) => {
+                        if (key === "gender" || value == null) return null;
+                        const displayValue = Array.isArray(value)
+                          ? (value as unknown[]).join(", ")
+                          : typeof value === "boolean"
+                            ? value
+                              ? "Evet"
+                              : "Hayır"
+                            : String(value);
+                        return (
+                          <DetailRow
+                            key={key}
+                            label={getFieldLabel(key)}
+                            value={displayValue}
+                          />
+                        );
+                      },
+                    )}
                   </div>
                 </Section>
               )}
@@ -842,7 +838,6 @@ function ProductDetailModal({
 
               {/* Flags */}
               {(application.isFeatured ||
-               
                 application.isBoosted ||
                 application.paused) && (
                 <Section title="Durum Etiketleri" icon={Tag}>
@@ -850,7 +845,7 @@ function ProductDetailModal({
                     {application.isFeatured && (
                       <Badge variant="warning">⭐ Öne Çıkan</Badge>
                     )}
-                   
+
                     {application.isBoosted && (
                       <Badge variant="success">🚀 Boost Edilmiş</Badge>
                     )}
@@ -1026,11 +1021,9 @@ export default function ProductApplications() {
         data.boostImpressionCountAtStart,
       ),
       isFeatured: Boolean(data.isFeatured),
-     
       isBoosted: Boolean(data.isBoosted),
       boostStartTime: ProductUtils.safeDateNullable(data.boostStartTime),
       boostEndTime: ProductUtils.safeDateNullable(data.boostEndTime),
-      
       lastClickDate: ProductUtils.safeDateNullable(data.lastClickDate),
       paused: Boolean(data.paused),
       colorImages: ProductUtils.safeColorImages(data.colorImages),
@@ -1056,6 +1049,9 @@ export default function ProductApplications() {
       campaign: ProductUtils.safeStringNullable(data.campaign),
       campaignName: ProductUtils.safeStringNullable(data.campaignName),
       status: ProductUtils.safeStringNullable(data.status),
+
+      // ✅ Single line replaces all 11 manual spec extractions
+      ...extractSpecFields(data),
     } as ProductApplication;
   };
 

@@ -23,6 +23,14 @@ import {
   DocumentData,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import {
+  SpecFieldValues,
+  SPEC_FIELDS,
+  SpecFieldKey,
+  resolveSpecField,
+  buildSpecUpdatePayload,
+  LEGACY_FIELDS_TO_DELETE,
+} from "@/config/productSpecSchema";
 import { db } from "../lib/firebase";
 import ProtectedRoute from "../../components/ProtectedRoute";
 import {
@@ -48,7 +56,7 @@ interface ProductAttributes {
   [key: string]: string | number | boolean | string[] | number[];
 }
 
-interface OriginalProductData {
+interface OriginalProductData extends SpecFieldValues {
   productName?: string;
   description?: string;
   price?: number;
@@ -70,9 +78,10 @@ interface OriginalProductData {
   createdAt?: Timestamp;
   modifiedAt?: Timestamp;
   gender?: string | null;
+  // ✅ No manual spec fields — SpecFieldValues covers them all
 }
 
-interface EditApplication {
+interface EditApplication extends SpecFieldValues {
   id: string;
   originalProductId: string;
   editType: string;
@@ -107,6 +116,7 @@ interface EditApplication {
   sourceCollection?: string;
   archiveReason?: string;
   needsUpdate?: boolean;
+  // ✅ No manual spec fields — SpecFieldValues covers them all
 }
 
 interface ShopMember {
@@ -301,7 +311,9 @@ export default function EditProductApplicationsPage() {
   });
 
   // Separate state for each source and each tab
-  const [sourceStates, setSourceStates] = useState<Record<SourceType, SourceTabStates>>({
+  const [sourceStates, setSourceStates] = useState<
+    Record<SourceType, SourceTabStates>
+  >({
     dukkan: createInitialSourceState(),
     vitrin: createInitialSourceState(),
   });
@@ -338,7 +350,7 @@ export default function EditProductApplicationsPage() {
           collection(db, collectionName),
           where("status", "==", tab),
           orderBy("submittedAt", "desc"),
-          limit(ITEMS_PER_PAGE)
+          limit(ITEMS_PER_PAGE),
         );
 
         // Add startAfter for pagination
@@ -348,7 +360,7 @@ export default function EditProductApplicationsPage() {
             where("status", "==", tab),
             orderBy("submittedAt", "desc"),
             startAfter(currentState.lastDoc),
-            limit(ITEMS_PER_PAGE)
+            limit(ITEMS_PER_PAGE),
           );
         }
 
@@ -378,7 +390,10 @@ export default function EditProductApplicationsPage() {
           },
         }));
       } catch (error) {
-        console.error(`Error fetching ${tab} applications from ${collectionName}:`, error);
+        console.error(
+          `Error fetching ${tab} applications from ${collectionName}:`,
+          error,
+        );
         setSourceStates((prev) => ({
           ...prev,
           [source]: {
@@ -393,7 +408,7 @@ export default function EditProductApplicationsPage() {
         }));
       }
     },
-    [sourceStates]
+    [sourceStates],
   );
 
   // Fetch pending applications on mount (default tab for dukkan source)
@@ -414,7 +429,7 @@ export default function EditProductApplicationsPage() {
         fetchApplications(source, "pending");
       }
     },
-    [sourceStates, fetchApplications]
+    [sourceStates, fetchApplications],
   );
 
   // Fetch applications when status tab changes (lazy loading)
@@ -426,7 +441,7 @@ export default function EditProductApplicationsPage() {
         fetchApplications(activeSource, tab);
       }
     },
-    [activeSource, sourceStates, fetchApplications]
+    [activeSource, sourceStates, fetchApplications],
   );
 
   // Load more handler
@@ -486,11 +501,11 @@ export default function EditProductApplicationsPage() {
   const sendUserNotification = async (
     userId: string,
     notificationData: NotificationData,
-    batch?: WriteBatch
+    batch?: WriteBatch,
   ) => {
     try {
       const userNotificationRef = doc(
-        collection(db, "users", userId, "notifications")
+        collection(db, "users", userId, "notifications"),
       );
 
       if (batch) {
@@ -498,7 +513,7 @@ export default function EditProductApplicationsPage() {
       } else {
         await addDoc(
           collection(db, "users", userId, "notifications"),
-          notificationData
+          notificationData,
         );
       }
     } catch (error) {
@@ -510,7 +525,7 @@ export default function EditProductApplicationsPage() {
   const sendNotifications = async (
     application: EditApplication,
     type: "approved" | "rejected",
-    rejectionReason?: string
+    rejectionReason?: string,
   ) => {
     const baseNotificationData = {
       type: `product_edit_${type}`,
@@ -546,7 +561,7 @@ export default function EditProductApplicationsPage() {
     if (isShopProduct) {
       // Send notification to all shop members
       console.log(
-        `Sending notifications to shop members for shop: ${isShopProduct}`
+        `Sending notifications to shop members for shop: ${isShopProduct}`,
       );
 
       try {
@@ -554,7 +569,7 @@ export default function EditProductApplicationsPage() {
 
         if (shopMembers.length === 0) {
           console.warn(
-            `No members found for shop ${isShopProduct}, falling back to application submitter`
+            `No members found for shop ${isShopProduct}, falling back to application submitter`,
           );
           await sendUserNotification(application.userId, baseNotificationData);
           return;
@@ -565,7 +580,7 @@ export default function EditProductApplicationsPage() {
 
         for (const member of shopMembers) {
           const userNotificationRef = doc(
-            collection(db, "users", member.userId, "notifications")
+            collection(db, "users", member.userId, "notifications"),
           );
 
           const memberNotificationData: NotificationData = {
@@ -579,7 +594,7 @@ export default function EditProductApplicationsPage() {
 
         await batch.commit();
         console.log(
-          `Successfully sent notifications to ${shopMembers.length} shop members`
+          `Successfully sent notifications to ${shopMembers.length} shop members`,
         );
       } catch (error) {
         console.error("Error sending shop notifications:", error);
@@ -589,7 +604,7 @@ export default function EditProductApplicationsPage() {
     } else {
       // Send notification only to the individual user who submitted the application
       console.log(
-        `Sending notification to individual user: ${application.userId}`
+        `Sending notification to individual user: ${application.userId}`,
       );
       await sendUserNotification(application.userId, baseNotificationData);
     }
@@ -603,7 +618,7 @@ export default function EditProductApplicationsPage() {
       console.log("Original product ID:", application.originalProductId);
       console.log(
         "Shop ID:",
-        application.shopId || application.originalProductData?.shopId || "None"
+        application.shopId || application.originalProductData?.shopId || "None",
       );
 
       // ✅ NEW: Check if this is an archived product update
@@ -614,7 +629,7 @@ export default function EditProductApplicationsPage() {
         const functions = getFunctions(undefined, "europe-west3");
         const approveArchivedEdit = httpsCallable(
           functions,
-          "approveArchivedProductEdit"
+          "approveArchivedProductEdit",
         );
 
         const result = await approveArchivedEdit({
@@ -662,7 +677,7 @@ export default function EditProductApplicationsPage() {
           }));
           fetchApplications(activeSource, "pending");
           alert(
-            "Arşivlenmiş ürün güncellemesi onaylandı ve ürün aktif edildi!"
+            "Arşivlenmiş ürün güncellemesi onaylandı ve ürün aktif edildi!",
           );
         } else {
           throw new Error(data.message || "İşlem başarısız oldu");
@@ -683,17 +698,17 @@ export default function EditProductApplicationsPage() {
       const productRef = doc(
         db,
         collection_name,
-        application.originalProductId
+        application.originalProductId,
       );
       const productSnapshot = await getDoc(productRef);
 
       if (!productSnapshot.exists()) {
         console.error(
           `Original product not found in ${collection_name}:`,
-          application.originalProductId
+          application.originalProductId,
         );
         alert(
-          `Hata: Orijinal ürün bulunamadı (ID: ${application.originalProductId}, Collection: ${collection_name}). Bu ürün silinmiş olabilir.`
+          `Hata: Orijinal ürün bulunamadı (ID: ${application.originalProductId}, Collection: ${collection_name}). Bu ürün silinmiş olabilir.`,
         );
         return;
       }
@@ -717,7 +732,7 @@ export default function EditProductApplicationsPage() {
           const cleaned: Record<string, unknown> = {};
           Object.keys(obj).forEach((key) => {
             const cleanedValue = cleanUpdateData(
-              (obj as Record<string, unknown>)[key]
+              (obj as Record<string, unknown>)[key],
             );
 
             if (cleanedValue !== null && cleanedValue !== undefined) {
@@ -752,7 +767,7 @@ export default function EditProductApplicationsPage() {
       });
 
       // Build update data with cleaning
-      const rawUpdateData: Partial<OriginalProductData> = {
+      const rawUpdateData = {
         productName: application.productName,
         description: application.description,
         price: application.price,
@@ -773,45 +788,48 @@ export default function EditProductApplicationsPage() {
           hasColors && hasColorQuantities ? application.colorQuantities : {},
         attributes: application.attributes,
         gender: (() => {
-          // Priority 1: Root level from application
           if (application.gender) return application.gender;
-
-          // Priority 2: Root level from original
-          if (application.originalProductData?.gender) {
-            console.log("⚠️ Preserving gender from original root level");
+          if (application.originalProductData?.gender)
             return application.originalProductData.gender;
-          }
-
-          // Priority 3: Attributes from original (Flutter products)
           if (
             application.originalProductData?.attributes?.gender &&
             typeof application.originalProductData.attributes.gender ===
               "string"
-          ) {
-            console.log("⚠️ Preserving gender from original attributes");
+          )
             return application.originalProductData.attributes.gender;
-          }
-
           return null;
         })(),
         modifiedAt: Timestamp.now(),
-      };
 
-      // ✅ FIXED: Handle videoUrl properly (set to null if removed)
-      if (application.videoUrl !== undefined) {
-        rawUpdateData.videoUrl = application.videoUrl || null;
-      }
+        // ✅ Single line replaces all 11 manual spec fields:
+        ...buildSpecUpdatePayload(application),
+      };
 
       // Clean the update data
       const updateData: Record<string, unknown> = {};
       Object.keys(rawUpdateData).forEach((key) => {
         const cleanedValue = cleanUpdateData(
-          rawUpdateData[key as keyof typeof rawUpdateData]
+          rawUpdateData[key as keyof typeof rawUpdateData],
         );
         if (cleanedValue !== null && cleanedValue !== undefined) {
           updateData[key] = cleanedValue;
         }
       });
+
+      // Replace the manual deleteField() calls:
+      for (const [specKey, legacyPath] of Object.entries(
+        LEGACY_FIELDS_TO_DELETE,
+      )) {
+        if (application.attributes?.[specKey]) {
+          updateData[legacyPath] = deleteField();
+        }
+      }
+
+      // ✅ FIXED: Handle videoUrl properly (set to null if removed)
+      if (application.videoUrl !== undefined) {
+        (rawUpdateData as Record<string, unknown>).videoUrl =
+          application.videoUrl || null;
+      }
 
       // ✅ FIX: Explicitly set colorImages and colorQuantities to empty objects if no colors
       if (!hasColors) {
@@ -830,13 +848,6 @@ export default function EditProductApplicationsPage() {
 
       // Always include modifiedAt
       updateData.modifiedAt = Timestamp.now();
-
-      if (application.attributes?.clothingTypes) {
-        updateData["attributes.clothingType"] = deleteField();
-      }
-      if (application.attributes?.pantFabricTypes) {
-        updateData["attributes.pantFabricType"] = deleteField();
-      }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await updateDoc(productRef, updateData as any);
@@ -885,7 +896,7 @@ export default function EditProductApplicationsPage() {
       if (isFirebaseError(error)) {
         if (error.code === "not-found") {
           alert(
-            "Hata: Güncellenecek ürün bulunamadı. Ürün ID'sini kontrol edin."
+            "Hata: Güncellenecek ürün bulunamadı. Ürün ID'sini kontrol edin.",
           );
         } else if (error.code === "permission-denied") {
           alert("Hata: Bu işlem için yetkiniz yok.");
@@ -919,7 +930,7 @@ export default function EditProductApplicationsPage() {
       console.log("Rejection reason:", rejectionReason);
       console.log(
         "Shop ID:",
-        application.shopId || application.originalProductData?.shopId || "None"
+        application.shopId || application.originalProductData?.shopId || "None",
       );
 
       // Delete the edit application
@@ -1154,8 +1165,8 @@ export default function EditProductApplicationsPage() {
                       ? tab === "pending"
                         ? "border-amber-500 text-amber-600"
                         : tab === "approved"
-                        ? "border-green-500 text-green-600"
-                        : "border-red-500 text-red-600"
+                          ? "border-green-500 text-green-600"
+                          : "border-red-500 text-red-600"
                       : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                   }`}
                 >
@@ -1171,8 +1182,8 @@ export default function EditProductApplicationsPage() {
                             ? tab === "pending"
                               ? "bg-amber-100 text-amber-700"
                               : tab === "approved"
-                              ? "bg-green-100 text-green-700"
-                              : "bg-red-100 text-red-700"
+                                ? "bg-green-100 text-green-700"
+                                : "bg-red-100 text-red-700"
                             : "bg-gray-100 text-gray-600"
                         }`}
                       >
@@ -1202,15 +1213,15 @@ export default function EditProductApplicationsPage() {
                 {activeTab === "pending"
                   ? "Bekleyen Başvuru Yok"
                   : activeTab === "approved"
-                  ? "Onaylanan Başvuru Yok"
-                  : "Reddedilen Başvuru Yok"}
+                    ? "Onaylanan Başvuru Yok"
+                    : "Reddedilen Başvuru Yok"}
               </h2>
               <p className="text-sm text-gray-500">
                 {activeTab === "pending"
                   ? "Şu anda bekleyen ürün düzenleme başvurusu bulunmuyor."
                   : activeTab === "approved"
-                  ? "Henüz onaylanmış başvuru bulunmuyor."
-                  : "Henüz reddedilmiş başvuru bulunmuyor."}
+                    ? "Henüz onaylanmış başvuru bulunmuyor."
+                    : "Henüz reddedilmiş başvuru bulunmuyor."}
               </p>
             </div>
           ) : (
@@ -1266,15 +1277,15 @@ export default function EditProductApplicationsPage() {
                           app.status === "pending"
                             ? "bg-amber-50 text-amber-700"
                             : app.status === "approved"
-                            ? "bg-green-50 text-green-700"
-                            : "bg-red-50 text-red-700"
+                              ? "bg-green-50 text-green-700"
+                              : "bg-red-50 text-red-700"
                         }`}
                       >
                         {app.status === "pending"
                           ? "Beklemede"
                           : app.status === "approved"
-                          ? "Onaylandı"
-                          : "Reddedildi"}
+                            ? "Onaylandı"
+                            : "Reddedildi"}
                       </span>
                     </div>
 
@@ -1555,6 +1566,28 @@ export default function EditProductApplicationsPage() {
                           }
                           newValue={selectedApplication.category}
                         />
+                        {(Object.keys(SPEC_FIELDS) as SpecFieldKey[]).map(
+                          (key) => (
+                            <CompactComparisonField
+                              key={key}
+                              label={SPEC_FIELDS[key].label}
+                              oldValue={resolveSpecField(
+                                key,
+                                selectedApplication.originalProductData?.[key],
+                                selectedApplication.originalProductData
+                                  ?.attributes as Record<string, unknown>,
+                              )}
+                              newValue={
+                                ((
+                                  selectedApplication as unknown as Record<
+                                    string,
+                                    unknown
+                                  >
+                                )[key] as ComparisonValue) ?? null
+                              }
+                            />
+                          ),
+                        )}
                         <CompactComparisonField
                           label="Teslimat"
                           oldValue={
@@ -1575,7 +1608,7 @@ export default function EditProductApplicationsPage() {
                               <div className="text-xs text-red-700 bg-red-50 rounded px-2 py-1.5 max-h-16 overflow-y-auto">
                                 {formatValue(
                                   selectedApplication.originalProductData
-                                    ?.description
+                                    ?.description,
                                 )}
                               </div>
                               <div className="text-xs text-green-700 bg-green-50 rounded px-2 py-1.5 max-h-16 overflow-y-auto">
@@ -1615,7 +1648,7 @@ export default function EditProductApplicationsPage() {
                       <ImageComparison
                         label="Ürün Resimleri"
                         oldImages={ensureArray(
-                          selectedApplication.originalProductData?.imageUrls
+                          selectedApplication.originalProductData?.imageUrls,
                         )}
                         newImages={ensureArray(selectedApplication.imageUrls)}
                       />
@@ -1630,10 +1663,10 @@ export default function EditProductApplicationsPage() {
                           label={`${color} Resimleri`}
                           oldImages={ensureArray(
                             selectedApplication.originalProductData
-                              ?.colorImages?.[color]
+                              ?.colorImages?.[color],
                           )}
                           newImages={ensureArray(
-                            selectedApplication.colorImages?.[color]
+                            selectedApplication.colorImages?.[color],
                           )}
                         />
                       ))}
@@ -1749,15 +1782,15 @@ export default function EditProductApplicationsPage() {
                               selectedApplication.status === "pending"
                                 ? "bg-amber-50 text-amber-700"
                                 : selectedApplication.status === "approved"
-                                ? "bg-green-50 text-green-700"
-                                : "bg-red-50 text-red-700"
+                                  ? "bg-green-50 text-green-700"
+                                  : "bg-red-50 text-red-700"
                             }`}
                           >
                             {selectedApplication.status === "pending"
                               ? "Beklemede"
                               : selectedApplication.status === "approved"
-                              ? "Onaylandı"
-                              : "Reddedildi"}
+                                ? "Onaylandı"
+                                : "Reddedildi"}
                           </span>
                         </div>
                         <div className="flex items-center justify-between py-1.5 border-b border-gray-100">
@@ -1768,7 +1801,7 @@ export default function EditProductApplicationsPage() {
                           <span className="text-xs text-gray-700 font-mono">
                             {selectedApplication.originalProductId.substring(
                               0,
-                              12
+                              12,
                             )}
                             ...
                           </span>
