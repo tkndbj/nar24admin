@@ -805,6 +805,12 @@ export default function EditProductApplicationsPage() {
         ...buildSpecUpdatePayload(application),
       };
 
+      // ✅ FIXED: Handle videoUrl properly (set to null if removed)
+      if (application.videoUrl !== undefined) {
+        (rawUpdateData as Record<string, unknown>).videoUrl =
+          application.videoUrl || null;
+      }
+
       // Clean the update data
       const updateData: Record<string, unknown> = {};
       Object.keys(rawUpdateData).forEach((key) => {
@@ -823,12 +829,6 @@ export default function EditProductApplicationsPage() {
         if (application.attributes?.[specKey]) {
           updateData[legacyPath] = deleteField();
         }
-      }
-
-      // ✅ FIXED: Handle videoUrl properly (set to null if removed)
-      if (application.videoUrl !== undefined) {
-        (rawUpdateData as Record<string, unknown>).videoUrl =
-          application.videoUrl || null;
       }
 
       // ✅ FIX: Explicitly set colorImages and colorQuantities to empty objects if no colors
