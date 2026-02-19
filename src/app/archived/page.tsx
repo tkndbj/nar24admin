@@ -121,6 +121,17 @@ interface ArchivedProduct {
   bulkDiscountPercentage?: number;
   campaign?: string;
   campaignName?: string;
+  productType?: string;
+  clothingSizes?: string[];
+  clothingFit?: string;
+  clothingTypes?: string[];
+  pantSizes?: string[];
+  pantFabricTypes?: string[];
+  footwearSizes?: string[];
+  jewelryMaterials?: string[];
+  consoleBrand?: string;
+  curtainMaxWidth?: number;
+  curtainMaxHeight?: number;
 }
 
 type TabType = "dukkan" | "vitrin";
@@ -600,17 +611,89 @@ function ArchivedProductDetailModal({
                 </div>
               </Section>
 
-              {/* Attributes */}
               {(product.gender ||
-                (product.attributes &&
-                  Object.keys(product.attributes).length > 0)) && (
+                product.productType ||
+                product.clothingSizes?.length ||
+                product.clothingFit ||
+                product.clothingTypes?.length ||
+                product.pantSizes?.length ||
+                product.pantFabricTypes?.length ||
+                product.footwearSizes?.length ||
+                product.jewelryMaterials?.length ||
+                product.consoleBrand ||
+                product.curtainMaxWidth ||
+                product.curtainMaxHeight ||
+                Object.keys(product.attributes || {}).length > 0) && (
                 <Section title="Ürün Özellikleri" icon={Tag}>
                   <div className="space-y-1">
                     {product.gender && (
                       <DetailRow label="Cinsiyet" value={product.gender} />
                     )}
-                    {product.attributes &&
-                      Object.entries(product.attributes).map(([key, value]) => {
+                    {product.productType && (
+                      <DetailRow
+                        label="Ürün Tipi"
+                        value={product.productType}
+                      />
+                    )}
+                    {!!product.clothingSizes?.length && (
+                      <DetailRow
+                        label="Giysi Bedeni"
+                        value={product.clothingSizes.join(", ")}
+                      />
+                    )}
+                    {product.clothingFit && (
+                      <DetailRow label="Kalıp" value={product.clothingFit} />
+                    )}
+                    {!!product.clothingTypes?.length && (
+                      <DetailRow
+                        label="Giysi Tipi"
+                        value={product.clothingTypes.join(", ")}
+                      />
+                    )}
+                    {!!product.pantSizes?.length && (
+                      <DetailRow
+                        label="Pantolon Bedeni"
+                        value={product.pantSizes.join(", ")}
+                      />
+                    )}
+                    {!!product.pantFabricTypes?.length && (
+                      <DetailRow
+                        label="Kumaş Tipi"
+                        value={product.pantFabricTypes.join(", ")}
+                      />
+                    )}
+                    {!!product.footwearSizes?.length && (
+                      <DetailRow
+                        label="Ayakkabı Numarası"
+                        value={product.footwearSizes.join(", ")}
+                      />
+                    )}
+                    {!!product.jewelryMaterials?.length && (
+                      <DetailRow
+                        label="Materyal"
+                        value={product.jewelryMaterials.join(", ")}
+                      />
+                    )}
+                    {product.consoleBrand && (
+                      <DetailRow
+                        label="Konsol Markası"
+                        value={product.consoleBrand}
+                      />
+                    )}
+                    {product.curtainMaxWidth && (
+                      <DetailRow
+                        label="Perde Maks. Genişlik"
+                        value={`${product.curtainMaxWidth} m`}
+                      />
+                    )}
+                    {product.curtainMaxHeight && (
+                      <DetailRow
+                        label="Perde Maks. Yükseklik"
+                        value={`${product.curtainMaxHeight} m`}
+                      />
+                    )}
+                    {Object.entries(product.attributes || {}).map(
+                      ([key, value]) => {
                         if (key === "gender" || !value) return null;
                         const dv = formatAttributeValue(value);
                         if (!dv) return null;
@@ -621,7 +704,8 @@ function ArchivedProductDetailModal({
                             value={dv}
                           />
                         );
-                      })}
+                      },
+                    )}
                   </div>
                 </Section>
               )}
@@ -891,10 +975,47 @@ export default function ArchivedProducts() {
         paused: Boolean(d.paused),
         colorImages: ProductUtils.safeColorImages(d.colorImages),
         videoUrl: ProductUtils.safeStringNullable(d.videoUrl) ?? undefined,
-        attributes: ProductUtils.safeAttributes(d.attributes),
+        attributes:
+          d.attributes &&
+          typeof d.attributes === "object" &&
+          !Array.isArray(d.attributes)
+            ? (d.attributes as Record<string, unknown>)
+            : {},
         phone: ProductUtils.safeStringNullable(d.phone) ?? undefined,
         region: ProductUtils.safeStringNullable(d.region) ?? undefined,
         address: ProductUtils.safeStringNullable(d.address) ?? undefined,
+        productType:
+          ProductUtils.safeStringNullable(d.productType) ?? undefined,
+        clothingSizes: Array.isArray(d.clothingSizes)
+          ? d.clothingSizes.map(String)
+          : undefined,
+        clothingFit:
+          ProductUtils.safeStringNullable(d.clothingFit) ?? undefined,
+        clothingTypes: Array.isArray(d.clothingTypes)
+          ? d.clothingTypes.map(String)
+          : undefined,
+        pantSizes: Array.isArray(d.pantSizes)
+          ? d.pantSizes.map(String)
+          : undefined,
+        pantFabricTypes: Array.isArray(d.pantFabricTypes)
+          ? d.pantFabricTypes.map(String)
+          : undefined,
+        footwearSizes: Array.isArray(d.footwearSizes)
+          ? d.footwearSizes.map(String)
+          : undefined,
+        jewelryMaterials: Array.isArray(d.jewelryMaterials)
+          ? d.jewelryMaterials.map(String)
+          : undefined,
+        consoleBrand:
+          ProductUtils.safeStringNullable(d.consoleBrand) ?? undefined,
+        curtainMaxWidth:
+          d.curtainMaxWidth != null
+            ? ProductUtils.safeDouble(d.curtainMaxWidth)
+            : undefined,
+        curtainMaxHeight:
+          d.curtainMaxHeight != null
+            ? ProductUtils.safeDouble(d.curtainMaxHeight)
+            : undefined,
         archivedByAdmin: Boolean(d.archivedByAdmin),
         archivedByAdminAt: d.archivedByAdminAt as Timestamp | undefined,
         archivedByAdminId:
@@ -1144,15 +1265,13 @@ export default function ArchivedProducts() {
   const formatDate = (timestamp: Timestamp | undefined) => {
     if (!timestamp) return "—";
     try {
-      return timestamp
-        .toDate()
-        .toLocaleDateString("tr-TR", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-        });
+      return timestamp.toDate().toLocaleDateString("tr-TR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
     } catch {
       return "—";
     }
