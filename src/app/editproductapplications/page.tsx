@@ -848,6 +848,28 @@ export default function EditProductApplicationsPage() {
       if (application.attributes?.pantFabricTypes)
         updateData["attributes.pantFabricType"] = deleteField();
 
+      // Clear legacy spec fields from attributes map
+      const specKeys = [
+        "clothingSizes",
+        "clothingFit",
+        "clothingTypes",
+        "clothingType",
+        "pantSizes",
+        "pantFabricTypes",
+        "pantFabricType",
+        "footwearSizes",
+        "jewelryMaterials",
+        "consoleBrand",
+        "curtainMaxWidth",
+        "curtainMaxHeight",
+        "productType",
+      ];
+      for (const key of specKeys) {
+        if (application.originalProductData?.attributes?.[key] !== undefined) {
+          updateData[`attributes.${key}`] = deleteField();
+        }
+      }
+
       // ✅ FIX: Explicitly set colorImages and colorQuantities to empty objects if no colors
       if (!hasColors) {
         updateData.availableColors = [];
