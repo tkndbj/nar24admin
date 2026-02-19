@@ -23,14 +23,7 @@ import {
   DocumentData,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import {
-  SpecFieldValues,
-  SPEC_FIELDS,
-  SpecFieldKey,
-  resolveSpecField,
-  buildSpecUpdatePayload,
-  LEGACY_FIELDS_TO_DELETE,
-} from "@/config/productSpecSchema";
+
 import { db } from "../lib/firebase";
 import ProtectedRoute from "../../components/ProtectedRoute";
 import {
@@ -56,7 +49,7 @@ interface ProductAttributes {
   [key: string]: string | number | boolean | string[] | number[];
 }
 
-interface OriginalProductData extends SpecFieldValues {
+interface OriginalProductData {
   productName?: string;
   description?: string;
   price?: number;
@@ -78,10 +71,20 @@ interface OriginalProductData extends SpecFieldValues {
   createdAt?: Timestamp;
   modifiedAt?: Timestamp;
   gender?: string | null;
-  // ✅ No manual spec fields — SpecFieldValues covers them all
+  productType?: string;
+  clothingSizes?: string[];
+  clothingFit?: string;
+  clothingTypes?: string[];
+  pantSizes?: string[];
+  pantFabricTypes?: string[];
+  footwearSizes?: string[];
+  jewelryMaterials?: string[];
+  consoleBrand?: string;
+  curtainMaxWidth?: number;
+  curtainMaxHeight?: number;
 }
 
-interface EditApplication extends SpecFieldValues {
+interface EditApplication {
   id: string;
   originalProductId: string;
   editType: string;
@@ -116,7 +119,17 @@ interface EditApplication extends SpecFieldValues {
   sourceCollection?: string;
   archiveReason?: string;
   needsUpdate?: boolean;
-  // ✅ No manual spec fields — SpecFieldValues covers them all
+  productType?: string;
+  clothingSizes?: string[];
+  clothingFit?: string;
+  clothingTypes?: string[];
+  pantSizes?: string[];
+  pantFabricTypes?: string[];
+  footwearSizes?: string[];
+  jewelryMaterials?: string[];
+  consoleBrand?: string;
+  curtainMaxWidth?: number;
+  curtainMaxHeight?: number;
 }
 
 interface ShopMember {
@@ -801,8 +814,17 @@ export default function EditProductApplicationsPage() {
         })(),
         modifiedAt: Timestamp.now(),
 
-        // ✅ Single line replaces all 11 manual spec fields:
-        ...buildSpecUpdatePayload(application),
+        productType: application.productType ?? null,
+        clothingSizes: application.clothingSizes ?? null,
+        clothingFit: application.clothingFit ?? null,
+        clothingTypes: application.clothingTypes ?? null,
+        pantSizes: application.pantSizes ?? null,
+        pantFabricTypes: application.pantFabricTypes ?? null,
+        footwearSizes: application.footwearSizes ?? null,
+        jewelryMaterials: application.jewelryMaterials ?? null,
+        consoleBrand: application.consoleBrand ?? null,
+        curtainMaxWidth: application.curtainMaxWidth ?? null,
+        curtainMaxHeight: application.curtainMaxHeight ?? null,
       };
 
       // ✅ FIXED: Handle videoUrl properly (set to null if removed)
@@ -821,15 +843,10 @@ export default function EditProductApplicationsPage() {
           updateData[key] = cleanedValue;
         }
       });
-
-      // Replace the manual deleteField() calls:
-      for (const [specKey, legacyPath] of Object.entries(
-        LEGACY_FIELDS_TO_DELETE,
-      )) {
-        if (application.attributes?.[specKey]) {
-          updateData[legacyPath] = deleteField();
-        }
-      }
+      if (application.attributes?.clothingTypes)
+        updateData["attributes.clothingType"] = deleteField();
+      if (application.attributes?.pantFabricTypes)
+        updateData["attributes.pantFabricType"] = deleteField();
 
       // ✅ FIX: Explicitly set colorImages and colorQuantities to empty objects if no colors
       if (!hasColors) {
@@ -1566,28 +1583,43 @@ export default function EditProductApplicationsPage() {
                           }
                           newValue={selectedApplication.category}
                         />
-                        {(Object.keys(SPEC_FIELDS) as SpecFieldKey[]).map(
-                          (key) => (
-                            <CompactComparisonField
-                              key={key}
-                              label={SPEC_FIELDS[key].label}
-                              oldValue={resolveSpecField(
-                                key,
-                                selectedApplication.originalProductData?.[key],
-                                selectedApplication.originalProductData
-                                  ?.attributes as Record<string, unknown>,
-                              )}
-                              newValue={
-                                ((
-                                  selectedApplication as unknown as Record<
-                                    string,
-                                    unknown
-                                  >
-                                )[key] as ComparisonValue) ?? null
-                              }
-                            />
-                          ),
-                        )}
+                        {[
+                          { key: "productType", label: "Ürün Tipi" },
+                          { key: "clothingSizes", label: "Giysi Bedeni" },
+                          { key: "clothingFit", label: "Kalıp" },
+                          { key: "clothingTypes", label: "Giysi Tipi" },
+                          { key: "pantSizes", label: "Pantolon Bedeni" },
+                          { key: "pantFabricTypes", label: "Kumaş Tipi" },
+                          { key: "footwearSizes", label: "Ayakkabı Numarası" },
+                          { key: "jewelryMaterials", label: "Materyal" },
+                          { key: "consoleBrand", label: "Konsol Markası" },
+                          {
+                            key: "curtainMaxWidth",
+                            label: "Perde Maks. Genişlik",
+                          },
+                          {
+                            key: "curtainMaxHeight",
+                            label: "Perde Maks. Yükseklik",
+                          },
+                        ].map(({ key, label }) => (
+                          <CompactComparisonField
+                            key={key}
+                            label={label}
+                            oldValue={
+                              (selectedApplication.originalProductData?.[
+                                key as keyof OriginalProductData
+                              ] as ComparisonValue) ??
+                              (selectedApplication.originalProductData
+                                ?.attributes?.[key] as ComparisonValue) ??
+                              null
+                            }
+                            newValue={
+                              (selectedApplication[
+                                key as keyof EditApplication
+                              ] as ComparisonValue) ?? null
+                            }
+                          />
+                        ))}
                         <CompactComparisonField
                           label="Teslimat"
                           oldValue={

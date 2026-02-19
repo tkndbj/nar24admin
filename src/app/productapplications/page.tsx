@@ -13,13 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import {
-  SpecFieldValues,
-  SPEC_FIELDS,
-  SpecFieldKey,
-  getFieldLabel,
-  extractSpecFields,
-} from "@/config/productSpecSchema";
+
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -68,7 +62,7 @@ const rejectProductApplicationFn = httpsCallable(
 );
 
 // Extended interface for product applications (includes fields not in final Product)
-interface ProductApplication extends SpecFieldValues {
+interface ProductApplication {
   id: string;
   ilan_no: string;
   ilanNo: string;
@@ -135,7 +129,17 @@ interface ProductApplication extends SpecFieldValues {
   campaign?: string;
   campaignName?: string;
   status?: string;
-  // ✅ No manual spec fields — SpecFieldValues covers them all
+  productType?: string;
+  clothingSizes?: string[];
+  clothingFit?: string;
+  clothingTypes?: string[];
+  pantSizes?: string[];
+  pantFabricTypes?: string[];
+  footwearSizes?: string[];
+  jewelryMaterials?: string[];
+  consoleBrand?: string;
+  curtainMaxWidth?: number;
+  curtainMaxHeight?: number;
 }
 
 // Detail Modal Component
@@ -614,52 +618,99 @@ function ProductDetailModal({
               </Section>
 
               {(application.gender ||
-                Object.keys(SPEC_FIELDS).some(
-                  (key) =>
-                    (application as unknown as Record<string, unknown>)[key] !=
-                    null,
-                ) ||
+                application.productType ||
+                application.clothingSizes?.length ||
+                application.clothingFit ||
+                application.clothingTypes?.length ||
+                application.pantSizes?.length ||
+                application.pantFabricTypes?.length ||
+                application.footwearSizes?.length ||
+                application.jewelryMaterials?.length ||
+                application.consoleBrand ||
+                application.curtainMaxWidth ||
+                application.curtainMaxHeight ||
                 Object.keys(application.attributes || {}).length > 0) && (
                 <Section title="Ürün Özellikleri" icon={Tag}>
                   <div className="space-y-1">
                     {application.gender && (
                       <DetailRow label="Cinsiyet" value={application.gender} />
                     )}
-
-                    {/* ✅ Schema-driven: automatically shows any spec field that has a value */}
-                    {(Object.keys(SPEC_FIELDS) as SpecFieldKey[]).map((key) => {
-                      const value = (
-                        application as unknown as Record<string, unknown>
-                      )[key];
-                      if (value == null) return null;
-                      const displayValue = Array.isArray(value)
-                        ? value.join(", ")
-                        : String(value);
-                      if (!displayValue) return null;
-                      return (
-                        <DetailRow
-                          key={key}
-                          label={SPEC_FIELDS[key].label}
-                          value={displayValue}
-                        />
-                      );
-                    })}
-
-                    {/* Old format fallback for backward compat */}
+                    {application.productType && (
+                      <DetailRow
+                        label="Ürün Tipi"
+                        value={application.productType}
+                      />
+                    )}
+                    {!!application.clothingSizes?.length && (
+                      <DetailRow
+                        label="Giysi Bedeni"
+                        value={application.clothingSizes.join(", ")}
+                      />
+                    )}
+                    {application.clothingFit && (
+                      <DetailRow
+                        label="Kalıp"
+                        value={application.clothingFit}
+                      />
+                    )}
+                    {!!application.clothingTypes?.length && (
+                      <DetailRow
+                        label="Giysi Tipi"
+                        value={application.clothingTypes.join(", ")}
+                      />
+                    )}
+                    {!!application.pantSizes?.length && (
+                      <DetailRow
+                        label="Pantolon Bedeni"
+                        value={application.pantSizes.join(", ")}
+                      />
+                    )}
+                    {!!application.pantFabricTypes?.length && (
+                      <DetailRow
+                        label="Kumaş Tipi"
+                        value={application.pantFabricTypes.join(", ")}
+                      />
+                    )}
+                    {!!application.footwearSizes?.length && (
+                      <DetailRow
+                        label="Ayakkabı Numarası"
+                        value={application.footwearSizes.join(", ")}
+                      />
+                    )}
+                    {!!application.jewelryMaterials?.length && (
+                      <DetailRow
+                        label="Materyal"
+                        value={application.jewelryMaterials.join(", ")}
+                      />
+                    )}
+                    {application.consoleBrand && (
+                      <DetailRow
+                        label="Konsol Markası"
+                        value={application.consoleBrand}
+                      />
+                    )}
+                    {application.curtainMaxWidth && (
+                      <DetailRow
+                        label="Perde Maks. Genişlik"
+                        value={`${application.curtainMaxWidth} m`}
+                      />
+                    )}
+                    {application.curtainMaxHeight && (
+                      <DetailRow
+                        label="Perde Maks. Yükseklik"
+                        value={`${application.curtainMaxHeight} m`}
+                      />
+                    )}
                     {Object.entries(application.attributes || {}).map(
                       ([key, value]) => {
                         if (key === "gender" || value == null) return null;
                         const displayValue = Array.isArray(value)
                           ? (value as unknown[]).join(", ")
-                          : typeof value === "boolean"
-                            ? value
-                              ? "Evet"
-                              : "Hayır"
-                            : String(value);
+                          : String(value);
                         return (
                           <DetailRow
                             key={key}
-                            label={getFieldLabel(key)}
+                            label={key}
                             value={displayValue}
                           />
                         );
@@ -1028,7 +1079,12 @@ export default function ProductApplications() {
       paused: Boolean(data.paused),
       colorImages: ProductUtils.safeColorImages(data.colorImages),
       videoUrl: ProductUtils.safeStringNullable(data.videoUrl),
-      attributes: ProductUtils.safeAttributes(data.attributes),
+      attributes:
+        data.attributes &&
+        typeof data.attributes === "object" &&
+        !Array.isArray(data.attributes)
+          ? (data.attributes as Record<string, unknown>)
+          : {},
       phone: ProductUtils.safeStringNullable(data.phone),
       region: ProductUtils.safeStringNullable(data.region),
       address: ProductUtils.safeStringNullable(data.address),
@@ -1049,9 +1105,35 @@ export default function ProductApplications() {
       campaign: ProductUtils.safeStringNullable(data.campaign),
       campaignName: ProductUtils.safeStringNullable(data.campaignName),
       status: ProductUtils.safeStringNullable(data.status),
-
-      // ✅ Single line replaces all 11 manual spec extractions
-      ...extractSpecFields(data),
+      productType: ProductUtils.safeStringNullable(data.productType),
+      clothingSizes: Array.isArray(data.clothingSizes)
+        ? data.clothingSizes.map(String)
+        : undefined,
+      clothingFit: ProductUtils.safeStringNullable(data.clothingFit),
+      clothingTypes: Array.isArray(data.clothingTypes)
+        ? data.clothingTypes.map(String)
+        : undefined,
+      pantSizes: Array.isArray(data.pantSizes)
+        ? data.pantSizes.map(String)
+        : undefined,
+      pantFabricTypes: Array.isArray(data.pantFabricTypes)
+        ? data.pantFabricTypes.map(String)
+        : undefined,
+      footwearSizes: Array.isArray(data.footwearSizes)
+        ? data.footwearSizes.map(String)
+        : undefined,
+      jewelryMaterials: Array.isArray(data.jewelryMaterials)
+        ? data.jewelryMaterials.map(String)
+        : undefined,
+      consoleBrand: ProductUtils.safeStringNullable(data.consoleBrand),
+      curtainMaxWidth:
+        data.curtainMaxWidth != null
+          ? ProductUtils.safeDouble(data.curtainMaxWidth)
+          : undefined,
+      curtainMaxHeight:
+        data.curtainMaxHeight != null
+          ? ProductUtils.safeDouble(data.curtainMaxHeight)
+          : undefined,
     } as ProductApplication;
   };
 
