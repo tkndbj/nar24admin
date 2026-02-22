@@ -912,7 +912,7 @@ export default function EditProductApplicationsPage() {
       await updateDoc(productRef, updateData as any);
 
       // Delete the edit application
-      await updateDoc(doc(db, "product_edit_applications", application.id), {
+      await updateDoc(doc(db, COLLECTION_NAMES[activeSource], application.id), {
         status: "approved",
         reviewedAt: Timestamp.now(),
       });
@@ -993,7 +993,7 @@ export default function EditProductApplicationsPage() {
       );
 
       // Delete the edit application
-      await updateDoc(doc(db, "product_edit_applications", application.id), {
+      await updateDoc(doc(db, COLLECTION_NAMES[activeSource], application.id), {
         status: "rejected",
         reviewedAt: Timestamp.now(),
         rejectionReason: rejectionReason,
