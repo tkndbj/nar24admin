@@ -1,11 +1,11 @@
-import { searchClient } from "./client";
-import type { SearchResponse } from "algoliasearch";
+import { typesenseClient } from "./client";
 
 // ============================================================================
 // TYPE DEFINITIONS
 // ============================================================================
 
 export interface AlgoliaShopHit {
+  id: string;
   objectID: string;
   name?: string;
   shopId: string;
@@ -36,6 +36,7 @@ export interface AlgoliaShopHit {
 }
 
 export interface AlgoliaProductHit {
+  id: string;
   objectID: string;
   productId: string;
   productName: string;
@@ -63,6 +64,7 @@ export interface AlgoliaProductHit {
 }
 
 export interface AlgoliaShopProductHit {
+  id: string;
   objectID: string;
   shopProductId: string;
   shopId: string;
@@ -72,7 +74,7 @@ export interface AlgoliaShopProductHit {
   brandModel?: string;
   category: string;
   price: number;
-  shopPrice?: number; // Shop-specific price override
+  shopPrice?: number;
   stockQuantity?: number;
   status: "active" | "inactive" | "out_of_stock";
   discount?: number;
@@ -94,6 +96,7 @@ export interface ShopFilters {
   verified?: boolean;
   city?: string | string[];
   minRating?: number;
+  [key: string]: unknown;
 }
 
 export interface ProductFilters {
@@ -104,6 +107,7 @@ export interface ProductFilters {
   maxPrice?: number;
   inStock?: boolean;
   minRating?: number;
+  [key: string]: unknown;
 }
 
 export interface ShopProductFilters {
@@ -115,6 +119,7 @@ export interface ShopProductFilters {
   maxPrice?: number;
   inStock?: boolean;
   featured?: boolean;
+  [key: string]: unknown;
 }
 
 // ============================================================================
@@ -126,7 +131,7 @@ export interface BaseSearchOptions<T> {
   page?: number;
   filters?: T;
   attributesToRetrieve?: string[];
-  sortBy?: string; // For replica indices
+  sortBy?: string;
 }
 
 export type ShopSearchOptions = BaseSearchOptions<ShopFilters>;
@@ -152,7 +157,7 @@ export interface AlgoliaSearchResult<T> {
 // ============================================================================
 
 /**
- * Build Algolia filter string from filter object with support for numeric comparisons
+ * Build Typesense filter_by string from filter object
  */
 function buildFilterString<T extends Record<string, unknown>>(
   filters?: T
@@ -169,7 +174,7 @@ function buildFilterString<T extends Record<string, unknown>>(
       const fieldName =
         key.replace("min", "").charAt(0).toLowerCase() +
         key.replace("min", "").slice(1);
-      filterParts.push(`${fieldName} >= ${value}`);
+      filterParts.push(`${fieldName}:>=${value}`);
       return;
     }
 
@@ -177,43 +182,52 @@ function buildFilterString<T extends Record<string, unknown>>(
       const fieldName =
         key.replace("max", "").charAt(0).toLowerCase() +
         key.replace("max", "").slice(1);
-      filterParts.push(`${fieldName} <= ${value}`);
+      filterParts.push(`${fieldName}:<=${value}`);
       return;
     }
 
     // Handle boolean filters
     if (typeof value === "boolean") {
-      filterParts.push(`${key}:${value}`);
+      filterParts.push(`${key}:=${value}`);
       return;
     }
 
     // Handle array filters (OR condition)
     if (Array.isArray(value)) {
       if (value.length > 0) {
-        const orFilters = value.map((v) => `${key}:"${v}"`).join(" OR ");
-        filterParts.push(`(${orFilters})`);
+        filterParts.push(`${key}:=[${value.map(v => `\`${v}\``).join(",")}]`);
       }
       return;
     }
 
     // Handle string filters
     if (typeof value === "string") {
-      filterParts.push(`${key}:"${value}"`);
+      filterParts.push(`${key}:=\`${value}\``);
     }
   });
 
-  return filterParts.join(" AND ");
+  return filterParts.join(" && ");
 }
+
+// ============================================================================
+// QUERY_BY FIELDS PER COLLECTION
+// ============================================================================
+
+const QUERY_BY: Record<string, string> = {
+  shops: "shopName,ownerName,category",
+  products: "productName,brandModel,category,description",
+  shop_products: "productName,brandModel,shopName,category",
+};
 
 // ============================================================================
 // BASE SEARCH FUNCTION
 // ============================================================================
 
 /**
- * Generic search function to avoid code duplication
+ * Generic search function using Typesense
  */
-async function performSearch<T>(
-  indexName: string,
+async function performSearch<T extends { id?: string }>(
+  collectionName: string,
   query: string = "",
   options: BaseSearchOptions<unknown> = {}
 ): Promise<AlgoliaSearchResult<T>> {
@@ -227,59 +241,55 @@ async function performSearch<T>(
     } = options;
 
     const filterString = buildFilterString(filters as Record<string, unknown>);
-    const actualIndexName = sortBy ? `${indexName}_${sortBy}` : indexName;
 
-    const searchParams: {
-      indexName: string;
-      query: string;
-      hitsPerPage: number;
-      page: number;
-      filters?: string;
-      attributesToRetrieve?: string[];
-    } = {
-      indexName: actualIndexName,
-      query: query.trim(),
-      hitsPerPage,
-      page,
+    const searchParams: Record<string, unknown> = {
+      q: query.trim() || "*",
+      query_by: QUERY_BY[collectionName] || "productName",
+      per_page: hitsPerPage,
+      page: page + 1, // Typesense is 1-indexed
     };
 
     if (filterString) {
-      searchParams.filters = filterString;
+      searchParams.filter_by = filterString;
     }
 
     if (attributesToRetrieve && attributesToRetrieve.length > 0) {
-      searchParams.attributesToRetrieve = attributesToRetrieve;
+      searchParams.include_fields = attributesToRetrieve.join(",");
     }
 
-    const { results } = await searchClient.search({
-      requests: [searchParams],
+    if (sortBy) {
+      searchParams.sort_by = sortBy;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await typesenseClient
+      .collections(collectionName)
+      .documents()
+      .search(searchParams as any);
+
+    const hits = ((result.hits as any[]) || []).map(hit => {
+      const doc = hit.document as T & { id?: string };
+      // Map Typesense `id` to `objectID` for backward compatibility
+      return {
+        ...doc,
+        objectID: doc.id || "",
+      } as T;
     });
 
-    const result = results[0] as SearchResponse<T>;
-
-    if ("hits" in result) {
-      return {
-        hits: result.hits,
-        nbHits: result.nbHits ?? 0,
-        page: result.page ?? 0,
-        nbPages: result.nbPages ?? 0,
-        hitsPerPage: result.hitsPerPage ?? hitsPerPage,
-        processingTimeMS: result.processingTimeMS,
-        query: query.trim(),
-      };
-    }
+    const found = result.found || 0;
 
     return {
-      hits: [],
-      nbHits: 0,
-      page: 0,
-      nbPages: 0,
-      hitsPerPage: hitsPerPage,
+      hits,
+      nbHits: found,
+      page,
+      nbPages: Math.ceil(found / (hitsPerPage || 1)),
+      hitsPerPage,
+      processingTimeMS: result.search_time_ms,
       query: query.trim(),
     };
   } catch (error) {
-    console.error(`Algolia search error for ${indexName}:`, error);
-    throw new Error(`Failed to search ${indexName}`);
+    console.error(`Typesense search error for ${collectionName}:`, error);
+    throw new Error(`Failed to search ${collectionName}`);
   }
 }
 
@@ -294,8 +304,8 @@ export async function searchShops(
   query: string = "",
   options: ShopSearchOptions = {}
 ): Promise<AlgoliaSearchResult<AlgoliaShopHit>> {
-  const indexName = process.env.NEXT_PUBLIC_ALGOLIA_SHOPS_INDEX || "shops";
-  return performSearch<AlgoliaShopHit>(indexName, query, options);
+  const collectionName = process.env.NEXT_PUBLIC_TYPESENSE_SHOPS_COLLECTION || "shops";
+  return performSearch<AlgoliaShopHit>(collectionName, query, options);
 }
 
 /**
@@ -326,9 +336,8 @@ export async function getShopsByIds(
   if (shopIds.length === 0) return [];
 
   try {
-    const indexName = process.env.NEXT_PUBLIC_ALGOLIA_SHOPS_INDEX || "shops";
+    const collectionName = process.env.NEXT_PUBLIC_TYPESENSE_SHOPS_COLLECTION || "shops";
 
-    // Split into chunks to avoid URL length limits
     const chunks: string[][] = [];
     for (let i = 0; i < shopIds.length; i += 100) {
       chunks.push(shopIds.slice(i, i + 100));
@@ -336,21 +345,23 @@ export async function getShopsByIds(
 
     const results = await Promise.all(
       chunks.map(async (chunk) => {
-        const filterString = chunk.map((id) => `shopId:"${id}"`).join(" OR ");
+        const filterString = `shopId:=[${chunk.map(id => `\`${id}\``).join(",")}]`;
 
-        const { results } = await searchClient.search({
-          requests: [
-            {
-              indexName,
-              query: "",
-              filters: filterString,
-              hitsPerPage: chunk.length,
-            },
-          ],
-        });
+        const result = await typesenseClient
+          .collections(collectionName)
+          .documents()
+          .search({
+            q: "*",
+            query_by: "shopName",
+            filter_by: filterString,
+            per_page: chunk.length,
+            page: 1,
+          });
 
-        const result = results[0] as SearchResponse<AlgoliaShopHit>;
-        return "hits" in result ? result.hits : [];
+        return (result.hits || []).map(hit => ({
+          ...hit.document,
+          objectID: (hit.document as AlgoliaShopHit).id || "",
+        })) as AlgoliaShopHit[];
       })
     );
 
@@ -412,9 +423,9 @@ export async function searchProducts(
   query: string = "",
   options: ProductSearchOptions = {}
 ): Promise<AlgoliaSearchResult<AlgoliaProductHit>> {
-  const indexName =
-    process.env.NEXT_PUBLIC_ALGOLIA_PRODUCTS_INDEX || "products";
-  return performSearch<AlgoliaProductHit>(indexName, query, options);
+  const collectionName =
+    process.env.NEXT_PUBLIC_TYPESENSE_PRODUCTS_COLLECTION || "products";
+  return performSearch<AlgoliaProductHit>(collectionName, query, options);
 }
 
 /**
@@ -445,8 +456,8 @@ export async function getProductsByIds(
   if (productIds.length === 0) return [];
 
   try {
-    const indexName =
-      process.env.NEXT_PUBLIC_ALGOLIA_PRODUCTS_INDEX || "products";
+    const collectionName =
+      process.env.NEXT_PUBLIC_TYPESENSE_PRODUCTS_COLLECTION || "products";
 
     const chunks: string[][] = [];
     for (let i = 0; i < productIds.length; i += 100) {
@@ -455,23 +466,23 @@ export async function getProductsByIds(
 
     const results = await Promise.all(
       chunks.map(async (chunk) => {
-        const filterString = chunk
-          .map((id) => `productId:"${id}"`)
-          .join(" OR ");
+        const filterString = `productId:=[${chunk.map(id => `\`${id}\``).join(",")}]`;
 
-        const { results } = await searchClient.search({
-          requests: [
-            {
-              indexName,
-              query: "",
-              filters: filterString,
-              hitsPerPage: chunk.length,
-            },
-          ],
-        });
+        const result = await typesenseClient
+          .collections(collectionName)
+          .documents()
+          .search({
+            q: "*",
+            query_by: "productName",
+            filter_by: filterString,
+            per_page: chunk.length,
+            page: 1,
+          });
 
-        const result = results[0] as SearchResponse<AlgoliaProductHit>;
-        return "hits" in result ? result.hits : [];
+        return (result.hits || []).map(hit => ({
+          ...hit.document,
+          objectID: (hit.document as AlgoliaProductHit).id || "",
+        })) as AlgoliaProductHit[];
       })
     );
 
@@ -554,9 +565,9 @@ export async function searchShopProducts(
   query: string = "",
   options: ShopProductSearchOptions = {}
 ): Promise<AlgoliaSearchResult<AlgoliaShopProductHit>> {
-  const indexName =
-    process.env.NEXT_PUBLIC_ALGOLIA_SHOP_PRODUCTS_INDEX || "shop_products";
-  return performSearch<AlgoliaShopProductHit>(indexName, query, options);
+  const collectionName =
+    process.env.NEXT_PUBLIC_TYPESENSE_SHOP_PRODUCTS_COLLECTION || "shop_products";
+  return performSearch<AlgoliaShopProductHit>(collectionName, query, options);
 }
 
 /**
@@ -587,8 +598,8 @@ export async function getShopProductsByIds(
   if (shopProductIds.length === 0) return [];
 
   try {
-    const indexName =
-      process.env.NEXT_PUBLIC_ALGOLIA_SHOP_PRODUCTS_INDEX || "shop_products";
+    const collectionName =
+      process.env.NEXT_PUBLIC_TYPESENSE_SHOP_PRODUCTS_COLLECTION || "shop_products";
 
     const chunks: string[][] = [];
     for (let i = 0; i < shopProductIds.length; i += 100) {
@@ -597,23 +608,23 @@ export async function getShopProductsByIds(
 
     const results = await Promise.all(
       chunks.map(async (chunk) => {
-        const filterString = chunk
-          .map((id) => `shopProductId:"${id}"`)
-          .join(" OR ");
+        const filterString = `shopProductId:=[${chunk.map(id => `\`${id}\``).join(",")}]`;
 
-        const { results } = await searchClient.search({
-          requests: [
-            {
-              indexName,
-              query: "",
-              filters: filterString,
-              hitsPerPage: chunk.length,
-            },
-          ],
-        });
+        const result = await typesenseClient
+          .collections(collectionName)
+          .documents()
+          .search({
+            q: "*",
+            query_by: "productName",
+            filter_by: filterString,
+            per_page: chunk.length,
+            page: 1,
+          });
 
-        const result = results[0] as SearchResponse<AlgoliaShopProductHit>;
-        return "hits" in result ? result.hits : [];
+        return (result.hits || []).map(hit => ({
+          ...hit.document,
+          objectID: (hit.document as AlgoliaShopProductHit).id || "",
+        })) as AlgoliaShopProductHit[];
       })
     );
 
@@ -690,8 +701,7 @@ export async function searchInStockShopProducts(
 // ============================================================================
 
 /**
- * Search across multiple indices simultaneously
- * Useful for dashboard overview or unified search
+ * Search across multiple collections simultaneously
  */
 export async function multiIndexSearch(
   query: string,
@@ -717,8 +727,8 @@ export async function multiIndexSearch(
 
     return { shops, products, shopProducts };
   } catch (error) {
-    console.error("Error in multi-index search:", error);
-    throw new Error("Failed to perform multi-index search");
+    console.error("Error in multi-collection search:", error);
+    throw new Error("Failed to perform multi-collection search");
   }
 }
 
@@ -776,8 +786,8 @@ export async function getDashboardCounts(): Promise<{
 }
 
 /**
- * Clear cache notification (v5 handles caching automatically)
+ * Clear cache (no-op for Typesense)
  */
 export function clearSearchCache(): void {
-  console.log("Cache clearing is handled automatically in Algolia v5");
+  console.log("Cache clearing is not needed for Typesense");
 }

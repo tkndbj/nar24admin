@@ -34,7 +34,7 @@ import {
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { Pause, Play, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { searchOrders, AlgoliaOrderHit } from "@/app/lib/algolia/searchService";
+import { searchOrders, type OrderHit as AlgoliaOrderHit } from "@/app/lib/typesense/searchService";
 
 interface OrderItem {
   id: string;
@@ -124,9 +124,9 @@ export default function OrdersPage() {
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<CombinedOrder | null>(null);
 
-  // Algolia search state
+  // Typesense search state
   const [searchInput, setSearchInput] = useState("");
-  const [algoliaResults, setAlgoliaResults] = useState<AlgoliaOrderHit[]>([]);
+  const [searchResults, setSearchResults] = useState<AlgoliaOrderHit[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearchMode, setIsSearchMode] = useState(false);
@@ -443,13 +443,13 @@ export default function OrdersPage() {
     setAppliedFilters({ ...filters });
   };
 
-  // Algolia search handler - only called on Enter or button click
+  // Typesense search handler - only called on Enter or button click
   const handleSearch = async () => {
     const query = searchInput.trim();
 
     if (!query) {
       // Clear search and return to normal view
-      setAlgoliaResults([]);
+      setSearchResults([]);
       setIsSearchMode(false);
       setSearchError(null);
       return;
@@ -463,11 +463,11 @@ export default function OrdersPage() {
       const result = await searchOrders(query, {
         hitsPerPage: 100,
       });
-      setAlgoliaResults(result.hits);
+      setSearchResults(result.hits);
     } catch (error) {
       console.error("Search error:", error);
       setSearchError("Arama sırasında bir hata oluştu. Lütfen tekrar deneyin.");
-      setAlgoliaResults([]);
+      setSearchResults([]);
     } finally {
       setIsSearching(false);
     }
@@ -484,7 +484,7 @@ export default function OrdersPage() {
   // Clear search and return to normal view
   const handleClearSearch = () => {
     setSearchInput("");
-    setAlgoliaResults([]);
+    setSearchResults([]);
     setIsSearchMode(false);
     setSearchError(null);
   };
@@ -753,8 +753,8 @@ export default function OrdersPage() {
     return labels[option] || option;
   };
 
-  // Format Algolia timestamp
-  const formatAlgoliaTimestamp = (timestamp: { _seconds: number; _nanoseconds: number } | null) => {
+  // Format search timestamp
+  const formatSearchTimestamp = (timestamp: { _seconds: number; _nanoseconds: number } | null) => {
     if (!timestamp) return "—";
     const date = new Date(timestamp._seconds * 1000);
     return date.toLocaleDateString("tr-TR", {
@@ -766,8 +766,8 @@ export default function OrdersPage() {
     });
   };
 
-  // Get delivery status badge for Algolia results
-  const getAlgoliaDeliveryStatus = (hit: AlgoliaOrderHit) => {
+  // Get delivery status badge for search results
+  const getDeliveryStatus = (hit: AlgoliaOrderHit) => {
     const distributionStatus = hit.distributionStatus as string | undefined;
     const gatheringStatus = hit.gatheringStatus;
     const allItemsGathered = hit.allItemsGathered as boolean | undefined;
@@ -906,7 +906,7 @@ export default function OrdersPage() {
             </div>
           </div>
 
-          {/* Algolia Search Bar */}
+          {/* Search Bar */}
           <div className="mb-4">
             <div className="flex items-center gap-2">
               <div className="relative flex-1 max-w-md">
@@ -942,7 +942,7 @@ export default function OrdersPage() {
               </button>
               {isSearchMode && (
                 <span className="text-sm text-gray-600">
-                  {algoliaResults.length} sonuç bulundu
+                  {searchResults.length} sonuç bulundu
                 </span>
               )}
             </div>
@@ -1013,7 +1013,7 @@ export default function OrdersPage() {
 
         {/* Search Results or Orders Table */}
         {isSearchMode ? (
-          /* Algolia Search Results */
+          /* Search Results */
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
             <div className="bg-blue-50 border-b border-blue-200 px-4 py-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1054,15 +1054,15 @@ export default function OrdersPage() {
                         </div>
                       </td>
                     </tr>
-                  ) : algoliaResults.length === 0 ? (
+                  ) : searchResults.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="px-3 py-8 text-center text-gray-500">
                         Sonuç bulunamadı
                       </td>
                     </tr>
                   ) : (
-                    algoliaResults.map((hit) => {
-                      const deliveryStatus = getAlgoliaDeliveryStatus(hit);
+                    searchResults.map((hit) => {
+                      const deliveryStatus = getDeliveryStatus(hit);
                       const isDelivered = (hit.distributionStatus as string) === "delivered";
                       const isPending = !hit.distributionStatus && !hit.gatheringStatus && !hit.allItemsGathered;
                       const rowBgClass = isDelivered
@@ -1072,9 +1072,9 @@ export default function OrdersPage() {
                           : "hover:bg-gray-50";
 
                       return (
-                        <tr key={hit.objectID} className={rowBgClass}>
+                        <tr key={hit.id} className={rowBgClass}>
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
-                            {formatAlgoliaTimestamp(hit.timestamp)}
+                            {formatSearchTimestamp(hit.timestamp)}
                           </td>
                           <td className="px-3 py-2">
                             <span className="text-gray-500 font-mono text-xs">

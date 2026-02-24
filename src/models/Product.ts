@@ -304,7 +304,7 @@ export class ProductUtils {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // FACTORIES — matching Flutter's fromJson / fromDocument / fromAlgolia
+  // FACTORIES — matching Flutter's fromJson / fromDocument / fromSearchHit
   // ═══════════════════════════════════════════════════════════════════════════
 
   static fromJson(json: ApiData): Product {
@@ -569,8 +569,8 @@ export class ProductUtils {
     return json;
   }
 
-  static fromAlgolia(json: ApiData): Product {
-    let normalizedId = String(json.objectID ?? "");
+  static fromSearchHit(json: ApiData): Product {
+    let normalizedId = String(json.objectID ?? json.id ?? "");
     let sourceCollection: string | undefined;
 
     if (normalizedId.startsWith("products_")) {
@@ -591,6 +591,11 @@ export class ProductUtils {
       id: normalizedId,
       sourceCollection,
     });
+  }
+
+  /** @deprecated Use fromSearchHit instead */
+  static fromAlgolia(json: ApiData): Product {
+    return ProductUtils.fromSearchHit(json);
   }
 
   static copyWith(

@@ -4,7 +4,10 @@
       "mcp__ide__getDiagnostics",
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
-      "Bash(npx next build --no-lint)"
+      "Bash(npx next build --no-lint)",
+      "Bash(grep:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

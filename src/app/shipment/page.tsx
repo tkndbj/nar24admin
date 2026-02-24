@@ -7,9 +7,9 @@ import { CargoUser, CombinedOrder, OrderHeader, OrderItem } from "./types";
 import GatheringTab from "./GatheringTab";
 import DistributionTab from "./DistributionTab";
 import DeliveredTab from "./DeliveredTab";
-import { useAlgoliaSearch } from "@/hooks/useAlgoliaSearch";
+import { useTypesenseSearch } from "@/hooks/useTypesenseSearch";
 import { getDoc } from "firebase/firestore";
-import { AlgoliaOrderHit } from "@/app/lib/algolia/searchService";
+import { type OrderHit as AlgoliaOrderHit } from "@/app/lib/typesense/searchService";
 import { runTransaction } from 'firebase/firestore';
 import {
   collection,
@@ -191,7 +191,7 @@ const [loadingTracking, setLoadingTracking] = useState(false);
   
 
   // Single unified search without filters
-  const unifiedSearch = useAlgoliaSearch({
+  const unifiedSearch = useTypesenseSearch({
     enabled: searchTerm.length > 0,
   });
 
@@ -685,7 +685,7 @@ const [loadingTracking, setLoadingTracking] = useState(false);
                     const status = getStatusBadge(order);
                     return (
                       <div
-                        key={order.objectID}
+                        key={order.id}
                         className="p-4 hover:bg-gray-50 transition-colors"
                       >
                         <div className="flex items-start justify-between gap-4">

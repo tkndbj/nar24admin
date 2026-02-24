@@ -20,7 +20,7 @@ import { useRouter } from "next/navigation";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type SearchProviderType = "algolia" | "firestore";
+type SearchProviderType = "typesense" | "firestore";
 
 interface SearchConfig {
   provider: SearchProviderType;
@@ -42,19 +42,19 @@ const ProviderCard = ({
   isLoading: boolean;
   onSelect: () => void;
 }) => {
-  const isAlgolia = type === "algolia";
+  const isTypesense = type === "typesense";
 
-  const config = isAlgolia
+  const config = isTypesense
     ? {
         icon: Zap,
-        title: "Algolia (Varsayilan)",
+        title: "Typesense (Varsayilan)",
         description:
-          "Dogrudan Algolia SDK ile arama. Dusuk gecikme, hizli sonuclar. Uretim icin onerilir.",
+          "Dogrudan Typesense SDK ile arama. Dusuk gecikme, hizli sonuclar. Uretim icin onerilir.",
         features: [
           "Dogrudan istemci baglantisi",
           "~50ms gecikme",
           "Typo tolerance & ranking",
-          "Standart maliyet",
+          "Acik kaynak maliyet avantaji",
         ],
         activeColor: "border-blue-500 bg-blue-50",
         activeDot: "bg-blue-500",
@@ -65,7 +65,7 @@ const ProviderCard = ({
         icon: Database,
         title: "Firestore (Yedek)",
         description:
-          "Cloud Firestore keyword araması. Algolia cokerse veya bakim gerektiginde kullanin.",
+          "Cloud Firestore keyword araması. Typesense cokerse veya bakim gerektiginde kullanin.",
         features: [
           "Sunucu tarafli arama",
           "~200-500ms gecikme",
@@ -161,7 +161,7 @@ const ConfirmationModal = ({
           </div>
           <div>
             <h3 className="text-base font-semibold text-gray-900">
-              {isToFirestore ? "Firestore'a Gecis Yap" : "Algolia'ya Geri Don"}
+              {isToFirestore ? "Firestore'a Gecis Yap" : "Typesense'e Geri Don"}
             </h3>
             <p className="text-xs text-gray-500">
               Bu degisiklik tum kullanicilari aninda etkiler
@@ -176,8 +176,8 @@ const ConfirmationModal = ({
               <div className="text-xs text-amber-800">
                 <p className="font-medium mb-1">Dikkat:</p>
                 <p>
-                  Firestore aramasi Algolia&apos;ya kiyasla daha yavas ve daha
-                  sinirlidir. Sadece Algolia&apos;da bir sorun oldugunda veya
+                  Firestore aramasi Typesense&apos;e kiyasla daha yavas ve daha
+                  sinirlidir. Sadece Typesense&apos;de bir sorun oldugunda veya
                   bakim gerektiginde kullanin.
                 </p>
               </div>
@@ -193,7 +193,7 @@ const ConfirmationModal = ({
             type="text"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="orn: Algolia 500 hatasi veriyor..."
+            placeholder="orn: Typesense 500 hatasi veriyor..."
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             maxLength={200}
           />
@@ -219,7 +219,7 @@ const ConfirmationModal = ({
             {isLoading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
             ) : (
-              <>{isToFirestore ? "Firestore'a Gec" : "Algolia'ya Don"}</>
+              <>{isToFirestore ? "Firestore'a Gec" : "Typesense'e Don"}</>
             )}
           </button>
         </div>
@@ -239,7 +239,7 @@ export default function SearchFunctionalityPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [targetProvider, setTargetProvider] =
-    useState<SearchProviderType>("algolia");
+    useState<SearchProviderType>("typesense");
   const [reason, setReason] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -256,7 +256,7 @@ export default function SearchFunctionalityPage() {
         if (snapshot.exists()) {
           const data = snapshot.data();
           setConfig({
-            provider: (data.provider as SearchProviderType) || "algolia",
+            provider: (data.provider as SearchProviderType) || "typesense",
             updatedAt: data.updatedAt?.toDate() ?? null,
             updatedBy: data.updatedBy ?? null,
             reason: data.reason ?? null,
@@ -264,7 +264,7 @@ export default function SearchFunctionalityPage() {
         } else {
           // Document doesn't exist yet — default config
           setConfig({
-            provider: "algolia",
+            provider: "typesense",
             updatedAt: null,
             updatedBy: null,
             reason: null,
@@ -275,7 +275,7 @@ export default function SearchFunctionalityPage() {
       (error) => {
         console.error("Error listening to search config:", error);
         setConfig({
-          provider: "algolia",
+          provider: "typesense",
           updatedAt: null,
           updatedBy: null,
           reason: null,
@@ -389,8 +389,8 @@ export default function SearchFunctionalityPage() {
                       Flutter uygulamasi bu yapilandirmayi canli dinler.
                       Saglayiciyi degistirdiginizde, tum aktif kullanicilar
                       birkaç saniye icinde otomatik olarak gecis yapar.
-                      Varsayilan olarak Algolia aktiftir — yalnizca
-                      Algolia&apos;da sorun yasandiginda Firestore&apos;a gecin.
+                      Varsayilan olarak Typesense aktiftir — yalnizca
+                      Typesense&apos;de sorun yasandiginda Firestore&apos;a gecin.
                     </p>
                   </div>
                 </div>
@@ -403,10 +403,10 @@ export default function SearchFunctionalityPage() {
                 </h2>
                 <div className="flex gap-4">
                   <ProviderCard
-                    type="algolia"
-                    isActive={config?.provider === "algolia"}
+                    type="typesense"
+                    isActive={config?.provider === "typesense"}
                     isLoading={isSaving}
-                    onSelect={() => handleProviderSelect("algolia")}
+                    onSelect={() => handleProviderSelect("typesense")}
                   />
                   <ProviderCard
                     type="firestore"
@@ -432,7 +432,7 @@ export default function SearchFunctionalityPage() {
                       <div className="flex items-center gap-2">
                         <div
                           className={`w-2 h-2 rounded-full ${
-                            config.provider === "algolia"
+                            config.provider === "typesense"
                               ? "bg-blue-500"
                               : "bg-orange-500"
                           } animate-pulse`}
@@ -481,7 +481,7 @@ export default function SearchFunctionalityPage() {
                       </p>
                       <p className="text-xs text-amber-700 mt-1">
                         Kullanicilar su an sinirli arama deneyimi yasiyor.
-                        Algolia sorunu cozuldugunde geri gecmeyi unutmayin.
+                        Typesense sorunu cozuldugunde geri gecmeyi unutmayin.
                       </p>
                     </div>
                   </div>

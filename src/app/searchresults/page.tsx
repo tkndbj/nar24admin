@@ -12,7 +12,7 @@ import {
   type AlgoliaShopHit,
   type AlgoliaProductHit,
   type AlgoliaShopProductHit,
-} from "../lib/algolia/dashboardSearchService";
+} from "../lib/typesense/dashboardSearchService";
 import {
   Search,
   User,
@@ -69,9 +69,9 @@ interface ShopResult {
 
 type SearchResult = UserResult | ProductResult | ShopResult;
 
-// Helper function to extract Firestore doc ID from Algolia objectID
+// Helper function to extract Firestore doc ID from search objectID
 function extractFirestoreId(objectID: string, collectionName: string): string {
-  // Your Algolia objectID format: "collectionName_firestoreDocId"
+  // objectID format: "collectionName_firestoreDocId"
   // Example: "shops_ocKXxNqJ5lB5sfEoNzZR" -> "ocKXxNqJ5lB5sfEoNzZR"
   const prefix = `${collectionName}_`;
   if (objectID.startsWith(prefix)) {
@@ -139,7 +139,7 @@ function SearchResultsContent() {
       // Add users to results
       searchResults.push(...usersData);
 
-      // Transform and add Algolia shop results
+      // Transform and add Typesense shop results
       shopsData.hits.forEach((shop: AlgoliaShopHit) => {
         const firestoreDocId = extractFirestoreId(shop.objectID, "shops");
 
@@ -157,7 +157,7 @@ function SearchResultsContent() {
         } as ShopResult);
       });
 
-      // Transform and add Algolia product results
+      // Transform and add Typesense product results
       productsData.hits.forEach((product: AlgoliaProductHit) => {
         const firestoreDocId = extractFirestoreId(product.objectID, "products");
 
@@ -173,7 +173,7 @@ function SearchResultsContent() {
         } as ProductResult);
       });
 
-      // Transform and add Algolia shop product results
+      // Transform and add Typesense shop product results
       shopProductsData.hits.forEach((shopProduct: AlgoliaShopProductHit) => {
         const firestoreDocId = extractFirestoreId(
           shopProduct.objectID,

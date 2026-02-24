@@ -46,7 +46,7 @@ import Image from "next/image";
 import {
   searchShops,
   type AlgoliaShopHit,
-} from "../lib/algolia/dashboardSearchService";
+} from "../lib/typesense/dashboardSearchService";
 
 // ============================================================================
 // TYPES
@@ -92,7 +92,7 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
-// Helper to extract Firestore doc ID from Algolia objectID
+// Helper to extract Firestore doc ID from Typesense objectID
 function extractFirestoreId(objectID: string, collectionName: string): string {
   const prefix = `${collectionName}_`;
   if (objectID.startsWith(prefix)) {
@@ -409,7 +409,7 @@ export default function HomescreenShopListPage() {
   }, []);
 
   // ========================================================================
-  // SEARCH SHOPS WITH ALGOLIA
+  // SEARCH SHOPS WITH TYPESENSE
   // ========================================================================
 
   useEffect(() => {
@@ -445,7 +445,7 @@ export default function HomescreenShopListPage() {
           setShowDropdown(true);
         }
       } catch (error) {
-        console.error("Algolia search error:", error);
+        console.error("Typesense search error:", error);
         setSearchResults([]);
       } finally {
         if (isMountedRef.current) {
@@ -660,7 +660,7 @@ export default function HomescreenShopListPage() {
                     Search Shops
                   </h2>
                   <span className="text-xs text-gray-400 ml-auto">
-                    Powered by Algolia
+                    Powered by Typesense
                   </span>
                 </div>
 

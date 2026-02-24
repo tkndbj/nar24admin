@@ -18,8 +18,8 @@ import {
 import type {
   AlgoliaShopHit,
   AlgoliaShopProductHit,
-} from "@/app/lib/algolia/dashboardSearchService";
-import * as dashboardSearchService from "@/app/lib/algolia/dashboardSearchService";
+} from "@/app/lib/typesense/dashboardSearchService";
+import * as dashboardSearchService from "@/app/lib/typesense/dashboardSearchService";
 // ============================================================================
 // TYPE DEFINITIONS
 // ============================================================================
@@ -201,7 +201,7 @@ export default function SearchModal({
     item: AlgoliaShopHit | AlgoliaShopProductHit,
     type: SelectionType
   ) => {
-    // Extract Firestore ID from Algolia objectID
+    // Extract Firestore ID from Typesense objectID
     let firestoreId: string;
 
     if (type === "shop") {

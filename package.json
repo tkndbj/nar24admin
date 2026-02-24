@@ -17,7 +17,6 @@
     "@google-cloud/logging": "^11.2.1",
     "@google-cloud/monitoring": "^5.2.0",
     "@hello-pangea/dnd": "^18.0.1",
-    "algoliasearch": "^5.39.0",
     "dotenv": "^17.2.0",
     "firebase": "^11.9.1",
     "firebase-admin": "^13.4.0",
@@ -29,6 +28,7 @@
     "react-dom": "^19.0.0",
     "react-hot-toast": "^2.5.2",
     "recharts": "^2.15.3",
+    "typesense": "^3.0.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

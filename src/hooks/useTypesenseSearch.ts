@@ -1,14 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { searchOrders, AlgoliaOrderHit, SearchFilters } from '@/app/lib/algolia/searchService';
+import { searchOrders, OrderHit, SearchFilters } from '@/app/lib/typesense/searchService';
 
-interface UseAlgoliaSearchOptions {
+/** @deprecated Use OrderHit instead */
+export type AlgoliaOrderHit = OrderHit;
+
+interface UseTypesenseSearchOptions {
   filters?: SearchFilters;
   debounceMs?: number;
   enabled?: boolean;
 }
 
-interface UseAlgoliaSearchResult {
-  results: AlgoliaOrderHit[];
+interface UseTypesenseSearchResult {
+  results: OrderHit[];
   isSearching: boolean;
   error: string | null;
   totalResults: number;
@@ -16,12 +19,12 @@ interface UseAlgoliaSearchResult {
   clearSearch: () => void;
 }
 
-export function useAlgoliaSearch(
-  options: UseAlgoliaSearchOptions = {}
-): UseAlgoliaSearchResult {
+export function useTypesenseSearch(
+  options: UseTypesenseSearchOptions = {}
+): UseTypesenseSearchResult {
   const { filters, debounceMs = 300, enabled = true } = options;
 
-  const [results, setResults] = useState<AlgoliaOrderHit[]>([]);
+  const [results, setResults] = useState<OrderHit[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totalResults, setTotalResults] = useState(0);
@@ -107,3 +110,6 @@ export function useAlgoliaSearch(
     clearSearch,
   };
 }
+
+/** @deprecated Use useTypesenseSearch instead */
+export const useAlgoliaSearch = useTypesenseSearch;
