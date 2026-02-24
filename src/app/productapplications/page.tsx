@@ -1151,7 +1151,9 @@ export default function ProductApplications() {
 
       pendingApplications.sort((a, b) => {
         if (!a.createdAt || !b.createdAt) return 0;
-        return b.createdAt.toDate().getTime() - a.createdAt.toDate().getTime();
+        const aTime = typeof a.createdAt.toDate === "function" ? a.createdAt.toDate().getTime() : 0;
+        const bTime = typeof b.createdAt.toDate === "function" ? b.createdAt.toDate().getTime() : 0;
+        return bTime - aTime;
       });
 
       return {
