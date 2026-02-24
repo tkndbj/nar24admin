@@ -2,124 +2,150 @@ import { typesenseClient } from "./client";
 import type { SearchParams } from "typesense/lib/Typesense/Documents";
 
 // ============================================================================
-// TYPE DEFINITIONS
+// TYPE DEFINITIONS — match actual Typesense schemas
 // ============================================================================
 
+/** Matches the 'shops' collection: id, name, profileImageUrl, isActive, categories, searchableText */
 export interface AlgoliaShopHit {
   id: string;
   objectID: string;
   name?: string;
-  shopId: string;
-  shopName: string;
-  ownerName: string;
-  ownerId: string;
+  profileImageUrl?: string;
+  isActive?: boolean;
+  categories?: string[];
+  searchableText?: string;
+  // backward compat — these won't exist in Typesense but pages may reference them
+  shopName?: string;
+  shopId?: string;
+  ownerName?: string;
+  ownerId?: string;
   category?: string;
+  verified?: boolean;
+  rating?: number;
+  totalProducts?: number;
   location?: {
     addressLine1?: string;
-    addressLine2?: string;
     city?: string;
     province?: string;
     country?: string;
-    coordinates?: {
-      lat: number;
-      lng: number;
-    };
-  };
-  status: "active" | "inactive" | "pending" | "suspended";
-  rating?: number;
-  totalProducts?: number;
-  verified?: boolean;
-  createdAt?: {
-    _seconds: number;
-    _nanoseconds: number;
   };
   [key: string]: unknown;
 }
 
+/** Matches the 'products' / 'shop_products' collection */
 export interface AlgoliaProductHit {
   id: string;
   objectID: string;
-  productId: string;
-  productName: string;
+  productName?: string;
   brandModel?: string;
-  category: string;
-  subCategory?: string;
+  category?: string;
+  subcategory?: string;
+  subsubcategory?: string;
   description?: string;
-  price: number;
-  stockQuantity?: number;
-  status: "active" | "inactive" | "out_of_stock" | "discontinued";
-  images?: string[];
-  tags?: string[];
-  specifications?: Record<string, unknown>;
-  rating?: number;
+  price?: number;
+  originalPrice?: number;
+  discountPercentage?: number;
+  condition?: string;
+  currency?: string;
+  sellerName?: string;
+  ownerId?: string;
+  shopId?: string;
+  userId?: string;
+  quantity?: number;
+  paused?: boolean;
+  imageUrls?: string[];
+  bundleIds?: string[];
+  gender?: string;
+  productType?: string;
+  availableColors?: string[];
+  promotionScore?: number;
+  isBoosted?: boolean;
+  isFeatured?: boolean;
+  campaignName?: string;
+  averageRating?: number;
   reviewCount?: number;
-  createdAt?: {
-    _seconds: number;
-    _nanoseconds: number;
-  };
-  updatedAt?: {
-    _seconds: number;
-    _nanoseconds: number;
-  };
+  purchaseCount?: number;
+  deliveryOption?: string;
+  createdAt?: number;
   [key: string]: unknown;
 }
 
 export interface AlgoliaShopProductHit {
   id: string;
   objectID: string;
-  shopProductId: string;
-  shopId: string;
-  shopName: string;
-  productId: string;
-  productName: string;
+  productName?: string;
   brandModel?: string;
-  category: string;
-  price: number;
+  category?: string;
+  subcategory?: string;
+  subsubcategory?: string;
+  description?: string;
+  price?: number;
+  originalPrice?: number;
+  discountPercentage?: number;
+  condition?: string;
+  currency?: string;
+  sellerName?: string;
+  ownerId?: string;
+  shopId?: string;
+  userId?: string;
+  quantity?: number;
+  paused?: boolean;
+  imageUrls?: string[];
+  bundleIds?: string[];
+  gender?: string;
+  productType?: string;
+  availableColors?: string[];
+  promotionScore?: number;
+  isBoosted?: boolean;
+  isFeatured?: boolean;
+  campaignName?: string;
+  averageRating?: number;
+  reviewCount?: number;
+  purchaseCount?: number;
+  deliveryOption?: string;
+  createdAt?: number;
+  // backward compat aliases
+  shopName?: string;
+  productId?: string;
+  shopProductId?: string;
   shopPrice?: number;
-  stockQuantity?: number;
-  status: "active" | "inactive" | "out_of_stock";
-  discount?: number;
   featured?: boolean;
-  createdAt?: {
-    _seconds: number;
-    _nanoseconds: number;
-  };
   [key: string]: unknown;
 }
 
 // ============================================================================
-// SEARCH FILTERS
+// SEARCH FILTERS — only fields that exist in schemas
 // ============================================================================
 
 export interface ShopFilters {
-  status?: string | string[];
-  category?: string | string[];
-  verified?: boolean;
-  city?: string | string[];
-  minRating?: number;
+  isActive?: boolean;
+  categories?: string | string[];
   [key: string]: unknown;
 }
 
 export interface ProductFilters {
-  status?: string | string[];
   category?: string | string[];
-  subCategory?: string | string[];
+  subcategory?: string | string[];
+  paused?: boolean;
+  isBoosted?: boolean;
+  isFeatured?: boolean;
+  shopId?: string | string[];
+  gender?: string | string[];
   minPrice?: number;
   maxPrice?: number;
-  inStock?: boolean;
-  minRating?: number;
   [key: string]: unknown;
 }
 
 export interface ShopProductFilters {
-  status?: string | string[];
-  shopId?: string | string[];
-  productId?: string | string[];
   category?: string | string[];
+  subcategory?: string | string[];
+  shopId?: string | string[];
+  paused?: boolean;
+  isBoosted?: boolean;
+  isFeatured?: boolean;
+  gender?: string | string[];
   minPrice?: number;
   maxPrice?: number;
-  inStock?: boolean;
-  featured?: boolean;
   [key: string]: unknown;
 }
 
@@ -157,9 +183,6 @@ export interface AlgoliaSearchResult<T> {
 // FILTER BUILDER
 // ============================================================================
 
-/**
- * Build Typesense filter_by string from filter object
- */
 function buildFilterString<T extends Record<string, unknown>>(
   filters?: T
 ): string {
@@ -170,7 +193,6 @@ function buildFilterString<T extends Record<string, unknown>>(
   Object.entries(filters).forEach(([key, value]) => {
     if (value === undefined || value === null) return;
 
-    // Handle numeric range filters
     if (key.startsWith("min") && typeof value === "number") {
       const fieldName =
         key.replace("min", "").charAt(0).toLowerCase() +
@@ -187,13 +209,11 @@ function buildFilterString<T extends Record<string, unknown>>(
       return;
     }
 
-    // Handle boolean filters
     if (typeof value === "boolean") {
       filterParts.push(`${key}:=${value}`);
       return;
     }
 
-    // Handle array filters (OR condition)
     if (Array.isArray(value)) {
       if (value.length > 0) {
         filterParts.push(`${key}:=[${value.map(v => `\`${v}\``).join(",")}]`);
@@ -201,7 +221,6 @@ function buildFilterString<T extends Record<string, unknown>>(
       return;
     }
 
-    // Handle string filters
     if (typeof value === "string") {
       filterParts.push(`${key}:=\`${value}\``);
     }
@@ -211,22 +230,19 @@ function buildFilterString<T extends Record<string, unknown>>(
 }
 
 // ============================================================================
-// QUERY_BY FIELDS PER COLLECTION
+// QUERY_BY FIELDS — must match actual schema fields
 // ============================================================================
 
 const QUERY_BY: Record<string, string> = {
-  shops: "shopName,ownerName,category",
-  products: "productName,brandModel,category,description",
-  shop_products: "productName,brandModel,shopName,category",
+  shops: "name,searchableText",
+  products: "productName,brandModel,category,description,sellerName",
+  shop_products: "productName,brandModel,category,description,sellerName",
 };
 
 // ============================================================================
 // BASE SEARCH FUNCTION
 // ============================================================================
 
-/**
- * Generic search function using Typesense
- */
 async function performSearch<T extends { id?: string }>(
   collectionName: string,
   query: string = "",
@@ -247,7 +263,7 @@ async function performSearch<T extends { id?: string }>(
       q: query.trim() || "*",
       query_by: QUERY_BY[collectionName] || "productName",
       per_page: hitsPerPage,
-      page: page + 1, // Typesense is 1-indexed
+      page: page + 1,
     };
 
     if (filterString) {
@@ -269,7 +285,6 @@ async function performSearch<T extends { id?: string }>(
 
     const hits = (result.hits || []).map(hit => {
       const doc = hit.document as (T & { id?: string }) | undefined;
-      // Map Typesense `id` to `objectID` for backward compatibility
       return {
         ...doc,
         objectID: doc?.id || "",
@@ -282,7 +297,7 @@ async function performSearch<T extends { id?: string }>(
       hits,
       nbHits: found,
       page,
-      nbPages: Math.ceil(found / (hitsPerPage || 1)),
+      nbPages: hitsPerPage > 0 ? Math.ceil(found / hitsPerPage) : 0,
       hitsPerPage,
       processingTimeMS: result.search_time_ms,
       query: query.trim(),
@@ -297,9 +312,6 @@ async function performSearch<T extends { id?: string }>(
 // SHOPS SEARCH FUNCTIONS
 // ============================================================================
 
-/**
- * Search shops with advanced filtering
- */
 export async function searchShops(
   query: string = "",
   options: ShopSearchOptions = {}
@@ -308,18 +320,16 @@ export async function searchShops(
   return performSearch<AlgoliaShopHit>(collectionName, query, options);
 }
 
-/**
- * Get shop by ID
- */
 export async function getShopById(
   shopId: string
 ): Promise<AlgoliaShopHit | null> {
   try {
+    // Typesense id format: "shops_{firestoreId}"
+    const typesenseId = shopId.startsWith("shops_") ? shopId : `shops_${shopId}`;
     const result = await searchShops("", {
-      filters: { shopId } as ShopFilters,
+      filters: { id: typesenseId } as ShopFilters,
       hitsPerPage: 1,
     });
-
     return result.hits[0] || null;
   } catch (error) {
     console.error("Error getting shop by ID:", error);
@@ -327,9 +337,6 @@ export async function getShopById(
   }
 }
 
-/**
- * Get shops by multiple IDs (optimized with chunking)
- */
 export async function getShopsByIds(
   shopIds: string[]
 ): Promise<AlgoliaShopHit[]> {
@@ -345,14 +352,16 @@ export async function getShopsByIds(
 
     const results = await Promise.all(
       chunks.map(async (chunk) => {
-        const filterString = `shopId:=[${chunk.map(id => `\`${id}\``).join(",")}]`;
+        // IDs in Typesense are "shops_{firestoreId}"
+        const ids = chunk.map(id => id.startsWith("shops_") ? id : `shops_${id}`);
+        const filterString = `id:[${ids.join(",")}]`;
 
         const result = await typesenseClient
           .collections(collectionName)
           .documents()
           .search({
             q: "*",
-            query_by: "shopName",
+            query_by: "name",
             filter_by: filterString,
             per_page: chunk.length,
             page: 1,
@@ -372,9 +381,6 @@ export async function getShopsByIds(
   }
 }
 
-/**
- * Get active shops
- */
 export async function searchActiveShops(
   query: string = "",
   options: Omit<ShopSearchOptions, "filters"> = {}
@@ -382,9 +388,8 @@ export async function searchActiveShops(
   try {
     const result = await searchShops(query, {
       ...options,
-      filters: { status: "active" },
+      filters: { isActive: true },
     });
-
     return result.hits;
   } catch (error) {
     console.error("Error searching active shops:", error);
@@ -392,19 +397,16 @@ export async function searchActiveShops(
   }
 }
 
-/**
- * Get verified shops
- */
 export async function searchVerifiedShops(
   query: string = "",
   options: Omit<ShopSearchOptions, "filters"> = {}
 ): Promise<AlgoliaShopHit[]> {
   try {
+    // No 'verified' field in schema — just return active shops
     const result = await searchShops(query, {
       ...options,
-      filters: { status: "active", verified: true },
+      filters: { isActive: true },
     });
-
     return result.hits;
   } catch (error) {
     console.error("Error searching verified shops:", error);
@@ -416,9 +418,6 @@ export async function searchVerifiedShops(
 // PRODUCTS SEARCH FUNCTIONS
 // ============================================================================
 
-/**
- * Search products with advanced filtering
- */
 export async function searchProducts(
   query: string = "",
   options: ProductSearchOptions = {}
@@ -428,18 +427,15 @@ export async function searchProducts(
   return performSearch<AlgoliaProductHit>(collectionName, query, options);
 }
 
-/**
- * Get product by ID
- */
 export async function getProductById(
   productId: string
 ): Promise<AlgoliaProductHit | null> {
   try {
+    const typesenseId = productId.startsWith("products_") ? productId : `products_${productId}`;
     const result = await searchProducts("", {
-      filters: { productId } as ProductFilters,
+      filters: { id: typesenseId } as ProductFilters,
       hitsPerPage: 1,
     });
-
     return result.hits[0] || null;
   } catch (error) {
     console.error("Error getting product by ID:", error);
@@ -447,9 +443,6 @@ export async function getProductById(
   }
 }
 
-/**
- * Get products by multiple IDs (optimized with chunking)
- */
 export async function getProductsByIds(
   productIds: string[]
 ): Promise<AlgoliaProductHit[]> {
@@ -466,7 +459,8 @@ export async function getProductsByIds(
 
     const results = await Promise.all(
       chunks.map(async (chunk) => {
-        const filterString = `productId:=[${chunk.map(id => `\`${id}\``).join(",")}]`;
+        const ids = chunk.map(id => id.startsWith("products_") ? id : `products_${id}`);
+        const filterString = `id:[${ids.join(",")}]`;
 
         const result = await typesenseClient
           .collections(collectionName)
@@ -493,19 +487,16 @@ export async function getProductsByIds(
   }
 }
 
-/**
- * Get active products
- */
 export async function searchActiveProducts(
   query: string = "",
   options: Omit<ProductSearchOptions, "filters"> = {}
 ): Promise<AlgoliaProductHit[]> {
   try {
+    // No 'status' field — use paused:!=true to get active products
     const result = await searchProducts(query, {
       ...options,
-      filters: { status: "active" },
+      filters: { paused: false },
     });
-
     return result.hits;
   } catch (error) {
     console.error("Error searching active products:", error);
@@ -513,9 +504,6 @@ export async function searchActiveProducts(
   }
 }
 
-/**
- * Get in-stock products
- */
 export async function searchInStockProducts(
   query: string = "",
   options: Omit<ProductSearchOptions, "filters"> = {}
@@ -523,9 +511,8 @@ export async function searchInStockProducts(
   try {
     const result = await searchProducts(query, {
       ...options,
-      filters: { status: "active", inStock: true },
+      filters: { paused: false },
     });
-
     return result.hits;
   } catch (error) {
     console.error("Error searching in-stock products:", error);
@@ -533,9 +520,6 @@ export async function searchInStockProducts(
   }
 }
 
-/**
- * Search products by category
- */
 export async function searchProductsByCategory(
   category: string,
   query: string = "",
@@ -544,9 +528,8 @@ export async function searchProductsByCategory(
   try {
     const result = await searchProducts(query, {
       ...options,
-      filters: { category, status: "active" },
+      filters: { category },
     });
-
     return result.hits;
   } catch (error) {
     console.error("Error searching products by category:", error);
@@ -558,9 +541,6 @@ export async function searchProductsByCategory(
 // SHOP PRODUCTS SEARCH FUNCTIONS
 // ============================================================================
 
-/**
- * Search shop products with advanced filtering
- */
 export async function searchShopProducts(
   query: string = "",
   options: ShopProductSearchOptions = {}
@@ -570,18 +550,15 @@ export async function searchShopProducts(
   return performSearch<AlgoliaShopProductHit>(collectionName, query, options);
 }
 
-/**
- * Get shop product by ID
- */
 export async function getShopProductById(
   shopProductId: string
 ): Promise<AlgoliaShopProductHit | null> {
   try {
+    const typesenseId = shopProductId.startsWith("shop_products_") ? shopProductId : `shop_products_${shopProductId}`;
     const result = await searchShopProducts("", {
-      filters: { shopProductId } as ShopProductFilters,
+      filters: { id: typesenseId } as ShopProductFilters,
       hitsPerPage: 1,
     });
-
     return result.hits[0] || null;
   } catch (error) {
     console.error("Error getting shop product by ID:", error);
@@ -589,9 +566,6 @@ export async function getShopProductById(
   }
 }
 
-/**
- * Get shop products by multiple IDs (optimized with chunking)
- */
 export async function getShopProductsByIds(
   shopProductIds: string[]
 ): Promise<AlgoliaShopProductHit[]> {
@@ -608,7 +582,8 @@ export async function getShopProductsByIds(
 
     const results = await Promise.all(
       chunks.map(async (chunk) => {
-        const filterString = `shopProductId:=[${chunk.map(id => `\`${id}\``).join(",")}]`;
+        const ids = chunk.map(id => id.startsWith("shop_products_") ? id : `shop_products_${id}`);
+        const filterString = `id:[${ids.join(",")}]`;
 
         const result = await typesenseClient
           .collections(collectionName)
@@ -635,9 +610,6 @@ export async function getShopProductsByIds(
   }
 }
 
-/**
- * Get products for a specific shop
- */
 export async function searchProductsByShop(
   shopId: string,
   query: string = "",
@@ -646,9 +618,8 @@ export async function searchProductsByShop(
   try {
     const result = await searchShopProducts(query, {
       ...options,
-      filters: { shopId, status: "active" },
+      filters: { shopId },
     });
-
     return result.hits;
   } catch (error) {
     console.error("Error searching products by shop:", error);
@@ -656,9 +627,6 @@ export async function searchProductsByShop(
   }
 }
 
-/**
- * Get featured products
- */
 export async function searchFeaturedProducts(
   query: string = "",
   options: Omit<ShopProductSearchOptions, "filters"> = {}
@@ -666,9 +634,8 @@ export async function searchFeaturedProducts(
   try {
     const result = await searchShopProducts(query, {
       ...options,
-      filters: { featured: true, status: "active" },
+      filters: { isFeatured: true },
     });
-
     return result.hits;
   } catch (error) {
     console.error("Error searching featured products:", error);
@@ -676,9 +643,6 @@ export async function searchFeaturedProducts(
   }
 }
 
-/**
- * Get in-stock shop products
- */
 export async function searchInStockShopProducts(
   query: string = "",
   options: Omit<ShopProductSearchOptions, "filters"> = {}
@@ -686,9 +650,8 @@ export async function searchInStockShopProducts(
   try {
     const result = await searchShopProducts(query, {
       ...options,
-      filters: { status: "active", inStock: true },
+      filters: { paused: false },
     });
-
     return result.hits;
   } catch (error) {
     console.error("Error searching in-stock shop products:", error);
@@ -697,12 +660,9 @@ export async function searchInStockShopProducts(
 }
 
 // ============================================================================
-// MULTI-INDEX SEARCH (Advanced)
+// MULTI-INDEX SEARCH
 // ============================================================================
 
-/**
- * Search across multiple collections simultaneously
- */
 export async function multiIndexSearch(
   query: string,
   options?: {
@@ -736,9 +696,6 @@ export async function multiIndexSearch(
 // UTILITY FUNCTIONS
 // ============================================================================
 
-/**
- * Get total counts for dashboard statistics (optimized - only fetches count, not hits)
- */
 export async function getDashboardCounts(): Promise<{
   totalShops: number;
   activeShops: number;
@@ -756,12 +713,12 @@ export async function getDashboardCounts(): Promise<{
       allShopProducts,
       activeShopProducts,
     ] = await Promise.all([
-      searchShops("", { hitsPerPage: 0 }),
-      searchShops("", { hitsPerPage: 0, filters: { status: "active" } }),
-      searchProducts("", { hitsPerPage: 0 }),
-      searchProducts("", { hitsPerPage: 0, filters: { status: "active" } }),
-      searchShopProducts("", { hitsPerPage: 0 }),
-      searchShopProducts("", { hitsPerPage: 0, filters: { status: "active" } }),
+      searchShops("", { hitsPerPage: 1 }),
+      searchShops("", { hitsPerPage: 1, filters: { isActive: true } }),
+      searchProducts("", { hitsPerPage: 1 }),
+      searchProducts("", { hitsPerPage: 1, filters: { paused: false } }),
+      searchShopProducts("", { hitsPerPage: 1 }),
+      searchShopProducts("", { hitsPerPage: 1, filters: { paused: false } }),
     ]);
 
     return {
@@ -785,9 +742,6 @@ export async function getDashboardCounts(): Promise<{
   }
 }
 
-/**
- * Clear cache (no-op for Typesense)
- */
 export function clearSearchCache(): void {
   console.log("Cache clearing is not needed for Typesense");
 }

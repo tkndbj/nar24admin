@@ -753,10 +753,11 @@ export default function OrdersPage() {
     return labels[option] || option;
   };
 
-  // Format search timestamp
-  const formatSearchTimestamp = (timestamp: { _seconds: number; _nanoseconds: number } | null) => {
-    if (!timestamp) return "—";
-    const date = new Date(timestamp._seconds * 1000);
+  // Format search timestamp (supports Typesense timestampForSorting as epoch seconds)
+  const formatSearchTimestamp = (timestamp: number | { _seconds: number; _nanoseconds: number } | null | undefined) => {
+    if (timestamp === null || timestamp === undefined) return "—";
+    const epochMs = typeof timestamp === "number" ? timestamp * 1000 : timestamp._seconds * 1000;
+    const date = new Date(epochMs);
     return date.toLocaleDateString("tr-TR", {
       day: "2-digit",
       month: "2-digit",
@@ -1074,11 +1075,11 @@ export default function OrdersPage() {
                       return (
                         <tr key={hit.id} className={rowBgClass}>
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
-                            {formatSearchTimestamp(hit.timestamp)}
+                            {formatSearchTimestamp(hit.timestampForSorting)}
                           </td>
                           <td className="px-3 py-2">
                             <span className="text-gray-500 font-mono text-xs">
-                              #{hit.orderId.slice(0, 8)}
+                              #{hit.orderId?.slice(0, 8)}
                             </span>
                           </td>
                           <td className="px-3 py-2">
@@ -1109,7 +1110,7 @@ export default function OrdersPage() {
                           </td>
                           <td className="px-3 py-2 text-center">
                             <span className="inline-flex items-center justify-center px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full font-medium">
-                              {hit.quantity}
+                              {String(hit.quantity ?? "—")}
                             </span>
                           </td>
                           <td className="px-3 py-2 text-right">

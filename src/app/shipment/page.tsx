@@ -139,7 +139,7 @@ const [loadingTracking, setLoadingTracking] = useState(false);
           if (controller.signal.aborted) return result;
           
           try {
-            const orderRef = doc(db, "orders", result.orderId);
+            const orderRef = doc(db, "orders", result.orderId || result.id);
             const orderSnap = await getDoc(orderRef);
             
             if (controller.signal.aborted) return result;
@@ -530,9 +530,10 @@ const [loadingTracking, setLoadingTracking] = useState(false);
   };
 
   // Format timestamp
-  const formatDate = (timestamp: { _seconds: number; _nanoseconds: number } | null) => {
-    if (!timestamp) return "—";
-    const date = new Date(timestamp._seconds * 1000);
+  const formatDate = (timestamp: number | { _seconds: number; _nanoseconds: number } | null | undefined) => {
+    if (timestamp === null || timestamp === undefined) return "—";
+    const epochMs = typeof timestamp === "number" ? timestamp * 1000 : timestamp._seconds * 1000;
+    const date = new Date(epochMs);
     return date.toLocaleDateString("tr-TR", {
       day: "2-digit",
       month: "2-digit",
@@ -693,10 +694,10 @@ const [loadingTracking, setLoadingTracking] = useState(false);
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start gap-3">
                               {/* Product Image */}
-                              {order.productImage && (
+                              {!!order.productImage && (
                                 <img
-                                  src={order.productImage as string}
-                                  alt={order.productName}
+                                  src={String(order.productImage)}
+                                  alt={order.productName || ""}
                                   className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
                                 />
                               )}
@@ -716,11 +717,11 @@ const [loadingTracking, setLoadingTracking] = useState(false);
 
                                 {/* Category & Condition */}
                                 <div className="flex items-center gap-2 text-xs text-gray-600 mb-2">
-                                  <span>{order.category}</span>
-                                  {order.condition && (
+                                  <span>{order.category || ""}</span>
+                                  {!!order.condition && (
                                     <>
                                       <span>•</span>
-                                      <span>{order.condition as string}</span>
+                                      <span>{String(order.condition)}</span>
                                     </>
                                   )}
                                 </div>
@@ -733,27 +734,27 @@ const [loadingTracking, setLoadingTracking] = useState(false);
                                   </div>
                                   <div>
                                     <p className="text-gray-500 mb-0.5">Satıcı</p>
-                                    <p className="font-medium text-gray-900">{order.sellerName}</p>
-                                    {order.sellerContactNo && (
+                                    <p className="font-medium text-gray-900">{order.sellerName || ""}</p>
+                                    {!!order.sellerContactNo && (
                                       <p className="text-gray-600 flex items-center gap-1 mt-0.5">
                                         <Phone className="w-3 h-3" />
-                                        {order.sellerContactNo as string}
+                                        {String(order.sellerContactNo)}
                                       </p>
                                     )}
                                   </div>
                                 </div>
 
                                 {/* Address */}
-                                {order.orderAddress && typeof order.orderAddress === 'object' && 'addressLine1' in order.orderAddress && (
+                                {order.orderAddress && typeof order.orderAddress === 'object' && 'addressLine1' in (order.orderAddress as Record<string, unknown>) && (
                                   <div className="mt-2 text-xs">
                                     <p className="text-gray-500 mb-0.5 flex items-center gap-1">
                                       <MapPin className="w-3 h-3" />
                                       Teslimat Adresi
                                     </p>
                                     <p className="text-gray-700">
-                                      {order.orderAddress.addressLine1}
-                                      {order.orderAddress.addressLine2 && `, ${order.orderAddress.addressLine2}`}
-                                      {order.orderAddress.city && `, ${order.orderAddress.city}`}
+                                      {String((order.orderAddress as Record<string, unknown>).addressLine1 || "")}
+                                      {(order.orderAddress as Record<string, unknown>).addressLine2 ? `, ${String((order.orderAddress as Record<string, unknown>).addressLine2)}` : ""}
+                                      {(order.orderAddress as Record<string, unknown>).city ? `, ${String((order.orderAddress as Record<string, unknown>).city)}` : ""}
                                     </p>
                                   </div>
                                 )}
@@ -773,24 +774,24 @@ const [loadingTracking, setLoadingTracking] = useState(false);
                             {/* Price & Quantity */}
                             <div className="text-right">
                               <p className="text-sm font-bold text-gray-900">
-                                {order.price} {order.currency as string}
+                                {order.price} {String(order.currency ?? "TL")}
                               </p>
                               <p className="text-xs text-gray-500">
-                                Miktar: {order.quantity}
+                                Miktar: {String(order.quantity ?? "—")}
                               </p>
                             </div>
 
                             {/* Order Date */}
-                            {order.timestamp && (
+                            {order.timestampForSorting && (
                               <div className="text-xs text-gray-500 flex items-center gap-1">
                                 <Calendar className="w-3 h-3" />
-                                {formatDate(order.timestamp)}
+                                {formatDate(order.timestampForSorting)}
                               </div>
                             )}
 
                             {/* Order ID */}
                             <p className="text-xs text-gray-400">
-                              #{order.orderId.slice(0, 8)}
+                              #{order.orderId?.slice(0, 8)}
                             </p>
                           </div>
                         </div>

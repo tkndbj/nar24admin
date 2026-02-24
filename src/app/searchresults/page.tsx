@@ -167,7 +167,7 @@ function SearchResultsContent() {
           productName: product.productName,
           price: product.price,
           category: product.category,
-          imageUrl: product.images?.[0] || "",
+          imageUrl: product.imageUrls?.[0] || "",
           createdAt: product.createdAt || Timestamp.now(),
           description: product.description || "",
         } as ProductResult);

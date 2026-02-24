@@ -219,8 +219,8 @@ export default function SearchModal({
       id: firestoreId, // Use extracted Firestore ID
       name:
         type === "shop"
-          ? (item as AlgoliaShopHit).name || (item as AlgoliaShopHit).shopName
-          : (item as AlgoliaShopProductHit).productName,
+          ? (item as AlgoliaShopHit).name || (item as AlgoliaShopHit).shopName || ""
+          : (item as AlgoliaShopProductHit).productName || "",
       type,
       data: item,
     };

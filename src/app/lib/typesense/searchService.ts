@@ -1,37 +1,49 @@
 import { typesenseClient } from './client';
 import type { SearchParams } from 'typesense/lib/Typesense/Documents';
 
+// Matches the actual Typesense 'orders' collection schema
+// Plus optional fields that may come from Firestore enrichment
 export interface OrderHit {
   id: string;
-  orderId: string;
-  productName: string;
-  brandModel: string;
-  buyerName: string;
-  sellerName: string;
-  category: string;
-  gatheringStatus: string;
-  shipmentStatus: string;
-  price: number;
-  quantity: number;
-  timestamp: {
-    _seconds: number;
-    _nanoseconds: number;
-  };
-  [key: string]: string | number | boolean | { _seconds: number; _nanoseconds: number; } | string[] | number[] | {
-    addressLine1?: string;
-    addressLine2?: string;
-    city?: string;
-  };
+  productName?: string;
+  price?: number;
+  category?: string;
+  subcategory?: string;
+  brandModel?: string;
+  shipmentStatus?: string;
+  buyerName?: string;
+  sellerName?: string;
+  buyerId?: string;
+  sellerId?: string;
+  shopId?: string;
+  orderId?: string;
+  productId?: string;
+  searchableText?: string;
+  timestampForSorting?: number;
+  // Enrichment fields (from Firestore, not in Typesense schema)
+  gatheringStatus?: string;
+  distributionStatus?: string;
+  allItemsGathered?: boolean;
+  quantity?: number;
+  currency?: string;
+  condition?: string;
+  productImage?: string;
+  sellerContactNo?: string;
+  orderAddress?: Record<string, string>;
+  timestamp?: { _seconds: number; _nanoseconds: number };
 }
 
 /** @deprecated Use OrderHit instead */
 export type AlgoliaOrderHit = OrderHit;
 
 export interface SearchFilters {
-  gatheringStatus?: string | string[];
   shipmentStatus?: string | string[];
-  distributionStatus?: string | string[];
-  allItemsGathered?: boolean;
+  category?: string | string[];
+  subcategory?: string | string[];
+  buyerId?: string;
+  sellerId?: string;
+  shopId?: string;
+  [key: string]: unknown;
 }
 
 export interface SearchOptions {
@@ -92,9 +104,9 @@ export async function searchOrders(
 
     const searchParams: Record<string, unknown> = {
       q: query.trim() || '*',
-      query_by: 'productName,brandModel,buyerName,sellerName,category,orderId',
+      query_by: 'productName,brandModel,buyerName,sellerName,category,orderId,searchableText',
       per_page: hitsPerPage,
-      page: page + 1, // Typesense is 1-indexed
+      page: page + 1,
     };
 
     if (filterString) {
@@ -124,7 +136,7 @@ export async function searchOrders(
       hits,
       nbHits: found,
       page,
-      nbPages: Math.ceil(found / hitsPerPage),
+      nbPages: hitsPerPage > 0 ? Math.ceil(found / hitsPerPage) : 0,
       hitsPerPage,
     };
   } catch (error) {
@@ -158,7 +170,8 @@ export async function searchOrdersByField(
 }
 
 /**
- * Get gathering items (pending or assigned status)
+ * Get gathering items — filters by shipmentStatus since gatheringStatus
+ * is not in the Typesense schema
  */
 export async function searchGatheringItems(
   query: string = ''
@@ -166,7 +179,7 @@ export async function searchGatheringItems(
   try {
     const result = await searchOrders(query, {
       filters: {
-        gatheringStatus: ['pending', 'assigned'],
+        shipmentStatus: ['pending', 'assigned'],
       },
       hitsPerPage: 1000,
     });
@@ -179,7 +192,7 @@ export async function searchGatheringItems(
 }
 
 /**
- * Get distribution items (ready for distribution or assigned to distributor)
+ * Get distribution items
  */
 export async function searchDistributionItems(
   query: string = ''
@@ -187,8 +200,7 @@ export async function searchDistributionItems(
   try {
     const result = await searchOrders(query, {
       filters: {
-        allItemsGathered: true,
-        distributionStatus: ['ready', 'assigned'],
+        shipmentStatus: ['ready', 'in_transit'],
       },
       hitsPerPage: 1000,
     });
@@ -209,7 +221,7 @@ export async function searchDeliveredItems(
   try {
     const result = await searchOrders(query, {
       filters: {
-        distributionStatus: 'delivered',
+        shipmentStatus: 'delivered',
       },
       hitsPerPage: 1000,
     });
@@ -222,7 +234,8 @@ export async function searchDeliveredItems(
 }
 
 /**
- * Get orders by multiple IDs
+ * Get orders by multiple IDs.
+ * IDs should be in format "orders_{firestoreId}"
  */
 export async function getOrdersByIds(
   orderIds: string[]
@@ -232,7 +245,6 @@ export async function getOrdersByIds(
   try {
     const collectionName = process.env.NEXT_PUBLIC_TYPESENSE_ORDERS_COLLECTION || 'orders';
 
-    // Split into chunks to avoid overly long filter strings
     const chunks: string[][] = [];
     for (let i = 0; i < orderIds.length; i += 100) {
       chunks.push(orderIds.slice(i, i + 100));
