@@ -1,4 +1,5 @@
 import { typesenseClient } from './client';
+import type { SearchParams } from 'typesense/lib/Typesense/Documents';
 
 export interface OrderHit {
   id: string;
@@ -104,16 +105,18 @@ export async function searchOrders(
       searchParams.include_fields = attributesToRetrieve.join(',');
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await typesenseClient
       .collections(collectionName)
       .documents()
-      .search(searchParams as any);
+      .search(searchParams as SearchParams<object>);
 
-    const hits = ((result.hits as any[]) || []).map(hit => ({
-      ...hit.document,
-      id: String(hit.document?.id ?? ''),
-    })) as OrderHit[];
+    const hits = (result.hits || []).map(hit => {
+      const doc = hit.document as Record<string, unknown> | undefined;
+      return {
+        ...doc,
+        id: String(doc?.id ?? ''),
+      } as OrderHit;
+    });
 
     const found = result.found || 0;
 

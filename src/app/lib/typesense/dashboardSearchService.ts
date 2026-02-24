@@ -1,4 +1,5 @@
 import { typesenseClient } from "./client";
+import type { SearchParams } from "typesense/lib/Typesense/Documents";
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -261,19 +262,18 @@ async function performSearch<T extends { id?: string }>(
       searchParams.sort_by = sortBy;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await typesenseClient
       .collections(collectionName)
       .documents()
-      .search(searchParams as any);
+      .search(searchParams as SearchParams<object>);
 
-    const hits = ((result.hits as any[]) || []).map(hit => {
-      const doc = hit.document as T & { id?: string };
+    const hits = (result.hits || []).map(hit => {
+      const doc = hit.document as (T & { id?: string }) | undefined;
       // Map Typesense `id` to `objectID` for backward compatibility
       return {
         ...doc,
-        objectID: doc.id || "",
-      } as T;
+        objectID: doc?.id || "",
+      } as unknown as T;
     });
 
     const found = result.found || 0;
