@@ -38,6 +38,8 @@ import {
   Percent,
   CreditCard,
   Archive,
+  UtensilsCrossed,
+  ShoppingBag,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useActivityLog, createPageLogger } from "@/hooks/useActivityLog";
@@ -187,6 +189,8 @@ const NAV_CATEGORIES = [
     color: "green",
     items: [
       { path: "shopapplications", label: "Dukkan Basvurulari", icon: Store },
+      { path: "restaurantapplications", label: "Restoran Basvurulari", icon: UtensilsCrossed },
+      { path: "marketapplications", label: "Market Basvurulari", icon: ShoppingBag },
     ],
   },
   {
@@ -320,6 +324,8 @@ const PendingCard = ({
     blue: "bg-blue-50 border-blue-200 hover:bg-blue-100",
     green: "bg-emerald-50 border-emerald-200 hover:bg-emerald-100",
     purple: "bg-purple-50 border-purple-200 hover:bg-purple-100",
+    orange: "bg-orange-50 border-orange-200 hover:bg-orange-100",
+    teal: "bg-teal-50 border-teal-200 hover:bg-teal-100",
   };
   const textColors: Record<string, string> = {
     yellow: "text-amber-700",
@@ -327,6 +333,8 @@ const PendingCard = ({
     blue: "text-blue-700",
     green: "text-emerald-700",
     purple: "text-purple-700",
+    orange: "text-orange-700",
+    teal: "text-teal-700",
   };
   const iconBg: Record<string, string> = {
     yellow: "bg-amber-100",
@@ -334,6 +342,8 @@ const PendingCard = ({
     blue: "bg-blue-100",
     green: "bg-emerald-100",
     purple: "bg-purple-100",
+    orange: "bg-orange-100",
+    teal: "bg-teal-100",
   };
 
   if (count === 0) return null;
@@ -400,6 +410,8 @@ export default function Dashboard() {
 
   // Pending counts
   const [pendingShopApps, setPendingShopApps] = useState(0);
+  const [pendingRestaurantApps, setPendingRestaurantApps] = useState(0);
+  const [pendingMarketApps, setPendingMarketApps] = useState(0);
   const [pendingProductApps, setPendingProductApps] = useState(0);
   const [pendingRefunds, setPendingRefunds] = useState(0);
   const [pendingHelp, setPendingHelp] = useState(0);
@@ -451,10 +463,22 @@ export default function Dashboard() {
         setTotalOrders(ordersCount.data().count);
 
         // Pending counts - use where clause for status
-        const [shopAppsCount, refundsCount, helpCount] = await Promise.all([
+        const [shopAppsCount, restaurantAppsCount, marketAppsCount, refundsCount, helpCount] = await Promise.all([
           getCountFromServer(
             query(
               collection(db, "shopApplications"),
+              where("status", "==", "pending"),
+            ),
+          ),
+          getCountFromServer(
+            query(
+              collection(db, "restaurantApplications"),
+              where("status", "==", "pending"),
+            ),
+          ),
+          getCountFromServer(
+            query(
+              collection(db, "marketApplications"),
               where("status", "==", "pending"),
             ),
           ),
@@ -473,6 +497,8 @@ export default function Dashboard() {
         ]);
 
         setPendingShopApps(shopAppsCount.data().count);
+        setPendingRestaurantApps(restaurantAppsCount.data().count);
+        setPendingMarketApps(marketAppsCount.data().count);
         setPendingRefunds(refundsCount.data().count);
         setPendingHelp(helpCount.data().count);
 
@@ -536,7 +562,7 @@ export default function Dashboard() {
 
   const dayCosts = calculateCosts(dailyMetricsData);
   const totalPendingActions =
-    pendingShopApps + pendingProductApps + pendingRefunds + pendingHelp;
+    pendingShopApps + pendingRestaurantApps + pendingMarketApps + pendingProductApps + pendingRefunds + pendingHelp;
 
   return (
     <ProtectedRoute>
@@ -706,6 +732,22 @@ export default function Dashboard() {
                       icon={Store}
                       color="green"
                       path="shopapplications"
+                      onClick={handleNavigation}
+                    />
+                    <PendingCard
+                      title="Restoran Basvurusu"
+                      count={pendingRestaurantApps}
+                      icon={UtensilsCrossed}
+                      color="orange"
+                      path="restaurantapplications"
+                      onClick={handleNavigation}
+                    />
+                    <PendingCard
+                      title="Market Basvurusu"
+                      count={pendingMarketApps}
+                      icon={ShoppingBag}
+                      color="teal"
+                      path="marketapplications"
                       onClick={handleNavigation}
                     />
                     <PendingCard
