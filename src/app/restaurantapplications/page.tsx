@@ -37,6 +37,8 @@ interface RestaurantApplication {
   contactNo: string;
   address: string;
   foodType: string[];
+  workingDays: string[];
+  workingHours: { open: string; close: string };
   profileImageUrl: string;
   taxPlateCertificateUrl: string;
   ownerId: string;
@@ -355,6 +357,8 @@ export default function RestaurantApplicationsPage() {
         latitude: application.latitude,
         longitude: application.longitude,
         foodType: application.foodType,
+        workingDays: application.workingDays ?? [],
+        workingHours: application.workingHours ?? { open: "", close: "" },
         profileImageUrl: application.profileImageUrl,
         taxPlateCertificateUrl: application.taxPlateCertificateUrl,
         createdAt: serverTimestamp(),
@@ -606,10 +610,9 @@ export default function RestaurantApplicationsPage() {
                         </div>
                       </div>
 
-                      {/* Images */}
+                      {/* Images + Schedule */}
                       <div className="col-span-2">
-                        <div className="flex items-center gap-2">
-                          {/* Tax Certificate */}
+                        <div className="flex items-center gap-2 mb-1.5">
                           {application.taxPlateCertificateUrl && (
                             <button
                               onClick={() => openImageModal(application, "tax")}
@@ -619,6 +622,19 @@ export default function RestaurantApplicationsPage() {
                             </button>
                           )}
                         </div>
+                        {application.workingHours && (
+                          <p className="text-xs text-gray-500">
+                            {application.workingHours.open} –{" "}
+                            {application.workingHours.close}
+                          </p>
+                        )}
+                        {application.workingDays?.length > 0 && (
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {application.workingDays.length === 7
+                              ? "Every day"
+                              : `${application.workingDays.length} days/week`}
+                          </p>
+                        )}
                       </div>
 
                       {/* Date */}
