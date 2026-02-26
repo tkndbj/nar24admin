@@ -38,6 +38,7 @@ interface RestaurantApplication {
   address: string;
   foodType: string[];
   workingDays: string[];
+  cuisineTypes: string[];
   workingHours: { open: string; close: string };
   profileImageUrl: string;
   taxPlateCertificateUrl: string;
@@ -357,6 +358,7 @@ export default function RestaurantApplicationsPage() {
         latitude: application.latitude,
         longitude: application.longitude,
         foodType: application.foodType,
+        cuisineTypes: application.cuisineTypes ?? [],
         workingDays: application.workingDays ?? [],
         workingHours: application.workingHours ?? { open: "", close: "" },
         profileImageUrl: application.profileImageUrl,
