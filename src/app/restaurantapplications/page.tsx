@@ -36,8 +36,7 @@ interface RestaurantApplication {
   name: string;
   contactNo: string;
   address: string;
-  categories?: string[];
-  coverImageUrl: string;
+  foodType: string[];
   profileImageUrl: string;
   taxPlateCertificateUrl: string;
   ownerId: string;
@@ -293,13 +292,13 @@ export default function RestaurantApplicationsPage() {
               ({
                 id: doc.id,
                 ...doc.data(),
-              } as RestaurantApplication)
+              }) as RestaurantApplication,
           )
           .filter((app) => app.status === "pending");
 
         setApplications(applicationsData);
         setLoading(false);
-      }
+      },
     );
 
     return () => unsubscribe();
@@ -315,39 +314,13 @@ export default function RestaurantApplicationsPage() {
     });
   };
 
-  const getCategoryName = (categoryCode: string) => {
-    const categoryMap: { [key: string]: string } = {
-      electronics: "Elektronik",
-      clothing: "Giyim",
-      food: "Yiyecek",
-      books: "Kitap",
-      home: "Ev & Yaşam",
-      sports: "Spor",
-      beauty: "Güzellik",
-      automotive: "Otomotiv",
-    };
-    return categoryMap[categoryCode] || categoryCode;
-  };
-
   const openImageModal = (
     application: RestaurantApplication,
-    imageType: "cover" | "profile" | "tax"
+    imageType: "cover" | "profile" | "tax",
   ) => {
     const images = [];
 
-    if (imageType === "cover" && application.coverImageUrl) {
-      const coverUrls = application.coverImageUrl
-        .split(",")
-        .map((url) => url.trim())
-        .filter((url) => url);
-      coverUrls.forEach((url, index) => {
-        images.push({
-          url,
-          type: "cover",
-          title: `Kapak Resmi ${index + 1}`,
-        });
-      });
-    } else if (imageType === "profile" && application.profileImageUrl) {
+    if (imageType === "profile" && application.profileImageUrl) {
       images.push({
         url: application.profileImageUrl,
         type: "profile",
@@ -374,27 +347,19 @@ export default function RestaurantApplicationsPage() {
   const approveApplication = async (application: RestaurantApplication) => {
     setProcessing(true);
     try {
-      const coverImageUrls = application.coverImageUrl
-        .split(",")
-        .map((url) => url.trim())
-        .filter((url) => url.length > 0);
-
       const restaurantRef = await addDoc(collection(db, "restaurants"), {
         ownerId: application.ownerId,
         name: application.name,
         contactNo: application.contactNo,
         address: application.address,
-        categories: application.categories,
         latitude: application.latitude,
         longitude: application.longitude,
-        coverImageUrls: coverImageUrls,
+        foodType: application.foodType,
         profileImageUrl: application.profileImageUrl,
         taxPlateCertificateUrl: application.taxPlateCertificateUrl,
         createdAt: serverTimestamp(),
         isBoosted: false,
         isActive: true,
-        stockBadgeAcknowledged: true,
-        transactionsBadgeAcknowledged: true,
         averageRating: 0.0,
         reviewCount: 0,
         clickCount: 0,
@@ -421,14 +386,14 @@ export default function RestaurantApplicationsPage() {
           message_en: "Tap to visit your restaurant.",
           message_tr: "Restoranınızı ziyaret etmek için dokunun.",
           message_ru: "Нажмите, чтобы посетить свой ресторан.",
-        }
+        },
       );
 
       // Send welcome email
       try {
         const shopWelcomeEmailFunction = httpsCallable(
           functions,
-          "shopWelcomeEmail"
+          "shopWelcomeEmail",
         );
 
         await shopWelcomeEmailFunction({
@@ -483,7 +448,7 @@ export default function RestaurantApplicationsPage() {
           message_tr: "Restoran başvurunuz reddedildi.",
           message_ru: "Ваша заявка на ресторан была отклонена.",
           rejectionReason: rejectionReason,
-        }
+        },
       );
 
       // Log admin activity
@@ -623,23 +588,20 @@ export default function RestaurantApplicationsPage() {
                         </div>
                       </div>
 
-                      {/* Categories */}
+                      {/* Food Types */}
                       <div className="col-span-2">
                         <div className="flex flex-wrap gap-1">
-                          {(application.categories || [])
-                            .slice(0, 2)
-                            .map((category, index) => (
+                          {application.foodType?.length > 0 ? (
+                            application.foodType.map((type) => (
                               <span
-                                key={index}
-                                className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs font-medium"
+                                key={type}
+                                className="px-2 py-0.5 bg-orange-50 border border-orange-200 text-orange-700 text-xs rounded-full"
                               >
-                                {getCategoryName(category)}
+                                {type}
                               </span>
-                            ))}
-                          {(application.categories || []).length > 2 && (
-                            <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium">
-                              +{(application.categories || []).length - 2}
-                            </span>
+                            ))
+                          ) : (
+                            <span className="text-sm text-gray-400">—</span>
                           )}
                         </div>
                       </div>
@@ -647,30 +609,6 @@ export default function RestaurantApplicationsPage() {
                       {/* Images */}
                       <div className="col-span-2">
                         <div className="flex items-center gap-2">
-                          {/* Cover Images */}
-                          {application.coverImageUrl && (
-                            <button
-                              onClick={() =>
-                                openImageModal(application, "cover")
-                              }
-                              className="relative"
-                            >
-                              <img
-                                src={application.coverImageUrl
-                                  .split(",")[0]
-                                  .trim()}
-                                alt="Kapak"
-                                className="w-8 h-8 object-cover rounded border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
-                              />
-                              {application.coverImageUrl.split(",").length >
-                                1 && (
-                                <div className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-medium">
-                                  {application.coverImageUrl.split(",").length}
-                                </div>
-                              )}
-                            </button>
-                          )}
-
                           {/* Tax Certificate */}
                           {application.taxPlateCertificateUrl && (
                             <button
@@ -745,7 +683,7 @@ export default function RestaurantApplicationsPage() {
               ...prev,
               currentIndex: Math.min(
                 prev.images.length - 1,
-                prev.currentIndex + 1
+                prev.currentIndex + 1,
               ),
             }))
           }
