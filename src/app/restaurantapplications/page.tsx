@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { auth } from "@/app/lib/firebase";
 import { logAdminActivity } from "@/services/activityLogService";
 import {
   ArrowLeft,
@@ -388,9 +389,14 @@ export default function RestaurantApplicationsPage() {
         verified: true,
       });
 
+      const idToken = await auth.currentUser!.getIdToken();
+
       const syncResponse = await fetch("/api/sync-claims", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
         body: JSON.stringify({ uid: application.ownerId }),
       });
 

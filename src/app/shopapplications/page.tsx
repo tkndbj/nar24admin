@@ -27,7 +27,7 @@ import {
   serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
-import { db, functions } from "../lib/firebase";
+import { auth, db, functions } from "../lib/firebase";
 import { useRouter } from "next/navigation";
 import { httpsCallable } from "firebase/functions";
 
@@ -410,9 +410,14 @@ export default function ShopApplicationsPage() {
         verified: true,
       });
 
+      const idToken = await auth.currentUser!.getIdToken();
+
       const syncResponse = await fetch("/api/sync-claims", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
         body: JSON.stringify({ uid: application.ownerId }),
       });
 
