@@ -48,6 +48,7 @@ interface RestaurantApplication {
   latitude: number;
   longitude: number;
   email: string;
+  minOrderPrices: { mainRegion: string; subregion: string; minOrderPrice: number }[];
 }
 
 interface RejectionModalProps {
@@ -357,10 +358,12 @@ export default function RestaurantApplicationsPage() {
         address: application.address,
         latitude: application.latitude,
         longitude: application.longitude,
+        businessType: "restaurant",
         foodType: application.foodType,
         cuisineTypes: application.cuisineTypes ?? [],
         workingDays: application.workingDays ?? [],
         workingHours: application.workingHours ?? { open: "", close: "" },
+        minOrderPrices: application.minOrderPrices ?? [],
         profileImageUrl: application.profileImageUrl,
         taxPlateCertificateUrl: application.taxPlateCertificateUrl,
         createdAt: serverTimestamp(),
