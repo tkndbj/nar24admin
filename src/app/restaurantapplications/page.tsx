@@ -388,8 +388,15 @@ export default function RestaurantApplicationsPage() {
         verified: true,
       });
 
-      const syncClaims = httpsCallable(functions, "syncUserClaimsCallable");
-      await syncClaims({ uid: application.ownerId });
+      const syncResponse = await fetch("/api/sync-claims", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: application.ownerId }),
+      });
+
+      if (!syncResponse.ok) {
+        throw new Error("Claims sync failed");
+      }
 
       await addDoc(
         collection(db, "users", application.ownerId, "notifications"),
