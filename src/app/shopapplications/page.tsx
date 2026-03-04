@@ -293,13 +293,13 @@ export default function ShopApplicationsPage() {
               ({
                 id: doc.id,
                 ...doc.data(),
-              } as ShopApplication)
+              }) as ShopApplication,
           )
           .filter((app) => app.status === "pending");
 
         setApplications(applicationsData);
         setLoading(false);
-      }
+      },
     );
 
     return () => unsubscribe();
@@ -331,7 +331,7 @@ export default function ShopApplicationsPage() {
 
   const openImageModal = (
     application: ShopApplication,
-    imageType: "cover" | "profile" | "tax"
+    imageType: "cover" | "profile" | "tax",
   ) => {
     const images = [];
 
@@ -378,7 +378,7 @@ export default function ShopApplicationsPage() {
         .split(",")
         .map((url) => url.trim())
         .filter((url) => url.length > 0);
-  
+
       const shopRef = await addDoc(collection(db, "shops"), {
         ownerId: application.ownerId,
         name: application.name,
@@ -400,16 +400,19 @@ export default function ShopApplicationsPage() {
         clickCount: 0,
         followerCount: 0,
       });
-  
+
       await updateDoc(doc(db, "shopApplications", application.id), {
         status: "approved",
       });
-  
+
       await updateDoc(doc(db, "users", application.ownerId), {
         [`memberOfShops.${shopRef.id}`]: "owner",
         verified: true,
       });
-  
+
+      const syncClaims = httpsCallable(functions, "syncUserClaimsCallable");
+      await syncClaims({ uid: application.ownerId });
+
       await addDoc(
         collection(db, "users", application.ownerId, "notifications"),
         {
@@ -421,21 +424,21 @@ export default function ShopApplicationsPage() {
           message_en: "Tap to visit your shop.",
           message_tr: "Mağazanızı ziyaret etmek için dokunun.",
           message_ru: "Нажмите, чтобы посетить свой магазин.",
-        }
+        },
       );
-  
+
       // ✨ ADD THIS SECTION - Send welcome email
       try {
         const shopWelcomeEmailFunction = httpsCallable(
           functions,
-          "shopWelcomeEmail"
+          "shopWelcomeEmail",
         );
-        
+
         await shopWelcomeEmailFunction({
           shopId: shopRef.id,
           email: application.email, // This comes from the application data
         });
-        
+
         console.log("Welcome email sent successfully");
       } catch (emailError) {
         console.error("Error sending welcome email:", emailError);
@@ -484,7 +487,7 @@ export default function ShopApplicationsPage() {
           message_tr: "Mağaza başvurunuz reddedildi.",
           message_ru: "Ваша заявка на магазин была отклонена.",
           rejectionReason: rejectionReason,
-        }
+        },
       );
 
       // Log admin activity
@@ -746,7 +749,7 @@ export default function ShopApplicationsPage() {
               ...prev,
               currentIndex: Math.min(
                 prev.images.length - 1,
-                prev.currentIndex + 1
+                prev.currentIndex + 1,
               ),
             }))
           }

@@ -48,7 +48,11 @@ interface RestaurantApplication {
   latitude: number;
   longitude: number;
   email: string;
-  minOrderPrices: { mainRegion: string; subregion: string; minOrderPrice: number }[];
+  minOrderPrices: {
+    mainRegion: string;
+    subregion: string;
+    minOrderPrice: number;
+  }[];
 }
 
 interface RejectionModalProps {
@@ -383,6 +387,9 @@ export default function RestaurantApplicationsPage() {
         [`memberOfRestaurants.${restaurantRef.id}`]: "owner",
         verified: true,
       });
+
+      const syncClaims = httpsCallable(functions, "syncUserClaimsCallable");
+      await syncClaims({ uid: application.ownerId });
 
       await addDoc(
         collection(db, "users", application.ownerId, "notifications"),
