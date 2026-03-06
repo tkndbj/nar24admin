@@ -139,9 +139,32 @@ export async function POST(request: NextRequest): Promise<NextResponse<VerifyAut
       );
     }
 
+    // Ensure custom claims match Firestore admin status
+    // This keeps token claims in sync so Firestore security rules work
+    const tokenIsAdmin = decodedToken.isAdmin === true;
+    const tokenIsSemiAdmin = decodedToken.isSemiAdmin === true;
+
+    if (tokenIsAdmin !== isAdmin || tokenIsSemiAdmin !== isSemiAdmin) {
+      try {
+        const userRecord = await auth.getUser(decodedToken.uid);
+        const existingClaims = userRecord.customClaims || {};
+        await auth.setCustomUserClaims(decodedToken.uid, {
+          ...existingClaims,
+          isAdmin,
+          isSemiAdmin,
+        });
+      } catch (claimsError) {
+        console.error("Failed to sync custom claims:", claimsError);
+      }
+    }
+
     // Return verified user data
+    // claimsUpdated tells the client to refresh the token once more
+    const claimsUpdated = tokenIsAdmin !== isAdmin || tokenIsSemiAdmin !== isSemiAdmin;
+
     return NextResponse.json({
       success: true,
+      claimsUpdated,
       user: {
         uid: decodedToken.uid,
         email: decodedToken.email,

@@ -65,6 +65,7 @@ interface AuthProviderProps {
  */
 async function verifyAdminStatusServerSide(idToken: string): Promise<{
   success: boolean;
+  claimsUpdated?: boolean;
   user?: UserData;
   error?: string;
   code?: string;
@@ -83,6 +84,7 @@ async function verifyAdminStatusServerSide(idToken: string): Promise<{
     if (data.success) {
       return {
         success: true,
+        claimsUpdated: data.claimsUpdated || false,
         user: {
           uid: data.user.uid,
           email: data.user.email || "",
@@ -222,6 +224,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             const result = await verifyAdminStatusServerSide(idToken);
 
             if (result.success && result.user) {
+              // If the server updated custom claims, refresh the token again
+              // so the Firestore SDK picks up the new isAdmin/isSemiAdmin claims
+              if (result.claimsUpdated) {
+                await firebaseUser.getIdToken(true);
+              }
+
               setUser(result.user);
               setLogoutReason(null);
               // Update last activity on successful verification
