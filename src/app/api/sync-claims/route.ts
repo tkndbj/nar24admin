@@ -29,7 +29,13 @@ export async function POST(request: NextRequest) {
     }
 
     const userData = userDoc.data()!;
+
+    // Get existing claims so we don't overwrite isAdmin, isSemiAdmin, etc.
+    const userRecord = await auth.getUser(uid);
+    const existingClaims = userRecord.customClaims || {};
+
     await auth.setCustomUserClaims(uid, {
+      ...existingClaims,
       shops: userData.memberOfShops ?? {},
       restaurants: userData.memberOfRestaurants ?? {},
     });
