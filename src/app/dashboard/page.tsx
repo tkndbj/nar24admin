@@ -125,7 +125,8 @@ const NAV_CATEGORIES = [
     icon: ShoppingCart,
     color: "blue",
     items: [
-      { path: "orders", label: "Siparisler", icon: Package },
+      { path: "orders", label: "Ürün Siparisleri", icon: Package },
+      { path: "food-orders", label: "Yemek Siparisleri", icon: Package },
       { path: "shipment", label: "Teslimat Yonetimi", icon: Truck },
       { path: "pickup-points", label: "Gel-Al Noktalari", icon: MapPin },
       { path: "paymentissues", label: "Ödeme Sorunları", icon: CreditCard },
@@ -136,7 +137,11 @@ const NAV_CATEGORIES = [
     icon: DollarSign,
     color: "green",
     items: [
-      { path: "weekly-accounting", label: "Haftalık Satış Raporları", icon: BarChart3 },
+      {
+        path: "weekly-accounting",
+        label: "Haftalık Satış Raporları",
+        icon: BarChart3,
+      },
     ],
   },
   {
@@ -189,8 +194,16 @@ const NAV_CATEGORIES = [
     color: "green",
     items: [
       { path: "shopapplications", label: "Dukkan Basvurulari", icon: Store },
-      { path: "restaurantapplications", label: "Restoran Basvurulari", icon: UtensilsCrossed },
-      { path: "marketapplications", label: "Market Basvurulari", icon: ShoppingBag },
+      {
+        path: "restaurantapplications",
+        label: "Restoran Basvurulari",
+        icon: UtensilsCrossed,
+      },
+      {
+        path: "marketapplications",
+        label: "Market Basvurulari",
+        icon: ShoppingBag,
+      },
     ],
   },
   {
@@ -199,7 +212,11 @@ const NAV_CATEGORIES = [
     color: "indigo",
     items: [
       { path: "analytics-center", label: "Genel Analizler", icon: BarChart3 },
-      { path: "analytics-center/details", label: "Aylık Analiz Özeti", icon: FileText },
+      {
+        path: "analytics-center/details",
+        label: "Aylık Analiz Özeti",
+        icon: FileText,
+      },
     ],
   },
   {
@@ -463,7 +480,13 @@ export default function Dashboard() {
         setTotalOrders(ordersCount.data().count);
 
         // Pending counts - use where clause for status
-        const [shopAppsCount, restaurantAppsCount, marketAppsCount, refundsCount, helpCount] = await Promise.all([
+        const [
+          shopAppsCount,
+          restaurantAppsCount,
+          marketAppsCount,
+          refundsCount,
+          helpCount,
+        ] = await Promise.all([
           getCountFromServer(
             query(
               collection(db, "shopApplications"),
@@ -562,7 +585,12 @@ export default function Dashboard() {
 
   const dayCosts = calculateCosts(dailyMetricsData);
   const totalPendingActions =
-    pendingShopApps + pendingRestaurantApps + pendingMarketApps + pendingProductApps + pendingRefunds + pendingHelp;
+    pendingShopApps +
+    pendingRestaurantApps +
+    pendingMarketApps +
+    pendingProductApps +
+    pendingRefunds +
+    pendingHelp;
 
   return (
     <ProtectedRoute>
