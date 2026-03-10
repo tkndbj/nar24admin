@@ -17,12 +17,11 @@ import {
   limit,
   startAfter,
   getDocs,
-  doc,
-  updateDoc,
   DocumentData,
   QueryDocumentSnapshot,
 } from "firebase/firestore";
-import { db } from "@/app/lib/firebase";
+import { db, functions } from "@/app/lib/firebase";
+import { httpsCallable } from "firebase/functions";
 import {
   UtensilsCrossed,
   ArrowLeft,
@@ -523,9 +522,8 @@ function CargoManagerModal({ onClose }: { onClose: () => void }) {
     setSaving(true);
     setSuccessMsg(null);
     try {
-      await updateDoc(doc(db, "users", user.id), {
-        foodcargoguy: makeCargoGuy,
-      });
+      const setCargoGuyClaim = httpsCallable(functions, "setCargoGuyClaim");
+      await setCargoGuyClaim({ userId: user.id, value: makeCargoGuy });
       setSuccessMsg(
         makeCargoGuy
           ? `${user.displayName ?? user.email} kurye olarak eklendi.`
