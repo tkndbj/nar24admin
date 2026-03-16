@@ -98,7 +98,7 @@ async function uploadToStorage(file: File, path: string): Promise<string> {
 
 function AdminCreateRestaurantContent() {
   const router = useRouter();
-  const { user: authUser } = useAuth();
+
 
   // ── Basic info ────────────────────────────────────────────────────────────
   const [name, setName]           = useState("");
