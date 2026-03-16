@@ -189,6 +189,18 @@ const NAV_CATEGORIES = [
     ],
   },
   {
+    title: "Admin Yonetimi",
+    icon: Shield,
+    color: "red",
+    items: [
+      {
+        path: "admin-create-restaurant",
+        label: "Restaurant Olustur",
+        icon: UtensilsCrossed,
+      },
+    ],
+  },
+  {
     title: "Dukkan Yonetimi",
     icon: Building2,
     color: "green",
