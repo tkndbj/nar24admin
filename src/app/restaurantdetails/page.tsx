@@ -104,15 +104,19 @@ interface RestaurantData {
 }
 
 interface MenuItemData {
-  id: string;
-  name: string;
-  price: number;
-  currency: string;
-  imageUrls: string[];
-  isAvailable: boolean;
-  restaurantId: string;
-  category?: string;
-}
+    id: string;
+    name: string;
+    description?: string;
+    price: number;
+    imageUrl: string;        // single string, not an array
+    isAvailable: boolean;
+    restaurantId: string;
+    foodCategory?: string;
+    foodType?: string;
+    preparationTime?: number;
+    extras?: { name: string; price: number }[];
+    createdAt?: Timestamp;
+  }
 
 interface ReviewData {
   id: string;
@@ -513,7 +517,7 @@ function RestaurantDetailsContent() {
       // Menu items (limit 50)
       const menuSnap = await getDocs(
         query(
-          collection(db, "restaurant_products"),
+          collection(db, "foods"),
           where("restaurantId", "==", restaurantId),
           firestoreOrderBy("createdAt", "desc"),
           limit(50)
@@ -1100,46 +1104,45 @@ function RestaurantDetailsContent() {
                             }`}
                           >
                             {menuViewMode === "grid" ? (
-                              <div>
-                                <div className="relative aspect-square">
-                                  {item.imageUrls?.[0] ? (
-                                    <Image
-                                      src={item.imageUrls[0]}
-                                      alt={item.name}
-                                      fill
-                                      className="object-cover"
-                                    />
-                                  ) : (
-                                    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                                      <UtensilsCrossed className="w-6 h-6 text-gray-400" />
-                                    </div>
-                                  )}
-                                  {!item.isAvailable && (
-                                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                                      <span className="text-[9px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded">
-                                        MEVCUT DEĞİL
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="p-2">
-                                  <h4 className="font-semibold text-gray-900 text-xs truncate">
-                                    {item.name}
-                                  </h4>
-                                  <p className="text-[10px] text-gray-600 mt-0.5">
-                                    {item.price} {item.currency}
-                                  </p>
-                                  {item.category && (
-                                    <p className="text-[9px] text-orange-600 mt-0.5">{item.category}</p>
-                                  )}
-                                </div>
-                              </div>
-                            ) : (
+  <div>
+    <div className="relative aspect-square">
+      {item.imageUrl ? (
+        <Image
+          src={item.imageUrl}
+          alt={item.name}
+          fill
+          className="object-cover"
+        />
+      ) : (
+        <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+          <UtensilsCrossed className="w-6 h-6 text-gray-400" />
+        </div>
+      )}
+      {!item.isAvailable && (
+        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+          <span className="text-[9px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded">
+            MEVCUT DEĞİL
+          </span>
+        </div>
+      )}
+    </div>
+    <div className="p-2">
+      <h4 className="font-semibold text-gray-900 text-xs truncate">{item.name}</h4>
+      <p className="text-[10px] text-gray-600 mt-0.5">{item.price} TL</p>
+      {item.foodCategory && (
+        <p className="text-[9px] text-orange-600 mt-0.5">{item.foodCategory}</p>
+      )}
+      {item.preparationTime && (
+        <p className="text-[9px] text-gray-400 mt-0.5">{item.preparationTime} dk</p>
+      )}
+    </div>
+  </div>
+) : (
                               <div className="flex items-center gap-2 p-2">
                                 <div className="relative w-12 h-12 rounded overflow-hidden flex-shrink-0">
-                                  {item.imageUrls?.[0] ? (
+                                  {item.imageUrl ? (
                                     <Image
-                                      src={item.imageUrls[0]}
+                                      src={item.imageUrl}
                                       alt={item.name}
                                       fill
                                       className="object-cover"
@@ -1162,10 +1165,10 @@ function RestaurantDetailsContent() {
                                     )}
                                   </div>
                                   <p className="text-[10px] text-gray-600">
-                                    {item.price} {item.currency}
+                                    {item.price} TL
                                   </p>
-                                  {item.category && (
-                                    <p className="text-[9px] text-orange-600">{item.category}</p>
+                                  {item.foodCategory && (
+                                    <p className="text-[9px] text-orange-600">{item.foodCategory}</p>
                                   )}
                                 </div>
                               </div>
