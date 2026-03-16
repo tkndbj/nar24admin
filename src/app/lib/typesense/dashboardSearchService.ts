@@ -70,6 +70,23 @@ export interface AlgoliaProductHit {
   [key: string]: unknown;
 }
 
+/** Matches the 'restaurants' collection */
+export interface AlgoliaRestaurantHit {
+  id: string;
+  objectID: string;
+  name?: string;
+  profileImageUrl?: string;
+  isActive?: boolean;
+  address?: string;
+  contactNo?: string;
+  businessType?: string;
+  foodType?: string[];
+  cuisineTypes?: string[];
+  averageRating?: number;
+  reviewCount?: number;
+  [key: string]: unknown;
+}
+
 export interface AlgoliaShopProductHit {
   id: string;
   objectID: string;
@@ -149,6 +166,12 @@ export interface ShopProductFilters {
   [key: string]: unknown;
 }
 
+export interface RestaurantFilters {
+  isActive?: boolean;
+  businessType?: string;
+  [key: string]: unknown;
+}
+
 // ============================================================================
 // SEARCH OPTIONS
 // ============================================================================
@@ -164,6 +187,7 @@ export interface BaseSearchOptions<T> {
 export type ShopSearchOptions = BaseSearchOptions<ShopFilters>;
 export type ProductSearchOptions = BaseSearchOptions<ProductFilters>;
 export type ShopProductSearchOptions = BaseSearchOptions<ShopProductFilters>;
+export type RestaurantSearchOptions = BaseSearchOptions<RestaurantFilters>;
 
 // ============================================================================
 // SEARCH RESPONSE TYPE
@@ -237,6 +261,7 @@ const QUERY_BY: Record<string, string> = {
   shops: "name,searchableText",
   products: "productName,brandModel,category,description,sellerName",
   shop_products: "productName,brandModel,category,description,sellerName",
+  restaurants: "name",
 };
 
 // ============================================================================
@@ -657,6 +682,19 @@ export async function searchInStockShopProducts(
     console.error("Error searching in-stock shop products:", error);
     return [];
   }
+}
+
+// ============================================================================
+// RESTAURANTS SEARCH FUNCTIONS
+// ============================================================================
+
+export async function searchRestaurants(
+  query: string = "",
+  options: RestaurantSearchOptions = {}
+): Promise<AlgoliaSearchResult<AlgoliaRestaurantHit>> {
+  const collectionName =
+    process.env.NEXT_PUBLIC_TYPESENSE_RESTAURANTS_COLLECTION || "restaurants";
+  return performSearch<AlgoliaRestaurantHit>(collectionName, query, options);
 }
 
 // ============================================================================

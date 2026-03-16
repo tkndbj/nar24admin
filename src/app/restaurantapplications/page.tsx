@@ -24,6 +24,7 @@ import {
   onSnapshot,
   doc,
   updateDoc,
+  runTransaction,
   addDoc,
   serverTimestamp,
   Timestamp,
@@ -355,7 +356,28 @@ export default function RestaurantApplicationsPage() {
 
   const approveApplication = async (application: RestaurantApplication) => {
     setProcessing(true);
+    const appRef = doc(db, "restaurantApplications", application.id);
+  
     try {
+      // ── Step 1: Atomically claim the application ──────────────────────────
+      // Only one admin wins this transaction. The second sees "processing"
+      // and bails out before any writes happen.
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(appRef);
+  
+        if (!snap.exists()) {
+          throw new Error("NOT_FOUND");
+        }
+  
+        const status = snap.data()?.status;
+        if (status !== "pending") {
+          throw new Error("ALREADY_PROCESSED");
+        }
+  
+        tx.update(appRef, { status: "processing" });
+      });
+  
+      // ── Step 2: All writes — this admin exclusively owns the application now
       const restaurantRef = await addDoc(collection(db, "restaurants"), {
         ownerId: application.ownerId,
         name: application.name,
@@ -379,18 +401,15 @@ export default function RestaurantApplicationsPage() {
         clickCount: 0,
         followerCount: 0,
       });
-
-      await updateDoc(doc(db, "restaurantApplications", application.id), {
-        status: "approved",
-      });
-
+  
+      await updateDoc(appRef, { status: "approved" });
+  
       await updateDoc(doc(db, "users", application.ownerId), {
         [`memberOfRestaurants.${restaurantRef.id}`]: "owner",
         verified: true,
       });
-
+  
       const idToken = await auth.currentUser!.getIdToken();
-
       const syncResponse = await fetch("/api/sync-claims", {
         method: "POST",
         headers: {
@@ -399,11 +418,11 @@ export default function RestaurantApplicationsPage() {
         },
         body: JSON.stringify({ uid: application.ownerId }),
       });
-
+  
       if (!syncResponse.ok) {
         throw new Error("Claims sync failed");
       }
-
+  
       await addDoc(
         collection(db, "users", application.ownerId, "notifications"),
         {
@@ -417,32 +436,40 @@ export default function RestaurantApplicationsPage() {
           message_ru: "Нажмите, чтобы посетить свой ресторан.",
         },
       );
-
-      // Send welcome email
+  
       try {
-        const shopWelcomeEmailFunction = httpsCallable(
-          functions,
-          "shopWelcomeEmail",
-        );
-
-        await shopWelcomeEmailFunction({
-          shopId: restaurantRef.id,
-          email: application.email,
-        });
-
-        console.log("Welcome email sent successfully");
+        const shopWelcomeEmailFunction = httpsCallable(functions, "shopWelcomeEmail");
+        await shopWelcomeEmailFunction({ shopId: restaurantRef.id, email: application.email });
       } catch (emailError) {
-        console.error("Error sending welcome email:", emailError);
+        // Non-fatal — application is approved, email failure shouldn't block it
+        console.error("Welcome email failed:", emailError);
       }
-
-      // Log admin activity
+  
       logAdminActivity("Restoran başvurusu onaylandı", {
         restaurantName: application.name,
       });
-
+  
       alert("Başvuru başarıyla onaylandı!");
+  
     } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === "ALREADY_PROCESSED") {
+          alert("Bu başvuru zaten başka bir yönetici tarafından işlendi.");
+          return;
+        }
+        if (error.message === "NOT_FOUND") {
+          alert("Başvuru artık mevcut değil.");
+          return;
+        }
+      }
       console.error("Error approving application:", error);
+      // If we already flipped to "processing" but then failed, reset to "pending"
+      // so the application doesn't get stuck
+      try {
+        await updateDoc(appRef, { status: "pending" });
+      } catch (rollbackError) {
+        console.error("CRITICAL: Failed to reset application status:", rollbackError);
+      }
       alert("Onaylama sırasında hata oluştu");
     } finally {
       setProcessing(false);

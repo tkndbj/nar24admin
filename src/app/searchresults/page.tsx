@@ -9,9 +9,11 @@ import {
   searchShops,
   searchProducts,
   searchShopProducts,
+  searchRestaurants,
   type AlgoliaShopHit,
   type AlgoliaProductHit,
   type AlgoliaShopProductHit,
+  type AlgoliaRestaurantHit,
 } from "../lib/typesense/dashboardSearchService";
 import {
   Search,
@@ -28,6 +30,7 @@ import {
   X,
   TrendingUp,
   ShoppingBag,
+  UtensilsCrossed,
 } from "lucide-react";
 
 interface UserResult {
@@ -67,7 +70,18 @@ interface ShopResult {
   category?: string;
 }
 
-type SearchResult = UserResult | ProductResult | ShopResult;
+interface RestaurantResult {
+  id: string;
+  type: "restaurant";
+  name: string;
+  address?: string;
+  businessType?: string;
+  cuisineTypes?: string[];
+  averageRating?: number;
+  createdAt: Timestamp;
+}
+
+type SearchResult = UserResult | ProductResult | ShopResult | RestaurantResult;
 
 // Helper function to extract Firestore doc ID from search objectID
 function extractFirestoreId(objectID: string, collectionName: string): string {
@@ -106,7 +120,7 @@ function SearchResultsContent() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<
-    "all" | "user" | "product" | "shop"
+    "all" | "user" | "product" | "shop" | "restaurant"
   >("all");
   const [searchTerm, setSearchTerm] = useState(query);
 
@@ -128,12 +142,13 @@ function SearchResultsContent() {
 
     try {
       // Execute all searches in parallel for better performance
-      const [usersData, shopsData, productsData, shopProductsData] =
+      const [usersData, shopsData, productsData, shopProductsData, restaurantsData] =
         await Promise.all([
           searchUsersInFirestore(searchLower),
           searchShops(searchQuery, { hitsPerPage: 100 }),
           searchProducts(searchQuery, { hitsPerPage: 100 }),
           searchShopProducts(searchQuery, { hitsPerPage: 100 }),
+          searchRestaurants(searchQuery, { hitsPerPage: 100 }),
         ]);
 
       // Add users to results
@@ -192,6 +207,25 @@ function SearchResultsContent() {
           createdAt: shopProduct.createdAt || Timestamp.now(),
           description: "",
         } as ProductResult);
+      });
+
+      // Transform and add Typesense restaurant results
+      restaurantsData.hits.forEach((restaurant: AlgoliaRestaurantHit) => {
+        const firestoreDocId = extractFirestoreId(
+          restaurant.objectID,
+          "restaurants"
+        );
+
+        searchResults.push({
+          id: firestoreDocId,
+          type: "restaurant",
+          name: restaurant.name || "",
+          address: restaurant.address || "",
+          businessType: restaurant.businessType || "",
+          cuisineTypes: restaurant.cuisineTypes || [],
+          averageRating: restaurant.averageRating,
+          createdAt: restaurant.createdAt || Timestamp.now(),
+        } as RestaurantResult);
       });
 
       setResults(searchResults);
@@ -259,6 +293,7 @@ function SearchResultsContent() {
         (r) => r.type === "product" || r.type === "shop_product"
       ).length,
       shop: results.filter((r) => r.type === "shop").length,
+      restaurant: results.filter((r) => r.type === "restaurant").length,
     };
   }, [results]);
 
@@ -291,6 +326,8 @@ function SearchResultsContent() {
         return <Package className="w-4 h-4 text-purple-600" />;
       case "shop":
         return <Store className="w-4 h-4 text-green-600" />;
+      case "restaurant":
+        return <UtensilsCrossed className="w-4 h-4 text-orange-600" />;
       default:
         return <Search className="w-4 h-4 text-gray-600" />;
     }
@@ -305,6 +342,8 @@ function SearchResultsContent() {
         return "bg-purple-50 text-purple-700 border-purple-200";
       case "shop":
         return "bg-green-50 text-green-700 border-green-200";
+      case "restaurant":
+        return "bg-orange-50 text-orange-700 border-orange-200";
       default:
         return "bg-gray-50 text-gray-700 border-gray-200";
     }
@@ -320,6 +359,8 @@ function SearchResultsContent() {
         return "Dükkan Ürünü";
       case "shop":
         return "Dükkan";
+      case "restaurant":
+        return "Restoran";
       default:
         return type;
     }
@@ -417,6 +458,18 @@ function SearchResultsContent() {
                   Dükkanlar ({counts.shop})
                 </button>
               )}
+              {counts.restaurant > 0 && (
+                <button
+                  onClick={() => setFilterType("restaurant")}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-all ${
+                    filterType === "restaurant"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  Restoranlar ({counts.restaurant})
+                </button>
+              )}
               {counts.product > 0 && (
                 <button
                   onClick={() => setFilterType("product")}
@@ -449,7 +502,8 @@ function SearchResultsContent() {
                 result.type === "user" ||
                 result.type === "shop" ||
                 result.type === "product" ||
-                result.type === "shop_product";
+                result.type === "shop_product" ||
+                result.type === "restaurant";
 
               const handleClick = () => {
                 if (result.type === "user") {
@@ -461,6 +515,8 @@ function SearchResultsContent() {
                   result.type === "shop_product"
                 ) {
                   router.push(`/productdetails?productId=${result.id}`);
+                } else if (result.type === "restaurant") {
+                  router.push(`/restaurantdetails?restaurantId=${result.id}`);
                 }
               };
 
@@ -489,6 +545,8 @@ function SearchResultsContent() {
                           ? (result as UserResult).displayName
                           : result.type === "shop"
                           ? (result as ShopResult).name
+                          : result.type === "restaurant"
+                          ? (result as RestaurantResult).name
                           : (result as ProductResult).productName}
                       </h3>
                       <span
@@ -575,6 +633,36 @@ function SearchResultsContent() {
                       </>
                     )}
 
+                    {result.type === "restaurant" && (
+                      <>
+                        {(result as RestaurantResult).address && (
+                          <div className="flex items-center gap-2 text-gray-600">
+                            <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span className="truncate">
+                              {(result as RestaurantResult).address}
+                            </span>
+                          </div>
+                        )}
+                        {(result as RestaurantResult).cuisineTypes &&
+                          (result as RestaurantResult).cuisineTypes!.length > 0 && (
+                            <div className="flex items-center gap-2 text-gray-600">
+                              <Tag className="w-3.5 h-3.5 flex-shrink-0" />
+                              <span className="truncate">
+                                {(result as RestaurantResult).cuisineTypes!.join(", ")}
+                              </span>
+                            </div>
+                          )}
+                        {(result as RestaurantResult).businessType && (
+                          <div className="flex items-center gap-2 text-gray-600">
+                            <UtensilsCrossed className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span className="truncate">
+                              {(result as RestaurantResult).businessType}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    )}
+
                     {/* Date - Always shown, compact */}
                     <div className="flex items-center gap-2 text-gray-400 pt-1.5 mt-1.5 border-t border-gray-100">
                       <Calendar className="w-3 h-3 flex-shrink-0" />
@@ -621,7 +709,7 @@ function SearchResultsContent() {
               Arama yapmaya başlayın
             </h3>
             <p className="text-sm text-gray-600 mb-6">
-              Kullanıcı, dükkan veya ürün aramak için yukarıdaki arama çubuğunu
+              Kullanıcı, dükkan, restoran veya ürün aramak için yukarıdaki arama çubuğunu
               kullanın.
             </p>
           </div>

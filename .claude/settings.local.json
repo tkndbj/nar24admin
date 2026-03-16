@@ -8,7 +8,8 @@
       "Bash(grep:*)",
       "Bash(npm uninstall:*)",
       "Bash(npm install:*)",
-      "Bash(cd \"C:\\\\Users\\\\Digikey\\\\Desktop\\\\nar24-admin-panel\" && npx next lint --file src/app/page.tsx 2>&1 | head -20)"
+      "Bash(cd \"C:\\\\Users\\\\Digikey\\\\Desktop\\\\nar24-admin-panel\" && npx next lint --file src/app/page.tsx 2>&1 | head -20)",
+      "Bash(find:*)"
     ]
   }
 }
