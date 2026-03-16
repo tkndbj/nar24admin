@@ -45,7 +45,7 @@ import { db, storage, auth, functions } from "@/app/lib/firebase";
 import { httpsCallable } from "firebase/functions";
 import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
-import { useAuth } from "@/contexts/AuthContext";
+
 import { mainRegions, regionHierarchy } from "@/constants/regions";
 import { FoodCategoryData } from "@/constants/foodData";
 
