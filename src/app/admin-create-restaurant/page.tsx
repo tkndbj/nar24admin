@@ -236,6 +236,25 @@ function AdminCreateRestaurantContent() {
     setLoadingMore(false);
   };
 
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const toggleActive = async (restaurant: RestaurantListItem) => {
+    const newVal = restaurant.isActive === false ? true : false;
+    setTogglingId(restaurant.id);
+    try {
+      await updateDoc(doc(db, "restaurants", restaurant.id), { isActive: newVal });
+      setRestaurants((prev) =>
+        prev.map((r) => r.id === restaurant.id ? { ...r, isActive: newVal } : r)
+      );
+      toast.success(newVal ? "Restoran aktif edildi" : "Restoran pasif edildi");
+    } catch (err) {
+      console.error("Failed to toggle active:", err);
+      toast.error("Durum değiştirilemedi");
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
   // ── Google Maps ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!showMapModal) return;
@@ -855,11 +874,18 @@ function AdminCreateRestaurantContent() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-[13px] font-semibold text-gray-900 truncate">{r.name}</p>
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 border ${
-                        r.isActive !== false
-                          ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-                          : "bg-red-50 text-red-500 border-red-200"
-                      }`}>
+                      <button
+                        onClick={() => toggleActive(r)}
+                        disabled={togglingId === r.id}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${
+                          r.isActive !== false ? "bg-emerald-500" : "bg-gray-300"
+                        }`}
+                      >
+                        <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
+                          r.isActive !== false ? "translate-x-[18px]" : "translate-x-[3px]"
+                        }`} />
+                      </button>
+                      <span className={`text-[9px] font-bold ${r.isActive !== false ? "text-emerald-600" : "text-red-500"}`}>
                         {r.isActive !== false ? "Aktif" : "Pasif"}
                       </span>
                     </div>
