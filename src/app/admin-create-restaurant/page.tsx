@@ -54,6 +54,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
 import { mainRegions, regionHierarchy } from "@/constants/regions";
 import { FoodCategoryData } from "@/constants/foodData";
+import { smartCompress, formatFileSize } from "@/utils/imageCompression";
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 const PAGE_SIZE = 20;
@@ -171,18 +172,47 @@ function AdminCreateRestaurantContent() {
   const [profilePreview, setProfilePreview] = useState("");
   const [taxFile, setTaxFile]               = useState<File | null>(null);
   const [taxPreview, setTaxPreview]         = useState("");
+  const [isCompressing, setIsCompressing]   = useState(false);
 
-  const handleFileSelect = (file: File | null, type: "profile" | "tax") => {
+  // Cleanup object URL previews on unmount
+  useEffect(() => {
+    return () => {
+      if (profilePreview && !profilePreview.startsWith("http")) URL.revokeObjectURL(profilePreview);
+      if (taxPreview && !taxPreview.startsWith("http"))         URL.revokeObjectURL(taxPreview);
+    };
+  }, [profilePreview, taxPreview]);
+
+  const handleFileSelect = async (file: File | null, type: "profile" | "tax") => {
     if (!file) return;
     if (file.size > 30 * 1024 * 1024) { toast.error("Dosya çok büyük (max 30MB)"); return; }
     const allowed = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
     if (!allowed.includes(file.type)) { toast.error("Geçersiz dosya türü"); return; }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (type === "profile") { setProfileFile(file); setProfilePreview(reader.result as string); }
-      else                    { setTaxFile(file);     setTaxPreview(reader.result as string); }
-    };
-    reader.readAsDataURL(file);
+
+    setIsCompressing(true);
+    try {
+      const useCase = type === "profile" ? "gallery" as const : "gallery" as const;
+      const result = await smartCompress(file, useCase);
+      const finalFile = result.compressedFile;
+
+      if (!result.skipped) {
+        toast.success(
+          `Sıkıştırıldı: ${formatFileSize(result.originalSize)} → ${formatFileSize(result.compressedSize)} (-${result.compressionRatio.toFixed(0)}%)`
+        );
+      }
+
+      // Revoke previous preview URL to prevent memory leaks
+      const prevPreview = type === "profile" ? profilePreview : taxPreview;
+      if (prevPreview && !prevPreview.startsWith("http")) URL.revokeObjectURL(prevPreview);
+
+      const previewUrl = URL.createObjectURL(finalFile);
+      if (type === "profile") { setProfileFile(finalFile); setProfilePreview(previewUrl); }
+      else                    { setTaxFile(finalFile);     setTaxPreview(previewUrl); }
+    } catch {
+      // smartCompress never rejects, but guard defensively
+      toast.error("Görsel işlenemedi");
+    } finally {
+      setIsCompressing(false);
+    }
   };
 
   // ── Form UI state ─────────────────────────────────────────────────────────
@@ -750,18 +780,26 @@ function AdminCreateRestaurantContent() {
             <div>
               <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Profil Fotoğrafı *</label>
               <input ref={profileImageRef} type="file" accept="image/*"
-                onChange={(e) => handleFileSelect(e.target.files?.[0] ?? null, "profile")} className="hidden" />
+                onChange={(e) => { handleFileSelect(e.target.files?.[0] ?? null, "profile"); e.target.value = ""; }} className="hidden" />
               {profilePreview ? (
                 <div className="relative">
+                  {isCompressing && (
+                    <div className="absolute inset-0 bg-white/90 flex items-center justify-center z-20 rounded-xl">
+                      <div className="text-center">
+                        <div className="w-8 h-8 mx-auto mb-2 border-2 border-orange-200 border-t-orange-500 rounded-full animate-spin" />
+                        <p className="text-[11px] text-gray-400">Sıkıştırılıyor...</p>
+                      </div>
+                    </div>
+                  )}
                   <img src={profilePreview} alt="Profile" className="w-full h-36 object-cover rounded-xl border border-gray-200" />
-                  <button type="button" onClick={() => { setProfileFile(null); setProfilePreview(""); }}
+                  <button type="button" onClick={() => { if (profilePreview && !profilePreview.startsWith("http")) URL.revokeObjectURL(profilePreview); setProfileFile(null); setProfilePreview(""); }}
                     className="absolute -top-2 -right-2 w-7 h-7 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-colors shadow-md">
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
               ) : (
-                <button type="button" onClick={() => profileImageRef.current?.click()}
-                  className="w-full h-36 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center hover:border-orange-300 hover:bg-orange-50/30 transition-all group">
+                <button type="button" onClick={() => !isCompressing && profileImageRef.current?.click()} disabled={isCompressing}
+                  className="w-full h-36 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center hover:border-orange-300 hover:bg-orange-50/30 transition-all group disabled:opacity-50 disabled:cursor-not-allowed">
                   <Camera className="w-8 h-8 text-gray-300 group-hover:text-orange-400 mb-1.5 transition-colors" />
                   <span className="text-[12px] font-medium text-gray-400 group-hover:text-orange-500">Profil fotoğrafı yükle</span>
                 </button>
@@ -772,18 +810,26 @@ function AdminCreateRestaurantContent() {
                 Vergi Levhası <span className="text-gray-300 normal-case font-normal">(isteğe bağlı)</span>
               </label>
               <input ref={taxCertRef} type="file" accept="image/*"
-                onChange={(e) => handleFileSelect(e.target.files?.[0] ?? null, "tax")} className="hidden" />
+                onChange={(e) => { handleFileSelect(e.target.files?.[0] ?? null, "tax"); e.target.value = ""; }} className="hidden" />
               {taxPreview ? (
                 <div className="relative">
+                  {isCompressing && (
+                    <div className="absolute inset-0 bg-white/90 flex items-center justify-center z-20 rounded-xl">
+                      <div className="text-center">
+                        <div className="w-8 h-8 mx-auto mb-2 border-2 border-orange-200 border-t-orange-500 rounded-full animate-spin" />
+                        <p className="text-[11px] text-gray-400">Sıkıştırılıyor...</p>
+                      </div>
+                    </div>
+                  )}
                   <img src={taxPreview} alt="Tax" className="w-full h-36 object-cover rounded-xl border border-gray-200" />
-                  <button type="button" onClick={() => { setTaxFile(null); setTaxPreview(""); }}
+                  <button type="button" onClick={() => { if (taxPreview && !taxPreview.startsWith("http")) URL.revokeObjectURL(taxPreview); setTaxFile(null); setTaxPreview(""); }}
                     className="absolute -top-2 -right-2 w-7 h-7 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-colors shadow-md">
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
               ) : (
-                <button type="button" onClick={() => taxCertRef.current?.click()}
-                  className="w-full h-36 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center hover:border-orange-300 hover:bg-orange-50/30 transition-all group">
+                <button type="button" onClick={() => !isCompressing && taxCertRef.current?.click()} disabled={isCompressing}
+                  className="w-full h-36 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center hover:border-orange-300 hover:bg-orange-50/30 transition-all group disabled:opacity-50 disabled:cursor-not-allowed">
                   <FileText className="w-8 h-8 text-gray-300 group-hover:text-orange-400 mb-1.5 transition-colors" />
                   <span className="text-[12px] font-medium text-gray-400 group-hover:text-orange-500">Vergi levhası yükle</span>
                 </button>
@@ -794,7 +840,7 @@ function AdminCreateRestaurantContent() {
 
         {/* Submit */}
         <div className="flex justify-end pb-4">
-          <button type="button" onClick={handleSubmit} disabled={saving}
+          <button type="button" onClick={handleSubmit} disabled={saving || isCompressing}
             className="flex items-center gap-2 px-8 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-[14px] font-semibold transition-colors disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed">
             {saving ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Oluşturuluyor...</>

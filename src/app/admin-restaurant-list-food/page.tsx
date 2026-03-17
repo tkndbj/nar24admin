@@ -43,7 +43,7 @@ import { FoodCategoryData } from "@/constants/foodData";
 import { FoodExtrasData } from "@/constants/foodExtras";
 import {
   smartCompress,
-  shouldCompress,
+  formatFileSize,
 } from "@/utils/imageCompression";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -385,20 +385,29 @@ function AdminFoodFormContent() {
       if (file.size > MAX_FILE_SIZE)            { toast.error("File too large (max 10MB)"); return; }
 
       clearError("image");
+      setIsCompressing(true);
 
-      let finalFile = file;
-      if (shouldCompress(file, 500)) {
-        setIsCompressing(true);
-        try {
-          const result = await smartCompress(file, "gallery");
-          finalFile = result.compressedFile;
-        } catch { /* use original */ }
-        finally { setIsCompressing(false); }
+      try {
+        const result = await smartCompress(file, "gallery");
+        const finalFile = result.compressedFile;
+
+        if (!result.skipped) {
+          toast.success(
+            `Compressed: ${formatFileSize(result.originalSize)} → ${formatFileSize(result.compressedSize)} (-${result.compressionRatio.toFixed(0)}%)`
+          );
+        }
+
+        if (imagePreview && !imagePreview.startsWith("http")) URL.revokeObjectURL(imagePreview);
+        setImageFile(finalFile);
+        setImagePreview(URL.createObjectURL(finalFile));
+      } catch {
+        // smartCompress never rejects, but guard defensively — use original
+        if (imagePreview && !imagePreview.startsWith("http")) URL.revokeObjectURL(imagePreview);
+        setImageFile(file);
+        setImagePreview(URL.createObjectURL(file));
+      } finally {
+        setIsCompressing(false);
       }
-
-      if (imagePreview && !imagePreview.startsWith("http")) URL.revokeObjectURL(imagePreview);
-      setImageFile(finalFile);
-      setImagePreview(URL.createObjectURL(finalFile));
     },
     [clearError, imagePreview]
   );
