@@ -387,7 +387,7 @@ function AdminCreateRestaurantContent() {
 
       {/* Header */}
       <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-gray-100">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
           <button onClick={() => router.back()} className="w-9 h-9 flex items-center justify-center bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl transition-colors">
             <ArrowLeft className="w-4 h-4 text-gray-600" />
           </button>
@@ -401,140 +401,11 @@ function AdminCreateRestaurantContent() {
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 py-5 space-y-5 pb-16">
+      <div className="max-w-7xl mx-auto px-4 py-5 pb-16">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-        {/* ═══ BÖLÜM A: Mevcut Restoranlar ═══════════════════════════════════ */}
-        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 bg-orange-50 rounded-lg flex items-center justify-center">
-                <Store className="w-3.5 h-3.5 text-orange-600" />
-              </div>
-              <h3 className="text-[15px] font-semibold text-gray-900">Mevcut Restoranlar</h3>
-              {restaurants.length > 0 && (
-                <span className="text-[11px] font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
-                  {restaurants.length}{hasMore ? "+" : ""}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Loading skeleton */}
-          {loadingList && (
-            <div className="divide-y divide-gray-50">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-3 px-5 py-3.5 animate-pulse">
-                  <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0" />
-                  <div className="flex-1 space-y-2">
-                    <div className="h-3 bg-gray-100 rounded w-1/3" />
-                    <div className="h-2.5 bg-gray-50 rounded w-1/2" />
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="h-8 w-28 bg-gray-100 rounded-lg" />
-                    <div className="h-8 w-28 bg-gray-100 rounded-lg" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Empty */}
-          {!loadingList && restaurants.length === 0 && (
-            <div className="py-12 text-center">
-              <UtensilsCrossed className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-[13px] text-gray-400">Henüz restoran yok</p>
-              <p className="text-[11px] text-gray-300 mt-1">Aşağıdan ilk restoranı oluşturun</p>
-            </div>
-          )}
-
-          {/* Rows */}
-          {!loadingList && restaurants.length > 0 && (
-            <div className="divide-y divide-gray-50">
-              {restaurants.map((r) => (
-                <div key={r.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50/50 transition-colors">
-                  {/* Avatar */}
-                  <div className="relative w-10 h-10 rounded-xl overflow-hidden flex-shrink-0">
-                    {r.profileImageUrl ? (
-                      <Image src={r.profileImageUrl} alt={r.name} fill className="object-cover" />
-                    ) : (
-                      <div className="w-full h-full bg-orange-50 flex items-center justify-center">
-                        <UtensilsCrossed className="w-4 h-4 text-orange-400" />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-[13px] font-semibold text-gray-900 truncate">{r.name}</p>
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 border ${
-                        r.isActive !== false
-                          ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-                          : "bg-red-50 text-red-500 border-red-200"
-                      }`}>
-                        {r.isActive !== false ? "Aktif" : "Pasif"}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-gray-400 truncate mt-0.5">
-                      {r.address || r.contactNo || "—"}
-                    </p>
-                    {r.cuisineTypes && r.cuisineTypes.length > 0 && (
-                      <div className="flex gap-1 mt-1 flex-wrap">
-                        {r.cuisineTypes.slice(0, 2).map((c) => (
-                          <span key={c} className="text-[9px] text-orange-600 bg-orange-50 border border-orange-100 px-1.5 py-0.5 rounded-full">{c}</span>
-                        ))}
-                        {r.cuisineTypes.length > 2 && (
-                          <span className="text-[9px] text-gray-400">+{r.cuisineTypes.length - 2}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button
-                      onClick={() => router.push(`/restaurantdetails?restaurantId=${r.id}`)}
-                      className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-semibold rounded-lg transition-colors whitespace-nowrap"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      Detayları Gör
-                    </button>
-                    <button
-                      onClick={() => router.push(`/admin-restaurant-list-food?restaurantId=${r.id}`)}
-                      className="flex items-center gap-1.5 px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-semibold rounded-lg transition-colors whitespace-nowrap"
-                    >
-                      <UtensilsCrossed className="w-3 h-3" />
-                      Yemek Listele
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Load more */}
-          {!loadingList && hasMore && (
-            <div className="px-5 py-4 border-t border-gray-100">
-              <button
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600 text-[13px] font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loadingMore ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronRight className="w-4 h-4" />}
-                {loadingMore ? "Yükleniyor..." : "Daha fazla yükle"}
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* ═══ Divider ════════════════════════════════════════════════════════ */}
-        <div className="flex items-center gap-3 pt-2">
-          <div className="flex-1 h-px bg-gray-200" />
-          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider px-2">
-            Yeni Restoran Oluştur
-          </span>
-          <div className="flex-1 h-px bg-gray-200" />
-        </div>
+        {/* ═══ LEFT COLUMN: Create Form ═══════════════════════════════════════ */}
+        <div className="space-y-5 order-2 lg:order-1">
 
         {/* Error banner */}
         {error && (
@@ -856,7 +727,7 @@ function AdminCreateRestaurantContent() {
             </div>
             <h3 className="text-[15px] font-semibold text-gray-900">Görseller</h3>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 gap-5">
             <div>
               <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Profil Fotoğrafı *</label>
               <input ref={profileImageRef} type="file" accept="image/*"
@@ -914,6 +785,140 @@ function AdminCreateRestaurantContent() {
           </button>
         </div>
 
+        </div>{/* end left column */}
+
+        {/* ═══ RIGHT COLUMN: Restaurant List ══════════════════════════════════ */}
+        <div className="order-1 lg:order-2">
+        <div className="lg:sticky lg:top-20 space-y-5">
+
+        {/* ═══ BÖLÜM A: Mevcut Restoranlar ═══════════════════════════════════ */}
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 bg-orange-50 rounded-lg flex items-center justify-center">
+                <Store className="w-3.5 h-3.5 text-orange-600" />
+              </div>
+              <h3 className="text-[15px] font-semibold text-gray-900">Mevcut Restoranlar</h3>
+              {restaurants.length > 0 && (
+                <span className="text-[11px] font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
+                  {restaurants.length}{hasMore ? "+" : ""}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Loading skeleton */}
+          {loadingList && (
+            <div className="divide-y divide-gray-50">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 px-5 py-3.5 animate-pulse">
+                  <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 bg-gray-100 rounded w-1/3" />
+                    <div className="h-2.5 bg-gray-50 rounded w-1/2" />
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="h-8 w-28 bg-gray-100 rounded-lg" />
+                    <div className="h-8 w-28 bg-gray-100 rounded-lg" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Empty */}
+          {!loadingList && restaurants.length === 0 && (
+            <div className="py-12 text-center">
+              <UtensilsCrossed className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+              <p className="text-[13px] text-gray-400">Henüz restoran yok</p>
+              <p className="text-[11px] text-gray-300 mt-1">Aşağıdan ilk restoranı oluşturun</p>
+            </div>
+          )}
+
+          {/* Rows */}
+          {!loadingList && restaurants.length > 0 && (
+            <div className="divide-y divide-gray-50">
+              {restaurants.map((r) => (
+                <div key={r.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50/50 transition-colors">
+                  {/* Avatar */}
+                  <div className="relative w-10 h-10 rounded-xl overflow-hidden flex-shrink-0">
+                    {r.profileImageUrl ? (
+                      <Image src={r.profileImageUrl} alt={r.name} fill className="object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-orange-50 flex items-center justify-center">
+                        <UtensilsCrossed className="w-4 h-4 text-orange-400" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-[13px] font-semibold text-gray-900 truncate">{r.name}</p>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 border ${
+                        r.isActive !== false
+                          ? "bg-emerald-50 text-emerald-600 border-emerald-200"
+                          : "bg-red-50 text-red-500 border-red-200"
+                      }`}>
+                        {r.isActive !== false ? "Aktif" : "Pasif"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-400 truncate mt-0.5">
+                      {r.address || r.contactNo || "—"}
+                    </p>
+                    {r.cuisineTypes && r.cuisineTypes.length > 0 && (
+                      <div className="flex gap-1 mt-1 flex-wrap">
+                        {r.cuisineTypes.slice(0, 2).map((c) => (
+                          <span key={c} className="text-[9px] text-orange-600 bg-orange-50 border border-orange-100 px-1.5 py-0.5 rounded-full">{c}</span>
+                        ))}
+                        {r.cuisineTypes.length > 2 && (
+                          <span className="text-[9px] text-gray-400">+{r.cuisineTypes.length - 2}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex flex-col gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => router.push(`/restaurantdetails?restaurantId=${r.id}`)}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-semibold rounded-lg transition-colors whitespace-nowrap"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      Detayları Gör
+                    </button>
+                    <button
+                      onClick={() => router.push(`/admin-restaurant-list-food?restaurantId=${r.id}`)}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-semibold rounded-lg transition-colors whitespace-nowrap"
+                    >
+                      <UtensilsCrossed className="w-3 h-3" />
+                      Yemek Listele
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Load more */}
+          {!loadingList && hasMore && (
+            <div className="px-5 py-4 border-t border-gray-100">
+              <button
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600 text-[13px] font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loadingMore ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronRight className="w-4 h-4" />}
+                {loadingMore ? "Yükleniyor..." : "Daha fazla yükle"}
+              </button>
+            </div>
+          )}
+        </div>
+
+        </div>{/* end sticky wrapper */}
+        </div>{/* end right column */}
+
+        </div>{/* end grid */}
       </div>
 
       {/* Map Modal */}
