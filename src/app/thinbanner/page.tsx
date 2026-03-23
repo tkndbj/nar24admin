@@ -39,7 +39,7 @@ import { ref, uploadBytes, getDownloadURL, getStorage } from "firebase/storage";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { compressImage, formatFileSize } from "@/utils/imageCompression";
+import { smartCompress, formatFileSize } from "@/utils/imageCompression";
 import SearchModal, { type SearchSelection } from "@/components/SearchModal";
 
 // ============================================================================
@@ -470,13 +470,7 @@ export default function ThinBannerPage() {
 
       if (file.type.startsWith("image/")) {
         try {
-          const result = await compressImage(file, {
-            maxWidth: 1920,
-            maxHeight: 1920,
-            quality: 0.85,
-            format: "image/jpeg",
-            maintainAspectRatio: true,
-          });
+          const result = await smartCompress(file, 'gallery');
 
           fileToUpload = result.compressedFile;
           setCompressionInfo(
