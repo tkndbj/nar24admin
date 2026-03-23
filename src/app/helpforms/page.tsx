@@ -19,12 +19,16 @@ import {
 import { useState, useEffect, useMemo } from "react";
 import {
   collection,
-  onSnapshot,
   query,
   orderBy,
   doc,
   updateDoc,
   Timestamp,
+  getDocs,
+  limit,
+  startAfter,
+  QueryDocumentSnapshot,
+  DocumentData,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
@@ -41,6 +45,8 @@ interface HelpForm {
   adminNote?: string;
 }
 
+const PAGE_SIZE = 20;
+
 export default function HelpFormsPage() {
   const { user } = useAuth();
   const router = useRouter();
@@ -54,6 +60,9 @@ export default function HelpFormsPage() {
   const [statusFilter, setStatusFilter] = useState<
     "all" | "pending" | "resolved" | "in-progress"
   >("all");
+  const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Fetch help forms from Firestore
   useEffect(() => {
