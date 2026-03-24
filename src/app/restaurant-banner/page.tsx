@@ -15,6 +15,9 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
+  Link,
+  Unlink,
+  Search,
 } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
@@ -22,6 +25,7 @@ import {
   getDocs,
   addDoc,
   deleteDoc,
+  deleteField,
   doc,
   updateDoc,
   orderBy,
@@ -37,6 +41,10 @@ import {
 } from "firebase/storage";
 import { db, storage } from "../lib/firebase";
 import { useRouter } from "next/navigation";
+import {
+  searchRestaurants,
+  type AlgoliaRestaurantHit,
+} from "../lib/typesense/dashboardSearchService";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -48,6 +56,8 @@ interface Banner {
   isActive: boolean;
   order: number;
   createdAt: Date | null;
+  linkedRestaurantId: string | null;
+  linkedRestaurantName: string | null;
 }
 
 interface UploadTask {
@@ -99,6 +109,8 @@ const BannerCard = ({
   onToggle,
   onMoveUp,
   onMoveDown,
+  onLinkRestaurant,
+  onUnlinkRestaurant,
   dragHandleProps,
 }: {
   banner: Banner;
@@ -108,6 +120,8 @@ const BannerCard = ({
   onToggle: (b: Banner) => void;
   onMoveUp: (index: number) => void;
   onMoveDown: (index: number) => void;
+  onLinkRestaurant: (b: Banner) => void;
+  onUnlinkRestaurant: (b: Banner) => void;
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
 }) => (
   <div
@@ -139,20 +153,52 @@ const BannerCard = ({
       />
     </div>
 
+    {/* Link button */}
+    <button
+      onClick={() =>
+        banner.linkedRestaurantId
+          ? onUnlinkRestaurant(banner)
+          : onLinkRestaurant(banner)
+      }
+      className={`p-1.5 rounded-md transition-colors shrink-0 ${
+        banner.linkedRestaurantId
+          ? "bg-orange-50 text-orange-500 hover:bg-orange-100"
+          : "text-gray-300 hover:bg-gray-100 hover:text-gray-500"
+      }`}
+      title={
+        banner.linkedRestaurantId
+          ? `Bağlı: ${banner.linkedRestaurantName || banner.linkedRestaurantId}`
+          : "Restoran bağla"
+      }
+    >
+      {banner.linkedRestaurantId ? (
+        <Link className="w-4 h-4" />
+      ) : (
+        <Unlink className="w-4 h-4" />
+      )}
+    </button>
+
     {/* Info */}
     <div className="flex-1 min-w-0">
       <p className="text-sm font-medium text-gray-900 truncate">
         {banner.title || `Banner ${index + 1}`}
       </p>
-      <p className="text-xs text-gray-400 mt-0.5">
-        {banner.createdAt
-          ? banner.createdAt.toLocaleDateString("tr-TR", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric",
-            })
-          : "—"}
-      </p>
+      <div className="flex items-center gap-2 mt-0.5">
+        <p className="text-xs text-gray-400">
+          {banner.createdAt
+            ? banner.createdAt.toLocaleDateString("tr-TR", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              })
+            : "—"}
+        </p>
+        {banner.linkedRestaurantName && (
+          <span className="text-xs text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded font-medium truncate max-w-[150px]">
+            {banner.linkedRestaurantName}
+          </span>
+        )}
+      </div>
     </div>
 
     {/* Status badge */}
@@ -270,6 +316,204 @@ const UploadRow = ({
   </div>
 );
 
+// ─── Restaurant Link Modal ────────────────────────────────────────────────────
+
+const RestaurantLinkModal = ({
+  isOpen,
+  onClose,
+  onSelect,
+  currentRestaurantId,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSelect: (restaurantId: string, restaurantName: string) => void;
+  currentRestaurantId: string | null;
+}) => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [results, setResults] = useState<AlgoliaRestaurantHit[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedRestaurant, setSelectedRestaurant] =
+    useState<AlgoliaRestaurantHit | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Reset state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setSearchQuery("");
+      setResults([]);
+      setSelectedRestaurant(null);
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [isOpen]);
+
+  // Debounced search
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (!searchQuery.trim()) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await searchRestaurants(searchQuery, { hitsPerPage: 20 });
+        setResults(res.hits);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    };
+  }, [searchQuery, isOpen]);
+
+  // ESC to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col max-h-[70vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <h3 className="text-sm font-bold text-gray-900">
+            Restoran Bağlantısı
+          </h3>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-md hover:bg-gray-100 text-gray-400 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="px-5 py-3 border-b border-gray-100 shrink-0">
+          <div className="flex items-center gap-2 bg-gray-100 rounded-xl px-3 py-2">
+            <Search className="w-4 h-4 text-gray-400 shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="Restoran adı ile arayın..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="flex-1 bg-transparent text-sm outline-none text-gray-800 placeholder-gray-400"
+            />
+            {searching && (
+              <Loader2 className="w-4 h-4 text-gray-400 animate-spin shrink-0" />
+            )}
+          </div>
+        </div>
+
+        {/* Results */}
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1.5">
+          {!searchQuery.trim() && (
+            <p className="text-xs text-gray-400 text-center py-8">
+              Restoran aramak için yazmaya başlayın
+            </p>
+          )}
+          {searchQuery.trim() && !searching && results.length === 0 && (
+            <p className="text-xs text-gray-400 text-center py-8">
+              Sonuç bulunamadı
+            </p>
+          )}
+          {results.map((r) => {
+            const isCurrentlyLinked = r.id === currentRestaurantId;
+            const isSelected = selectedRestaurant?.id === r.id;
+            return (
+              <button
+                key={r.id}
+                onClick={() => setSelectedRestaurant(isSelected ? null : r)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
+                  isSelected
+                    ? "bg-orange-50 border border-orange-300"
+                    : "hover:bg-gray-50 border border-transparent"
+                }`}
+              >
+                {r.profileImageUrl ? (
+                  <img
+                    src={r.profileImageUrl}
+                    alt=""
+                    className="w-9 h-9 rounded-lg object-cover shrink-0 bg-gray-100"
+                  />
+                ) : (
+                  <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                    <span className="text-xs font-bold text-gray-400">
+                      {r.name?.charAt(0)?.toUpperCase() || "?"}
+                    </span>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {r.name || "İsimsiz"}
+                  </p>
+                  {r.address && (
+                    <p className="text-xs text-gray-400 truncate">{r.address}</p>
+                  )}
+                </div>
+                {isCurrentlyLinked && (
+                  <span className="text-xs text-orange-600 font-medium shrink-0">
+                    Mevcut
+                  </span>
+                )}
+                {isSelected && (
+                  <CheckCircle2 className="w-4 h-4 text-orange-500 shrink-0" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-gray-100 flex gap-2 shrink-0">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            Vazgeç
+          </button>
+          <button
+            onClick={() => {
+              if (selectedRestaurant) {
+                onSelect(selectedRestaurant.id, selectedRestaurant.name || "");
+              }
+            }}
+            disabled={!selectedRestaurant}
+            className="flex-1 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-semibold transition-colors"
+          >
+            Bağla
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function RestaurantBannerPage() {
@@ -288,6 +532,7 @@ export default function RestaurantBannerPage() {
     type: "success" | "error";
   } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Banner | null>(null);
+  const [linkModalBanner, setLinkModalBanner] = useState<Banner | null>(null);
 
   const showToast = (message: string, type: "success" | "error") => {
     setToast({ message, type });
@@ -312,6 +557,8 @@ export default function RestaurantBannerPage() {
         isActive: d.data().isActive ?? true,
         order: d.data().order ?? 0,
         createdAt: d.data().createdAt?.toDate() ?? null,
+        linkedRestaurantId: d.data().linkedRestaurantId || null,
+        linkedRestaurantName: d.data().linkedRestaurantName || null,
       }));
       setBanners(data);
     } catch {
@@ -500,6 +747,51 @@ export default function RestaurantBannerPage() {
     }
   };
 
+  // ── Link / Unlink restaurant ──────────────────────────────────────────────
+
+  const handleLinkRestaurant = async (
+    bannerId: string,
+    restaurantId: string,
+    restaurantName: string,
+  ) => {
+    try {
+      await updateDoc(doc(db, "restaurant_banners", bannerId), {
+        linkedRestaurantId: restaurantId,
+        linkedRestaurantName: restaurantName,
+      });
+      setBanners((prev) =>
+        prev.map((b) =>
+          b.id === bannerId
+            ? { ...b, linkedRestaurantId: restaurantId, linkedRestaurantName: restaurantName }
+            : b,
+        ),
+      );
+      setLinkModalBanner(null);
+      showToast("Restoran bağlandı.", "success");
+    } catch {
+      showToast("Bağlantı kaydedilemedi.", "error");
+    }
+  };
+
+  const handleUnlinkRestaurant = async (banner: Banner) => {
+    try {
+      await updateDoc(doc(db, "restaurant_banners", banner.id), {
+        linkedRestaurantId: deleteField(),
+        linkedRestaurantName: deleteField(),
+      });
+      setBanners((prev) =>
+        prev.map((b) =>
+          b.id === banner.id
+            ? { ...b, linkedRestaurantId: null, linkedRestaurantName: null }
+            : b,
+        ),
+      );
+      showToast("Restoran bağlantısı kaldırıldı.", "success");
+    } catch {
+      showToast("Bağlantı kaldırılamadı.", "error");
+    }
+  };
+
   const pendingCount = uploadTasks.filter((t) => t.status === "pending").length;
   const activeBanners = banners.filter((b) => b.isActive).length;
 
@@ -652,6 +944,8 @@ export default function RestaurantBannerPage() {
                     onToggle={handleToggle}
                     onMoveUp={(idx) => moveItem(idx, "up")}
                     onMoveDown={(idx) => moveItem(idx, "down")}
+                    onLinkRestaurant={(b) => setLinkModalBanner(b)}
+                    onUnlinkRestaurant={handleUnlinkRestaurant}
                   />
                 ))
               )}
@@ -667,6 +961,18 @@ export default function RestaurantBannerPage() {
             </p>
           )}
         </div>
+
+        {/* Restaurant Link Modal */}
+        <RestaurantLinkModal
+          isOpen={!!linkModalBanner}
+          onClose={() => setLinkModalBanner(null)}
+          onSelect={(restaurantId, restaurantName) => {
+            if (linkModalBanner) {
+              handleLinkRestaurant(linkModalBanner.id, restaurantId, restaurantName);
+            }
+          }}
+          currentRestaurantId={linkModalBanner?.linkedRestaurantId ?? null}
+        />
 
         {/* Delete Confirmation Modal */}
         {deleteConfirm && (

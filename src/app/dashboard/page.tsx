@@ -172,6 +172,7 @@ const NAV_CATEGORIES = [
       { path: "topbanner", label: "Buyuk Banner", icon: Image },
       { path: "thinbanner", label: "Ince Banner", icon: Layout },
       { path: "normalbanners", label: "Ana Bannerlar", icon: BarChart3 },
+      { path: "restaurant-banner", label: "Restoran Banner", icon: Image },
     ],
   },
   {
