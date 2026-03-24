@@ -500,7 +500,8 @@ const RestaurantLinkModal = ({
           <button
             onClick={() => {
               if (selectedRestaurant) {
-                onSelect(selectedRestaurant.id, selectedRestaurant.name || "");
+                const firestoreId = selectedRestaurant.id.replace(/^restaurants_/, "");
+                onSelect(firestoreId, selectedRestaurant.name || "");
               }
             }}
             disabled={!selectedRestaurant}
