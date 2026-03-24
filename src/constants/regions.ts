@@ -534,7 +534,7 @@ export const allRegionsList: string[] = [
   "Zümrütköy",
 ];
 
-// Helper function to get subregions for a main region
+// Helper function to get subregions for a main region.
 export const getSubregions = (mainRegion: string): string[] => {
   return regionHierarchy[mainRegion] ?? [];
 };
