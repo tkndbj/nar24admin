@@ -9,7 +9,13 @@
       "Bash(npm uninstall:*)",
       "Bash(npm install:*)",
       "Bash(cd \"C:\\\\Users\\\\Digikey\\\\Desktop\\\\nar24-admin-panel\" && npx next lint --file src/app/page.tsx 2>&1 | head -20)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(wait bgacewjwi:*)",
+      "Read(//c/Users/Digikey/AppData/Local/Temp/claude/C--Users-Digikey-Desktop-nar24-admin-panel/244c16b0-e584-4ed5-a8b6-9b9e436a48ef/tasks/**)",
+      "Bash(ls:*)",
+      "Bash(git -C \"/c/Users/Digikey/Desktop/nar24-admin-panel\" log --oneline --all -- \"src/app/restaurant-banner/\")",
+      "Bash(git -C \"/c/Users/Digikey/Desktop/nar24-admin-panel\" log --oneline -- \"src/app/restaurant-banner/page.tsx\")",
+      "Bash(git:*)"
     ]
   }
 }
