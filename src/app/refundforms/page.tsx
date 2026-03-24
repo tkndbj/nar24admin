@@ -22,7 +22,6 @@ import {
 import { useState, useEffect, useMemo } from "react";
 import {
   collection,
-  onSnapshot,
   query,
   orderBy,
   doc,
@@ -30,6 +29,11 @@ import {
   Timestamp,
   getDoc,
   addDoc,
+  getDocs,
+  limit,
+  startAfter,
+  QueryDocumentSnapshot,
+  DocumentData,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useRouter } from "next/navigation";
@@ -51,6 +55,8 @@ interface RefundForm {
   productImage?: string;
 }
 
+const PAGE_SIZE = 20;
+
 export default function RefundFormsPage() {
   const { user } = useAuth();
   const router = useRouter();
@@ -63,24 +69,59 @@ export default function RefundFormsPage() {
   const [statusFilter, setStatusFilter] = useState<
     "all" | "pending" | "approved" | "rejected"
   >("all");
+  const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
-    const q = query(
-      collection(db, "refund-forms"),
-      orderBy("createdAt", "desc")
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const formsData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as RefundForm[];
-      setRefundForms(formsData);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    const fetchInitial = async () => {
+      try {
+        const q = query(
+          collection(db, "refund-forms"),
+          orderBy("createdAt", "desc"),
+          limit(PAGE_SIZE)
+        );
+        const snapshot = await getDocs(q);
+        const formsData = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        })) as RefundForm[];
+        setRefundForms(formsData);
+        setLastDoc(snapshot.docs[snapshot.docs.length - 1] ?? null);
+        setHasMore(snapshot.docs.length >= PAGE_SIZE);
+      } catch (error) {
+        console.error("Error fetching refund forms:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchInitial();
   }, []);
+
+  const loadMore = async () => {
+    if (!lastDoc || loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const q = query(
+        collection(db, "refund-forms"),
+        orderBy("createdAt", "desc"),
+        startAfter(lastDoc),
+        limit(PAGE_SIZE)
+      );
+      const snapshot = await getDocs(q);
+      const newForms = snapshot.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      })) as RefundForm[];
+      setRefundForms((prev) => [...prev, ...newForms]);
+      setLastDoc(snapshot.docs[snapshot.docs.length - 1] ?? null);
+      setHasMore(snapshot.docs.length >= PAGE_SIZE);
+    } catch (error) {
+      console.error("Error loading more forms:", error);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const filteredForms = useMemo(() => {
     let filtered = refundForms;
@@ -403,6 +444,26 @@ export default function RefundFormsPage() {
               </div>
             )}
           </div>
+
+          {/* Load More Button */}
+          {!loading && hasMore && (
+            <div className="flex justify-center mt-4">
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed text-sm"
+              >
+                {loadingMore ? (
+                  <span className="flex items-center gap-2">
+                    <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                    Yükleniyor...
+                  </span>
+                ) : (
+                  "Daha Fazla Yükle"
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Detail Modal */}
