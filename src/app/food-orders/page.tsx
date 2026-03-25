@@ -745,6 +745,301 @@ function CargoManagerModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function MasterManagerModal({ onClose }: { onClose: () => void }) {
+  const [emailInput, setEmailInput] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [foundUser, setFoundUser] = useState<CargoUser | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [masterUsers, setMasterUsers] = useState<CargoUser[]>([]);
+  const [loadingList, setLoadingList] = useState(true);
+
+  // Fetch existing master couriers on mount
+  const fetchMasterUsers = useCallback(async () => {
+    setLoadingList(true);
+    try {
+      const snap = await getDocs(
+        query(collection(db, "users"), where("masterCourier", "==", true)),
+      );
+      setMasterUsers(
+        snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<CargoUser, "id">),
+        })),
+      );
+    } catch {
+      // silently ignore
+    } finally {
+      setLoadingList(false);
+    }
+  }, []);
+
+  // Fetch on mount — useEffect equivalent using useState trick (same pattern as CargoManagerModal)
+  useState(() => {
+    fetchMasterUsers();
+  });
+
+  const handleSearch = async () => {
+    const email = emailInput.trim().toLowerCase();
+    if (!email) return;
+    setSearching(true);
+    setFoundUser(null);
+    setSearchError(null);
+    setSuccessMsg(null);
+    try {
+      const snap = await getDocs(
+        query(collection(db, "users"), where("email", "==", email), limit(1)),
+      );
+      if (snap.empty) {
+        setSearchError("Bu e-posta adresiyle kayıtlı kullanıcı bulunamadı.");
+      } else {
+        const d = snap.docs[0];
+        setFoundUser({ id: d.id, ...(d.data() as Omit<CargoUser, "id">) });
+      }
+    } catch {
+      setSearchError("Arama sırasında bir hata oluştu.");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleToggle = async (user: CargoUser, makeMaster: boolean) => {
+    setSaving(true);
+    setSuccessMsg(null);
+    setSearchError(null);
+    try {
+      const setMasterCourierClaim = httpsCallable(
+        functions,
+        "setMasterCourierClaim",
+      );
+      await setMasterCourierClaim({ userId: user.id, value: makeMaster });
+      setSuccessMsg(
+        makeMaster
+          ? `${user.displayName ?? user.email} master kurye olarak eklendi.`
+          : `${user.displayName ?? user.email} master kuryelikten çıkarıldı.`,
+      );
+      setFoundUser(null);
+      setEmailInput("");
+      await fetchMasterUsers();
+    } catch {
+      setSearchError("İşlem sırasında bir hata oluştu.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const displayName = (u: CargoUser) =>
+    u.displayName ?? u.name ?? u.email ?? u.id;
+
+  // Reuse CargoUser type — masterCourier field is already on the users collection
+  // We just read it via the `masterCourier` Firestore field (mirrored by the CF)
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="bg-orange-50 px-6 py-4 border-b border-orange-100 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+              <Users className="w-5 h-5 text-orange-600" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">
+                Masterları Yönet
+              </h3>
+              <p className="text-xs text-gray-500">
+                Kullanıcıya e-posta ile master kurye yetkisi ver
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-orange-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {/* Search */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              E-posta ile kullanıcı ara
+            </label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="email"
+                  value={emailInput}
+                  onChange={(e) => {
+                    setEmailInput(e.target.value);
+                    setFoundUser(null);
+                    setSearchError(null);
+                    setSuccessMsg(null);
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  placeholder="kullanici@email.com"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+              <button
+                onClick={handleSearch}
+                disabled={searching || !emailInput.trim()}
+                className="px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {searching ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Search className="w-4 h-4" />
+                )}
+                Ara
+              </button>
+            </div>
+
+            {/* Error */}
+            {searchError && (
+              <div className="mt-2 flex items-center gap-2 text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                {searchError}
+              </div>
+            )}
+
+            {/* Success */}
+            {successMsg && (
+              <div className="mt-2 flex items-center gap-2 text-green-700 text-sm bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                {successMsg}
+              </div>
+            )}
+
+            {/* Found user card */}
+            {foundUser && (
+              <div className="mt-3 flex items-center justify-between bg-orange-50 border border-orange-200 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
+                    <Users className="w-4 h-4 text-orange-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {foundUser.displayName ?? foundUser.name ?? "İsimsiz"}
+                    </p>
+                    <p className="text-xs text-gray-500">{foundUser.email}</p>
+                    {(foundUser as CargoUser & { masterCourier?: boolean })
+                      .masterCourier && (
+                      <p className="text-xs text-orange-600 font-medium mt-0.5">
+                        ✓ Zaten master kurye
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  {(foundUser as CargoUser & { masterCourier?: boolean })
+                    .masterCourier ? (
+                    <button
+                      onClick={() => handleToggle(foundUser, false)}
+                      disabled={saving}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                    >
+                      {saving ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <UserX className="w-3 h-3" />
+                      )}
+                      Yetkiyi Al
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleToggle(foundUser, true)}
+                      disabled={saving}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                    >
+                      {saving ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <UserCheck className="w-3 h-3" />
+                      )}
+                      Master Yap
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Current master couriers list */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-gray-800">
+                Mevcut Masterlar ({masterUsers.length})
+              </h4>
+              <button
+                onClick={fetchMasterUsers}
+                disabled={loadingList}
+                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <RefreshCw
+                  className={`w-4 h-4 text-gray-500 ${loadingList ? "animate-spin" : ""}`}
+                />
+              </button>
+            </div>
+
+            {loadingList ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="w-5 h-5 animate-spin text-orange-500" />
+              </div>
+            ) : masterUsers.length === 0 ? (
+              <div className="text-center py-6 text-gray-400 text-sm bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                Henüz kayıtlı master kurye yok
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {masterUsers.map((u) => (
+                  <div
+                    key={u.id}
+                    className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-lg px-3 py-2"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-7 h-7 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <Users className="w-3.5 h-3.5 text-orange-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {displayName(u)}
+                        </p>
+                        {u.email && u.email !== displayName(u) && (
+                          <p className="text-xs text-gray-500 truncate">
+                            {u.email}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleToggle(u, false)}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-md text-xs font-medium transition-colors flex-shrink-0 ml-2"
+                    >
+                      <UserX className="w-3 h-3" />
+                      Çıkar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab content
 // ─────────────────────────────────────────────────────────────────────────────
@@ -844,7 +1139,7 @@ const TAB_ICON_ACTIVE: Record<string, string> = {
 export default function FoodOrdersPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("pending");
   const [showCargoModal, setShowCargoModal] = useState(false);
-
+  const [showMasterModal, setShowMasterModal] = useState(false);
   // Per-tab state — keyed by TabKey
   const [tabStates, setTabStates] = useState<Record<TabKey, TabState>>({
     pending: { ...INITIAL_TAB_STATE },
@@ -997,6 +1292,13 @@ export default function FoodOrdersPage() {
               <Truck className="w-4 h-4" />
               Kuryeleri Yönet
             </button>
+            <button
+              onClick={() => setShowMasterModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              <Users className="w-4 h-4" />
+              Masterları Yönet
+            </button>
           </div>
         </div>
 
@@ -1073,6 +1375,10 @@ export default function FoodOrdersPage() {
       {/* Cargo manager modal */}
       {showCargoModal && (
         <CargoManagerModal onClose={() => setShowCargoModal(false)} />
+      )}
+
+      {showMasterModal && (
+        <MasterManagerModal onClose={() => setShowMasterModal(false)} />
       )}
     </div>
   );
