@@ -16,7 +16,8 @@
       "Bash(git -C \"/c/Users/Digikey/Desktop/nar24-admin-panel\" log --oneline --all -- \"src/app/restaurant-banner/\")",
       "Bash(git -C \"/c/Users/Digikey/Desktop/nar24-admin-panel\" log --oneline -- \"src/app/restaurant-banner/page.tsx\")",
       "Bash(git:*)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(npx next:*)"
     ]
   }
 }

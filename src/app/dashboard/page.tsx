@@ -276,6 +276,11 @@ const NAV_CATEGORIES = [
         label: "Arama Motoru Yönetimi",
         icon: Search,
       },
+      {
+        path: "firebase-storage-images",
+        label: "Storage Gorsel Yonetimi",
+        icon: Image,
+      },
     ],
   },
 ];

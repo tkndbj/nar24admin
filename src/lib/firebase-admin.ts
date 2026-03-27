@@ -4,11 +4,13 @@
 import { initializeApp, getApps, cert, App } from "firebase-admin/app";
 import { getAuth, Auth } from "firebase-admin/auth";
 import { getFirestore, Firestore } from "firebase-admin/firestore";
+import { getStorage, Storage } from "firebase-admin/storage";
 
 
 let adminApp: App | null = null;
 let adminAuth: Auth | null = null;
 let adminDb: Firestore | null = null;
+let adminStorage: Storage | null = null;
 
 
 function getPrivateKey(): string {
@@ -102,6 +104,16 @@ export function getAdminFirestore(): Firestore {
   const app = initializeAdminApp();
   adminDb = getFirestore(app);
   return adminDb;
+}
+
+export function getAdminStorage(): Storage {
+  if (adminStorage) {
+    return adminStorage;
+  }
+
+  const app = initializeAdminApp();
+  adminStorage = getStorage(app);
+  return adminStorage;
 }
 
 export { initializeAdminApp };
