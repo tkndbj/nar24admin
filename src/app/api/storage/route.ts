@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
 
     const storage = getAdminStorage();
     const bucket = storage.bucket(
-      `${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.firebasestorage.app`
+      process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET!
     );
 
     // List files with pagination
@@ -159,7 +159,7 @@ export async function DELETE(request: NextRequest) {
 
     const storage = getAdminStorage();
     const bucket = storage.bucket(
-      `${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.firebasestorage.app`
+      process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET!
     );
 
     const file = bucket.file(filePath);
