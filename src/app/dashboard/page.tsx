@@ -200,7 +200,7 @@ const NAV_CATEGORIES = [
         label: "Restaurant Olustur",
         icon: UtensilsCrossed,
       },
-      { path: "create-user", label: "Test Kurye Hesapları", icon: Bike },
+      { path: "create-user", label: "Kurye Hesapları", icon: Bike },
     ],
   },  
   {
