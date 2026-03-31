@@ -40,6 +40,7 @@ import {
   Archive,
   UtensilsCrossed,
   ShoppingBag,
+  Bike,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useActivityLog, createPageLogger } from "@/hooks/useActivityLog";
@@ -199,8 +200,9 @@ const NAV_CATEGORIES = [
         label: "Restaurant Olustur",
         icon: UtensilsCrossed,
       },
+      { path: "create-user", label: "Test Kurye Hesapları", icon: Bike },
     ],
-  },
+  },  
   {
     title: "Dukkan Yonetimi",
     icon: Building2,
