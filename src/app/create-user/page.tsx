@@ -40,7 +40,6 @@ interface Toast {
 }
 
 export default function CreateUserPage() {
-  const { user } = useAuth();
   const router = useRouter();
 
   // ── State ──
