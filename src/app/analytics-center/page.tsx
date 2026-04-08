@@ -455,16 +455,24 @@ export default function AnalyticsCenterPage() {
     if (!functions || !selectedWeekId) return;
     setTriggerLoading(true);
     try {
-      const fn = httpsCallable(functions, "triggerWeeklyAnalytics");
+      // NEW:
+      const fn = httpsCallable(functions, "computeWeeklyAnalytics");
       const res = await fn({ weekId: selectedWeekId, force: forceRecalculate });
       const data = res.data as {
         success: boolean;
-        result: { status: string; reason?: string };
+        status: string;
+        message?: string;
+        data?: AnalyticsReport;
       };
       if (data.success) {
-        if (data.result.status === "skipped") {
+        if (data.status === "cached" && !forceRecalculate) {
           setToast({
             message: `${selectedWeekId} zaten tamamlanmis. "Zorla Yeniden Hesapla" isaretleyip tekrar deneyin.`,
+            type: "error",
+          });
+        } else if (data.status === "no_data") {
+          setToast({
+            message: `${selectedWeekId} icin gunluk ozet verisi bulunamadi.`,
             type: "error",
           });
         } else {

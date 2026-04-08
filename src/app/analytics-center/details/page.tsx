@@ -10,8 +10,6 @@ import {
   Loader2,
   Zap,
   BarChart3,
-  TrendingUp,
-  TrendingDown,
   MousePointerClick,
   ShoppingCart,
   Heart,
@@ -52,49 +50,38 @@ interface MonthlySummary {
   year: number;
   month: number;
   status: "processing" | "completed" | "failed";
-  weekCount: number;
+  daysWithData: number;
+  totalDaysInMonth: number;
   error?: string;
-  monthlyTotals: {
-    totalClicks: number;
-    totalViews: number;
-    totalCartAdds: number;
-    totalFavorites: number;
-    totalSearches: number;
-    totalPurchaseEvents: number;
-    totalEvents: number;
-    uniqueProducts: number;
-    uniqueUsers: number;
-  };
-  weeklyTrend: WeeklyTrendItem[];
-  weekOverWeek: WoWItem[];
-  topCategoriesMonthly: AggCategory[];
-  topBrandsMonthly: AggBrand[];
-  genderMonthly: AggGender[];
-  topSearchMonthly: { term: string; count: number }[];
-  conversionMonthly: AggFunnel[];
-  topSellersMonthly: AggSeller[];
-}
 
-interface WeeklyTrendItem {
-  weekId: string;
-  weekStartStr: string;
+  // Flat totals (from buildAnalytics)
   totalClicks: number;
+  totalViews: number;
   totalCartAdds: number;
+  totalFavorites: number;
+  totalSearches: number;
   totalPurchaseEvents: number;
   totalEvents: number;
-  uniqueUsers: number;
-}
 
-interface WoWItem {
-  weekId: string;
-  prevWeekId: string;
-  changes: {
-    totalClicks: number;
-    totalCartAdds: number;
-    totalPurchaseEvents: number;
-    totalEvents: number;
-    uniqueUsers: number;
-  };
+  // Rankings
+  topClickedCategories: AggCategory[];
+  topClickedBrands: AggBrand[];
+  topSellingBrands: {
+    brand: string;
+    purchases: number;
+    clicks: number;
+    conversionRate: number;
+  }[];
+  genderBreakdown: AggGender[];
+  topSearchTerms: { term: string; count: number }[];
+  conversionFunnels: AggFunnel[];
+  topSellersByRevenue: AggSeller[];
+  topCategoriesBySales: {
+    category: string;
+    revenue: number;
+    quantity: number;
+    orderCount: number;
+  }[];
 }
 
 interface AggCategory {
@@ -207,11 +194,6 @@ function formatNumber(n: number) {
   return new Intl.NumberFormat("tr-TR").format(n);
 }
 
-function weekLabel(weekId: string) {
-  const parts = weekId.split("-");
-  return `${parts[2]}/${parts[1]}`;
-}
-
 // ═══════════════════════════════════════════════════════════════
 // SMALL COMPONENTS
 // ═══════════════════════════════════════════════════════════════
@@ -237,24 +219,6 @@ function StatCard({
         {typeof value === "number" ? formatNumber(value) : value}
       </p>
     </div>
-  );
-}
-
-function ChangeIndicator({ value }: { value: number }) {
-  if (value === 0) return <span className="text-xs text-gray-400">—</span>;
-  const isPositive = value > 0;
-  return (
-    <span
-      className={`inline-flex items-center gap-0.5 text-xs font-semibold ${isPositive ? "text-emerald-600" : "text-red-600"}`}
-    >
-      {isPositive ? (
-        <TrendingUp className="w-3 h-3" />
-      ) : (
-        <TrendingDown className="w-3 h-3" />
-      )}
-      {isPositive ? "+" : ""}
-      {value}%
-    </span>
   );
 }
 
@@ -335,7 +299,7 @@ export default function AnalyticsDetailsPage() {
     if (!functions) return;
     setTriggerLoading(true);
     try {
-      const fn = httpsCallable(functions, "triggerMonthlySummary");
+      const fn = httpsCallable(functions, "computeMonthlySummary");
       const res = await fn({
         year: selectedYear,
         month: selectedMonth + 1,
@@ -343,13 +307,20 @@ export default function AnalyticsDetailsPage() {
       });
       const data = res.data as {
         success: boolean;
-        result: { status: string; reason?: string };
+        status: string;
+        message?: string;
+        data?: MonthlySummary;
       };
       if (data.success) {
-        if (data.result.status === "skipped") {
+        if (data.status === "cached" && !forceRecalc) {
           setToast({
             message:
               "Bu ay zaten hesaplandi. Zorla Yeniden Hesapla isaretleyin.",
+            type: "error",
+          });
+        } else if (data.status === "no_data") {
+          setToast({
+            message: "Bu ay icin gunluk ozet verisi bulunamadi.",
             type: "error",
           });
         } else {
@@ -471,7 +442,7 @@ export default function AnalyticsDetailsPage() {
   }, [toast]);
 
   const isCompleted =
-    summary?.status === "completed" && (summary?.weekCount ?? 0) > 0;
+    summary?.status === "completed" && (summary?.daysWithData ?? 0) > 0;
 
   return (
     <ProtectedRoute>
@@ -630,8 +601,6 @@ export default function AnalyticsDetailsPage() {
 // ═══════════════════════════════════════════════════════════════
 
 function Dashboard({ summary }: { summary: MonthlySummary }) {
-  const t = summary.monthlyTotals;
-
   return (
     <div className="space-y-6">
       {/* Summary cards */}
@@ -639,97 +608,64 @@ function Dashboard({ summary }: { summary: MonthlySummary }) {
         <StatCard
           icon={MousePointerClick}
           label="Tiklanma"
-          value={t.totalClicks}
+          value={summary.totalClicks}
         />
         <StatCard
           icon={ShoppingCart}
           label="Sepete Ekleme"
-          value={t.totalCartAdds}
+          value={summary.totalCartAdds}
         />
-        <StatCard icon={Heart} label="Favori" value={t.totalFavorites} />
-        <StatCard icon={SearchIcon} label="Arama" value={t.totalSearches} />
+        <StatCard icon={Heart} label="Favori" value={summary.totalFavorites} />
+        <StatCard
+          icon={SearchIcon}
+          label="Arama"
+          value={summary.totalSearches}
+        />
         <StatCard
           icon={BarChart3}
           label="Toplam Etkilesim"
-          value={t.totalEvents}
+          value={summary.totalEvents}
           color="text-indigo-600"
         />
-        <StatCard icon={Users} label="Kullanici" value={t.uniqueUsers} />
+        <StatCard
+          icon={Calendar}
+          label="Veri Gunu"
+          value={`${summary.daysWithData}/${summary.totalDaysInMonth}`}
+        />
       </div>
 
-      {/* Charts row 1: Weekly trend + Category pie */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <WeeklyTrendChart data={summary.weeklyTrend} />
-        </div>
-        <div>
-          <CategoryPieChart data={summary.topCategoriesMonthly} />
-        </div>
-      </div>
-
-      {/* Charts row 2: Gender pie + Brand bar */}
+      {/* Charts row: Category pie + Brand bar */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div>
-          <GenderPieChart data={summary.genderMonthly} />
+          <CategoryPieChart data={summary.topClickedCategories} />
         </div>
         <div className="lg:col-span-2">
-          <BrandBarChart data={summary.topBrandsMonthly} />
+          <BrandBarChart data={summary.topClickedBrands} />
         </div>
       </div>
 
-      {/* Conversion funnel chart */}
-      <ConversionChart data={summary.conversionMonthly} />
-
-      {/* Week-over-week comparison */}
-      {summary.weekOverWeek && summary.weekOverWeek.length > 0 && (
-        <WoWTable data={summary.weekOverWeek} />
+      {/* Gender pie */}
+      {summary.genderBreakdown && summary.genderBreakdown.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div>
+            <GenderPieChart data={summary.genderBreakdown} />
+          </div>
+          <div className="lg:col-span-2">
+            <ConversionChart data={summary.conversionFunnels} />
+          </div>
+        </div>
       )}
 
       {/* Top sellers */}
-      {summary.topSellersMonthly && summary.topSellersMonthly.length > 0 && (
-        <SellersTable data={summary.topSellersMonthly} />
-      )}
+      {summary.topSellersByRevenue &&
+        summary.topSellersByRevenue.length > 0 && (
+          <SellersTable data={summary.topSellersByRevenue} />
+        )}
 
       {/* Top search terms */}
-      {summary.topSearchMonthly && summary.topSearchMonthly.length > 0 && (
-        <SearchTermsSection data={summary.topSearchMonthly} />
+      {summary.topSearchTerms && summary.topSearchTerms.length > 0 && (
+        <SearchTermsSection data={summary.topSearchTerms} />
       )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// CHART: Weekly Trend
-// ═══════════════════════════════════════════════════════════════
-
-function WeeklyTrendChart({ data }: { data: WeeklyTrendItem[] }) {
-  const chartData = data.map((d) => ({
-    name: weekLabel(d.weekId),
-    Tiklanma: d.totalClicks,
-    Sepet: d.totalCartAdds,
-    Satis: d.totalPurchaseEvents,
-    Kullanici: d.uniqueUsers,
-  }));
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <SectionTitle icon={BarChart3} title="Haftalik Etkilesim Trendi" />
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart
-          data={chartData}
-          margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-          <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-          <YAxis tick={{ fontSize: 12 }} />
-          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Bar dataKey="Tiklanma" fill="#6366f1" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="Sepet" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="Satis" fill="#22c55e" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="Kullanici" fill="#06b6d4" radius={[4, 4, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
     </div>
   );
 }
@@ -919,74 +855,6 @@ function ConversionChart({ data }: { data: AggFunnel[] }) {
           <Bar dataKey="Genel %" fill="#f43f5e" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// TABLE: Week-over-Week
-// ═══════════════════════════════════════════════════════════════
-
-function WoWTable({ data }: { data: WoWItem[] }) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <SectionTitle icon={TrendingUp} title="Haftadan Haftaya Degisim" />
-      <div className="overflow-hidden rounded-lg border border-gray-200">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">
-                Hafta
-              </th>
-              <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">
-                Onceki
-              </th>
-              <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">
-                Tiklanma
-              </th>
-              <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">
-                Sepet
-              </th>
-              <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">
-                Satis
-              </th>
-              <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">
-                Etkilesim
-              </th>
-              <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500">
-                Kullanici
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {data.map((row) => (
-              <tr key={row.weekId} className="hover:bg-gray-50">
-                <td className="px-4 py-2.5 font-mono text-xs text-gray-700">
-                  {weekLabel(row.weekId)}
-                </td>
-                <td className="px-4 py-2.5 font-mono text-xs text-gray-400">
-                  {weekLabel(row.prevWeekId)}
-                </td>
-                <td className="px-4 py-2.5 text-center">
-                  <ChangeIndicator value={row.changes.totalClicks} />
-                </td>
-                <td className="px-4 py-2.5 text-center">
-                  <ChangeIndicator value={row.changes.totalCartAdds} />
-                </td>
-                <td className="px-4 py-2.5 text-center">
-                  <ChangeIndicator value={row.changes.totalPurchaseEvents} />
-                </td>
-                <td className="px-4 py-2.5 text-center">
-                  <ChangeIndicator value={row.changes.totalEvents} />
-                </td>
-                <td className="px-4 py-2.5 text-center">
-                  <ChangeIndicator value={row.changes.uniqueUsers} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }
