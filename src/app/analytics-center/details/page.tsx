@@ -42,7 +42,7 @@ import {
 } from "recharts";
 
 // ═══════════════════════════════════════════════════════════════
-// TYPES
+// TYPES (matched to backend buildAnalytics output)
 // ═══════════════════════════════════════════════════════════════
 
 interface MonthlySummary {
@@ -54,7 +54,7 @@ interface MonthlySummary {
   totalDaysInMonth: number;
   error?: string;
 
-  // Flat totals (from buildAnalytics)
+  // Totals
   totalClicks: number;
   totalViews: number;
   totalCartAdds: number;
@@ -87,6 +87,7 @@ interface MonthlySummary {
 interface AggCategory {
   category: string;
   clicks: number;
+  views: number;
   cartAdds: number;
   purchases: number;
   favorites: number;
@@ -95,7 +96,9 @@ interface AggCategory {
 interface AggBrand {
   brand: string;
   clicks: number;
+  views: number;
   cartAdds: number;
+  favorites: number;
   purchases: number;
 }
 
@@ -106,7 +109,6 @@ interface AggGender {
   cartAdds: number;
   favorites: number;
   purchases: number;
-  uniqueUsers: number;
   totalEngagement: number;
 }
 
@@ -149,6 +151,10 @@ const MONTHS_TR = [
 ];
 
 const GENDER_LABELS: Record<string, string> = {
+  Men: "Erkek",
+  Women: "Kadin",
+  Unisex: "Unisex",
+  Kids: "Cocuk",
   male: "Erkek",
   female: "Kadin",
   unisex: "Unisex",
@@ -173,6 +179,10 @@ const PIE_COLORS = [
 ];
 
 const GENDER_COLORS: Record<string, string> = {
+  Men: "#3b82f6",
+  Women: "#ec4899",
+  Unisex: "#8b5cf6",
+  Kids: "#f59e0b",
   male: "#3b82f6",
   female: "#ec4899",
   unisex: "#8b5cf6",
@@ -191,7 +201,7 @@ function formatCurrency(n: number) {
 }
 
 function formatNumber(n: number) {
-  return new Intl.NumberFormat("tr-TR").format(n);
+  return new Intl.NumberFormat("tr-TR").format(n || 0);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -351,8 +361,6 @@ export default function AnalyticsDetailsPage() {
 
       const element = dashboardRef.current;
 
-      // html2canvas doesn't support oklch() colors (Tailwind v4).
-      // Temporarily inject a stylesheet that forces all oklch values to fallback hex.
       const fixSheet = document.createElement("style");
       fixSheet.textContent = `
         *, *::before, *::after {
@@ -362,7 +370,6 @@ export default function AnalyticsDetailsPage() {
       `;
       document.head.appendChild(fixSheet);
 
-      // Also walk computed styles and inline any oklch background/color
       const cloned = element.cloneNode(true) as HTMLElement;
       cloned.style.position = "absolute";
       cloned.style.left = "-9999px";
@@ -370,7 +377,6 @@ export default function AnalyticsDetailsPage() {
       cloned.style.width = element.offsetWidth + "px";
       document.body.appendChild(cloned);
 
-      // Replace oklch in inline styles recursively
       const allEls = cloned.querySelectorAll("*");
       allEls.forEach((el) => {
         const htmlEl = el as HTMLElement;
@@ -392,7 +398,6 @@ export default function AnalyticsDetailsPage() {
         backgroundColor: "#f9fafb",
       });
 
-      // Cleanup
       document.body.removeChild(cloned);
       document.head.removeChild(fixSheet);
 
@@ -466,7 +471,7 @@ export default function AnalyticsDetailsPage() {
                     Aylik Analiz Ozeti
                   </h1>
                   <p className="text-xs text-gray-500">
-                    Haftalik karsilastirmali detayli analiz
+                    Aylik karsilastirmali detayli analiz
                   </p>
                 </div>
               </div>
@@ -578,11 +583,10 @@ export default function AnalyticsDetailsPage() {
             <div className="text-center py-24">
               <BarChart3 className="w-12 h-12 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-500">
-                Bu ay icin tamamlanmis haftalik rapor yok.
+                Bu ay icin yeterli veri bulunamadi.
               </p>
               <p className="text-xs text-gray-400">
-                Once &ldquo;Analiz Merkezi&rdquo; sayfasindan haftalik raporlari
-                olusturun.
+                Gunluk etkilesim verileri toplandiktan sonra tekrar deneyin.
               </p>
             </div>
           ) : (
@@ -604,7 +608,7 @@ function Dashboard({ summary }: { summary: MonthlySummary }) {
   return (
     <div className="space-y-6">
       {/* Summary cards */}
-      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-3 lg:grid-cols-7 gap-3">
         <StatCard
           icon={MousePointerClick}
           label="Tiklanma"
@@ -620,6 +624,12 @@ function Dashboard({ summary }: { summary: MonthlySummary }) {
           icon={SearchIcon}
           label="Arama"
           value={summary.totalSearches}
+        />
+        <StatCard
+          icon={Store}
+          label="Satin Alma"
+          value={summary.totalPurchaseEvents}
+          color="text-emerald-600"
         />
         <StatCard
           icon={BarChart3}
@@ -644,7 +654,7 @@ function Dashboard({ summary }: { summary: MonthlySummary }) {
         </div>
       </div>
 
-      {/* Gender pie */}
+      {/* Gender pie + Conversion chart */}
       {summary.genderBreakdown && summary.genderBreakdown.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div>
@@ -675,6 +685,15 @@ function Dashboard({ summary }: { summary: MonthlySummary }) {
 // ═══════════════════════════════════════════════════════════════
 
 function CategoryPieChart({ data }: { data: AggCategory[] }) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <SectionTitle icon={Filter} title="Kategori Dagilimi" />
+        <p className="text-xs text-gray-400 text-center py-12">Veri yok</p>
+      </div>
+    );
+  }
+
   const top8 = data.slice(0, 8);
   const otherClicks = data.slice(8).reduce((s, c) => s + c.clicks, 0);
   const pieData = top8.map((c) => ({ name: c.category, value: c.clicks }));
@@ -728,7 +747,7 @@ function GenderPieChart({ data }: { data: AggGender[] }) {
 
   const pieData = data.map((g) => ({
     name: GENDER_LABELS[g.gender] || g.gender,
-    value: g.totalEngagement,
+    value: g.totalEngagement || 0,
     color: GENDER_COLORS[g.gender] || "#94a3b8",
   }));
 
