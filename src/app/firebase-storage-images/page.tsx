@@ -76,6 +76,9 @@ export default function FirebaseStorageImagesPage() {
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [migrating, setMigrating] = useState(false);
+  const [migrationResult, setMigrationResult] = useState<string | null>(null);
+
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<StorageFile | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -87,56 +90,51 @@ export default function FirebaseStorageImagesPage() {
   const [totalSize, setTotalSize] = useState(0);
   const [totalFiles, setTotalFiles] = useState(0);
 
-  const fetchFiles = useCallback(
-    async (prefix: string, pageToken?: string) => {
-      try {
-        if (pageToken) {
-          setLoadingMore(true);
-        } else {
-          setLoading(true);
-          setFiles([]);
-          setFolders([]);
-          setTotalSize(0);
-          setTotalFiles(0);
-        }
-        setError(null);
-
-        const params = new URLSearchParams();
-        if (prefix) params.set("prefix", prefix);
-        params.set("pageSize", "30");
-        if (pageToken) params.set("pageToken", pageToken);
-
-        const data = await authenticatedFetch<StorageResponse>(
-          `/api/storage?${params.toString()}`
-        );
-
-        if (data.success) {
-          if (pageToken) {
-            setFiles((prev) => {
-              const updated = [...prev, ...data.files];
-              setTotalSize(updated.reduce((sum, f) => sum + f.size, 0));
-              setTotalFiles(updated.length);
-              return updated;
-            });
-          } else {
-            setFiles(data.files);
-            setTotalSize(data.files.reduce((sum, f) => sum + f.size, 0));
-            setTotalFiles(data.files.length);
-          }
-          setFolders(data.folders);
-          setNextPageToken(data.nextPageToken);
-        }
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load files"
-        );
-      } finally {
-        setLoading(false);
-        setLoadingMore(false);
+  const fetchFiles = useCallback(async (prefix: string, pageToken?: string) => {
+    try {
+      if (pageToken) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+        setFiles([]);
+        setFolders([]);
+        setTotalSize(0);
+        setTotalFiles(0);
       }
-    },
-    []
-  );
+      setError(null);
+
+      const params = new URLSearchParams();
+      if (prefix) params.set("prefix", prefix);
+      params.set("pageSize", "30");
+      if (pageToken) params.set("pageToken", pageToken);
+
+      const data = await authenticatedFetch<StorageResponse>(
+        `/api/storage?${params.toString()}`,
+      );
+
+      if (data.success) {
+        if (pageToken) {
+          setFiles((prev) => {
+            const updated = [...prev, ...data.files];
+            setTotalSize(updated.reduce((sum, f) => sum + f.size, 0));
+            setTotalFiles(updated.length);
+            return updated;
+          });
+        } else {
+          setFiles(data.files);
+          setTotalSize(data.files.reduce((sum, f) => sum + f.size, 0));
+          setTotalFiles(data.files.length);
+        }
+        setFolders(data.folders);
+        setNextPageToken(data.nextPageToken);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load files");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchFiles(currentPrefix);
@@ -161,9 +159,7 @@ export default function FirebaseStorageImagesPage() {
       });
       setDeleteTarget(null);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to delete file"
-      );
+      setError(err instanceof Error ? err.message : "Failed to delete file");
     } finally {
       setDeleting(false);
     }
@@ -181,6 +177,25 @@ export default function FirebaseStorageImagesPage() {
     const newPrefix = parts.length > 0 ? parts.join("/") + "/" : "";
     setCurrentPrefix(newPrefix);
     setNextPageToken(null);
+  };
+
+  const runMigration = async (dryRun: boolean) => {
+    setMigrating(true);
+    setMigrationResult(null);
+    try {
+      const { getFunctions, httpsCallable } =
+        await import("firebase/functions");
+      const functions = getFunctions(undefined, "europe-west3");
+      const migrate = httpsCallable(functions, "migrateProductImagePaths");
+      const result = await migrate({ dryRun });
+      setMigrationResult(JSON.stringify(result.data, null, 2));
+    } catch (err) {
+      setMigrationResult(
+        `Error: ${err instanceof Error ? err.message : "Unknown"}`,
+      );
+    } finally {
+      setMigrating(false);
+    }
   };
 
   const breadcrumbs = currentPrefix
@@ -221,6 +236,29 @@ export default function FirebaseStorageImagesPage() {
                   </div>
                 </div>
               </div>
+              {/* Migration Buttons - REMOVE AFTER MIGRATION */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => runMigration(true)}
+                  disabled={migrating}
+                  className="flex items-center gap-1 px-3 py-2 text-xs bg-yellow-100 text-yellow-700 hover:bg-yellow-200 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {migrating ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : null}
+                  Dry Run
+                </button>
+                <button
+                  onClick={() => runMigration(false)}
+                  disabled={migrating}
+                  className="flex items-center gap-1 px-3 py-2 text-xs bg-green-100 text-green-700 hover:bg-green-200 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {migrating ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : null}
+                  Migrate
+                </button>
+              </div>
               <button
                 onClick={() => fetchFiles(currentPrefix)}
                 disabled={loading}
@@ -246,7 +284,10 @@ export default function FirebaseStorageImagesPage() {
                 Root
               </button>
               {breadcrumbs.map((crumb, i) => (
-                <div key={crumb.path} className="flex items-center gap-1 shrink-0">
+                <div
+                  key={crumb.path}
+                  className="flex items-center gap-1 shrink-0"
+                >
                   <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
                   <button
                     onClick={() => navigateToFolder(crumb.path)}
@@ -276,6 +317,25 @@ export default function FirebaseStorageImagesPage() {
               >
                 <X className="w-3.5 h-3.5" />
               </button>
+            </div>
+          )}
+
+          {migrationResult && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-medium text-blue-700">
+                  Migration Result
+                </span>
+                <button
+                  onClick={() => setMigrationResult(null)}
+                  className="p-1 hover:bg-blue-100 rounded"
+                >
+                  <X className="w-3.5 h-3.5 text-blue-500" />
+                </button>
+              </div>
+              <pre className="whitespace-pre-wrap text-blue-800 overflow-auto max-h-60">
+                {migrationResult}
+              </pre>
             </div>
           )}
 
@@ -380,9 +440,7 @@ export default function FirebaseStorageImagesPage() {
                   {nextPageToken && (
                     <div className="flex justify-center mt-6">
                       <button
-                        onClick={() =>
-                          fetchFiles(currentPrefix, nextPageToken)
-                        }
+                        onClick={() => fetchFiles(currentPrefix, nextPageToken)}
                         disabled={loadingMore}
                         className="flex items-center gap-2 px-6 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50 text-sm font-medium"
                       >
@@ -403,9 +461,7 @@ export default function FirebaseStorageImagesPage() {
                 folders.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-20 text-gray-400">
                     <ImageIcon className="w-12 h-12 mb-3" />
-                    <p className="text-sm">
-                      Bu klasorde gorsel bulunamadi
-                    </p>
+                    <p className="text-sm">Bu klasorde gorsel bulunamadi</p>
                   </div>
                 )
               )}
@@ -451,7 +507,8 @@ export default function FirebaseStorageImagesPage() {
               </div>
 
               <p className="text-sm text-red-600 mb-4">
-                Bu islem geri alinamaz. Gorsel Firebase Storage&apos;dan kalici olarak silinecektir.
+                Bu islem geri alinamaz. Gorsel Firebase Storage&apos;dan kalici
+                olarak silinecektir.
               </p>
 
               <div className="flex gap-3">
