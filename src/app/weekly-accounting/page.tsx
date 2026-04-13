@@ -196,7 +196,6 @@ const PERIOD_ICONS: Record<PeriodType, typeof CalendarDays> = {
 };
 
 const SHOPS_PER_PAGE = 20;
-const RESTAURANTS_PER_PAGE = 20;
 
 // ═══════════════════════════════════════════════════════════════
 // DATE HELPERS
@@ -1410,13 +1409,12 @@ function FoodSalesTab({
         const q = query(
           collection(db, collectionName),
           where("periodKey", "==", periodKey),
-          orderBy("grossRevenue", "desc"),
-          limit(RESTAURANTS_PER_PAGE),
         );
         const snap = await getDocs(q);
         const results = snap.docs
           .map((d) => d.data() as FoodReport)
-          .filter((r) => r.restaurantId !== "_PLATFORM");
+          .filter((r) => r.restaurantId !== "_PLATFORM")
+          .sort((a, b) => b.grossRevenue - a.grossRevenue);
         setRestaurants(results);
       } catch (err) {
         console.error("Error fetching restaurants:", err);
@@ -1524,7 +1522,6 @@ function FoodSalesTab({
         const q = query(
           collection(db, collectionName),
           where("periodKey", "==", periodKey),
-          orderBy("grossRevenue", "desc"),
         );
         const snap = await getDocs(q);
         snap.forEach((d) => {
