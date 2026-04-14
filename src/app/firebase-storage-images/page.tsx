@@ -249,6 +249,7 @@ export default function FirebaseStorageImagesPage() {
     <option value="ads">Ads</option>
     <option value="shops">Shops</option>
     <option value="restaurants">Restaurants</option>
+    <option value="foods">Foods</option> 
     <option value="products">Products</option>
     <option value="all">All</option>
   </select>
