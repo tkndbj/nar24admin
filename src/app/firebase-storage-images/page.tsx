@@ -79,6 +79,8 @@ export default function FirebaseStorageImagesPage() {
   const [migrating, setMigrating] = useState(false);
   const [migrationResult, setMigrationResult] = useState<string | null>(null);
 
+  const [migrationTarget, setMigrationTarget] = useState<string>("ads");
+
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<StorageFile | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -179,15 +181,15 @@ export default function FirebaseStorageImagesPage() {
     setNextPageToken(null);
   };
 
-  const runMigration = async (dryRun: boolean) => {
+  const runMigration = async (dryRun: boolean, target: string = 'all') => {
     setMigrating(true);
     setMigrationResult(null);
     try {
       const { getFunctions, httpsCallable } =
         await import("firebase/functions");
       const functions = getFunctions(undefined, "europe-west3");
-      const migrate = httpsCallable(functions, "migrateProductImagePaths");
-      const result = await migrate({ dryRun });
+      const migrate = httpsCallable(functions, "migrateImagePaths");
+      const result = await migrate({ dryRun, target });
       setMigrationResult(JSON.stringify(result.data, null, 2));
     } catch (err) {
       setMigrationResult(
@@ -236,29 +238,37 @@ export default function FirebaseStorageImagesPage() {
                   </div>
                 </div>
               </div>
-              {/* Migration Buttons - REMOVE AFTER MIGRATION */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => runMigration(true)}
-                  disabled={migrating}
-                  className="flex items-center gap-1 px-3 py-2 text-xs bg-yellow-100 text-yellow-700 hover:bg-yellow-200 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  {migrating ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : null}
-                  Dry Run
-                </button>
-                <button
-                  onClick={() => runMigration(false)}
-                  disabled={migrating}
-                  className="flex items-center gap-1 px-3 py-2 text-xs bg-green-100 text-green-700 hover:bg-green-200 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  {migrating ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : null}
-                  Migrate
-                </button>
-              </div>
+             {/* Migration Controls */}
+<div className="flex items-center gap-2">
+  <select
+    value={migrationTarget}
+    onChange={(e) => setMigrationTarget(e.target.value)}
+    disabled={migrating}
+    className="px-2 py-2 text-xs border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-500/20 disabled:opacity-50"
+  >
+    <option value="ads">Ads</option>
+    <option value="shops">Shops</option>
+    <option value="restaurants">Restaurants</option>
+    <option value="products">Products</option>
+    <option value="all">All</option>
+  </select>
+  <button
+    onClick={() => runMigration(true, migrationTarget)}
+    disabled={migrating}
+    className="flex items-center gap-1 px-3 py-2 text-xs bg-yellow-100 text-yellow-700 hover:bg-yellow-200 rounded-lg transition-colors disabled:opacity-50"
+  >
+    {migrating ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+    Dry Run
+  </button>
+  <button
+    onClick={() => runMigration(false, migrationTarget)}
+    disabled={migrating}
+    className="flex items-center gap-1 px-3 py-2 text-xs bg-green-100 text-green-700 hover:bg-green-200 rounded-lg transition-colors disabled:opacity-50"
+  >
+    {migrating ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+    Migrate
+  </button>
+</div>
               <button
                 onClick={() => fetchFiles(currentPrefix)}
                 disabled={loading}
