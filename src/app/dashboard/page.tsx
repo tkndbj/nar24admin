@@ -122,6 +122,7 @@ const NAV_CATEGORIES = [
         icon: UtensilsCrossed,
       },
       { path: "create-user", label: "Kurye Hesapları", icon: Bike },
+      { path: "market", label: "Market", icon: ShoppingBag },
     ],
   },
   {
