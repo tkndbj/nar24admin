@@ -21,6 +21,7 @@ import {
   ChevronRight,
   RefreshCw,
   AlertCircle,
+  Pencil,
 } from "lucide-react";
 import {
   MARKET_CATEGORIES,
@@ -368,7 +369,7 @@ function MarketItemsContent() {
           {/* ── Table ─────────────────────────────────────────── */}
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
             {/* Table header */}
-            <div className="grid grid-cols-[3fr_1fr_1fr_1fr_1fr_1fr_1fr] gap-4 px-5 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            <div className="grid grid-cols-[3fr_1fr_1fr_1fr_1fr_1fr_1fr_56px] gap-4 px-5 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide">
               <span>Ürün</span>
               <span>Marka</span>
               <span>Tür</span>
@@ -376,6 +377,7 @@ function MarketItemsContent() {
               <span className="text-right">Fiyat</span>
               <span className="text-right">Stok</span>
               <span className="text-center">Durum</span>
+              <span className="text-center">Düzenle</span>
             </div>
 
             {/* Loading */}
@@ -406,7 +408,7 @@ function MarketItemsContent() {
                 return (
                   <div
                     key={item.id}
-                    className="grid grid-cols-[3fr_1fr_1fr_1fr_1fr_1fr_1fr] gap-4 px-5 py-3 border-b border-gray-100 last:border-b-0 text-left w-full"
+                    className="grid grid-cols-[3fr_1fr_1fr_1fr_1fr_1fr_1fr_56px] gap-4 px-5 py-3 border-b border-gray-100 last:border-b-0 text-left w-full"
                   >
                     {/* Product */}
                     <div className="flex items-center gap-3 min-w-0">
@@ -492,6 +494,24 @@ function MarketItemsContent() {
                               : "translate-x-0"
                           }`}
                         />
+                      </button>
+                    </div>
+
+                    {/* Edit */}
+                    <div className="flex items-center justify-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          logger.navigate("Edit market item", {
+                            itemId: item.id,
+                          });
+                          router.push(`/market-items/${item.id}/edit`);
+                        }}
+                        aria-label="Ürünü düzenle"
+                        title="Düzenle"
+                        className="p-1.5 rounded-lg text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                      >
+                        <Pencil className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
