@@ -40,6 +40,9 @@ import {
   QueryDocumentSnapshot,
   DocumentData,
   getCountFromServer,
+  doc,
+  updateDoc,
+  serverTimestamp,
   Timestamp,
   type QueryConstraint,
 } from "firebase/firestore";
@@ -225,6 +228,47 @@ function MarketItemsContent() {
     router.push(`/market-items/create${params}`);
   }, [router, logger, categorySlug]);
 
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const handleToggleAvailability = useCallback(
+    async (item: MarketItem) => {
+      const next = !item.isAvailable;
+      setTogglingId(item.id);
+      // Optimistic update
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === item.id ? { ...it, isAvailable: next } : it,
+        ),
+      );
+      try {
+        await updateDoc(doc(db, COLLECTION_NAME, item.id), {
+          isAvailable: next,
+          updatedAt: serverTimestamp(),
+        });
+        logger.action("Toggled market item availability", {
+          itemId: item.id,
+          isAvailable: next,
+        });
+      } catch (err: unknown) {
+        console.error("[MarketItems] Toggle error:", err);
+        // Rollback
+        setItems((prev) =>
+          prev.map((it) =>
+            it.id === item.id ? { ...it, isAvailable: !next } : it,
+          ),
+        );
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Durum güncellenirken hata oluştu.",
+        );
+      } finally {
+        setTogglingId(null);
+      }
+    },
+    [logger],
+  );
+
   // ── Render ───────────────────────────────────────────────────────
   const CategoryIcon = activeCategory?.icon || ShoppingBag;
 
@@ -360,15 +404,9 @@ function MarketItemsContent() {
               displayedItems.map((item) => {
                 const cat = MARKET_CATEGORY_MAP.get(item.category);
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    onClick={() => {
-                      logger.navigate("Market item detail", {
-                        itemId: item.id,
-                      });
-                      router.push(`/market-items/${item.id}`);
-                    }}
-                    className="grid grid-cols-[3fr_1fr_1fr_1fr_1fr_1fr_1fr] gap-4 px-5 py-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 transition-colors text-left w-full"
+                    className="grid grid-cols-[3fr_1fr_1fr_1fr_1fr_1fr_1fr] gap-4 px-5 py-3 border-b border-gray-100 last:border-b-0 text-left w-full"
                   >
                     {/* Product */}
                     <div className="flex items-center gap-3 min-w-0">
@@ -431,19 +469,32 @@ function MarketItemsContent() {
                       </span>
                     </div>
 
-                    {/* Status */}
+                    {/* Status toggle */}
                     <div className="flex items-center justify-center">
-                      <span
-                        className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAvailability(item)}
+                        disabled={togglingId === item.id}
+                        aria-label={
                           item.isAvailable
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-gray-100 text-gray-500"
+                            ? "Ürünü pasif yap"
+                            : "Ürünü aktif yap"
+                        }
+                        title={item.isAvailable ? "Aktif" : "Pasif"}
+                        className={`relative w-11 h-6 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                          item.isAvailable ? "bg-emerald-500" : "bg-gray-300"
                         }`}
                       >
-                        {item.isAvailable ? "Aktif" : "Pasif"}
-                      </span>
+                        <span
+                          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                            item.isAvailable
+                              ? "translate-x-5"
+                              : "translate-x-0"
+                          }`}
+                        />
+                      </button>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
           </div>
