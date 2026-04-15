@@ -1,7 +1,14 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  Suspense,
+} from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useActivityLog, createPageLogger } from "@/hooks/useActivityLog";
 import {
@@ -32,9 +39,9 @@ import {
   getDocs,
   QueryDocumentSnapshot,
   DocumentData,
-  QueryConstraint,
-  Timestamp,
   getCountFromServer,
+  Timestamp,
+  type QueryConstraint,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 
@@ -55,7 +62,7 @@ interface MarketItem {
 const PAGE_SIZE = 20;
 const COLLECTION_NAME = "market-items";
 
-export default function MarketItemsPage() {
+function MarketItemsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { logActivity } = useActivityLog();
@@ -163,7 +170,7 @@ export default function MarketItemsPage() {
         if (direction === "next") setPage((p) => p + 1);
         else if (direction === "prev") setPage((p) => Math.max(1, p - 1));
         else setPage(1);
-      } catch (err) {
+      } catch (err: unknown) {
         console.error("[MarketItems] Fetch error:", err);
         setError(
           err instanceof Error
@@ -472,5 +479,13 @@ export default function MarketItemsPage() {
         </main>
       </div>
     </ProtectedRoute>
+  );
+}
+
+export default function MarketItemsPage() {
+  return (
+    <Suspense fallback={null}>
+      <MarketItemsContent />
+    </Suspense>
   );
 }

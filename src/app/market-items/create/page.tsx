@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useState } from "react";
+import { Suspense, useCallback, useState } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useActivityLog, createPageLogger } from "@/hooks/useActivityLog";
 import {
@@ -46,7 +46,7 @@ const INITIAL_FORM: FormState = {
   isAvailable: true,
 };
 
-export default function CreateMarketItemPage() {
+function CreateMarketItemContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { logActivity } = useActivityLog();
@@ -58,6 +58,7 @@ export default function CreateMarketItemPage() {
     ...INITIAL_FORM,
     category: preselectedCategory,
   });
+
   const [images, setImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -170,7 +171,7 @@ export default function CreateMarketItemPage() {
       setTimeout(() => {
         router.push(`/market-items?category=${form.category}`);
       }, 1500);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("[CreateMarketItem] Error:", err);
       setError(
         err instanceof Error
@@ -439,5 +440,13 @@ export default function CreateMarketItemPage() {
         </main>
       </div>
     </ProtectedRoute>
+  );
+}
+
+export default function CreateMarketItemPage() {
+  return (
+    <Suspense fallback={null}>
+      <CreateMarketItemContent />
+    </Suspense>
   );
 }
