@@ -13,6 +13,7 @@ import {
   Trash2,
   AlertCircle,
   CheckCircle,
+  Flame,
 } from "lucide-react";
 import {
   MARKET_CATEGORIES,
@@ -33,6 +34,15 @@ interface FormState {
   stock: string;
   description: string;
   isAvailable: boolean;
+  // Nutrition (optional — all strings for input handling)
+  servingSize: string;
+  calories: string;
+  protein: string;
+  carbs: string;
+  fat: string;
+  fiber: string;
+  sugar: string;
+  salt: string;
 }
 
 const INITIAL_FORM: FormState = {
@@ -44,7 +54,39 @@ const INITIAL_FORM: FormState = {
   stock: "",
   description: "",
   isAvailable: true,
+  servingSize: "",
+  calories: "",
+  protein: "",
+  carbs: "",
+  fat: "",
+  fiber: "",
+  sugar: "",
+  salt: "",
 };
+
+type NutritionKey =
+  | "calories"
+  | "protein"
+  | "carbs"
+  | "fat"
+  | "fiber"
+  | "sugar"
+  | "salt";
+
+const NUTRITION_FIELDS: {
+  key: NutritionKey;
+  label: string;
+  unit: string;
+  placeholder: string;
+}[] = [
+  { key: "calories", label: "Kalori", unit: "kcal", placeholder: "0" },
+  { key: "protein", label: "Protein", unit: "g", placeholder: "0" },
+  { key: "carbs", label: "Karbonhidrat", unit: "g", placeholder: "0" },
+  { key: "fat", label: "Yağ", unit: "g", placeholder: "0" },
+  { key: "fiber", label: "Lif", unit: "g", placeholder: "0" },
+  { key: "sugar", label: "Şeker", unit: "g", placeholder: "0" },
+  { key: "salt", label: "Tuz", unit: "g", placeholder: "0" },
+];
 
 function CreateMarketItemContent() {
   const router = useRouter();
@@ -139,7 +181,23 @@ function CreateMarketItemContent() {
         imageUrls.push(...urls);
       }
 
-      // 3. Write Firestore doc
+      // 3. Build optional nutrition object (only include set fields)
+      const parseNum = (s: string): number | null => {
+        const t = s.trim().replace(",", ".");
+        if (!t) return null;
+        const n = parseFloat(t);
+        return isNaN(n) ? null : n;
+      };
+      const nutritionEntries: Record<string, number | string> = {};
+      const servingSizeTrim = form.servingSize.trim();
+      if (servingSizeTrim) nutritionEntries.servingSize = servingSizeTrim;
+      for (const f of NUTRITION_FIELDS) {
+        const v = parseNum(form[f.key]);
+        if (v !== null) nutritionEntries[f.key] = v;
+      }
+      const hasNutrition = Object.keys(nutritionEntries).length > 0;
+
+      // 4. Write Firestore doc
       // These fields are what Typesense will index via the trigger
       await setDoc(docRef, {
         name: form.name.trim(),
@@ -152,6 +210,7 @@ function CreateMarketItemContent() {
         imageUrl: imageUrls[0] || "",
         imageUrls,
         isAvailable: form.isAvailable,
+        ...(hasNutrition && { nutrition: nutritionEntries }),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -409,6 +468,58 @@ function CreateMarketItemContent() {
                     />
                   </label>
                 )}
+              </div>
+            </div>
+
+            {/* ── Nutrition (optional) ─────────────────────────── */}
+            <div className="border-t border-gray-100 pt-6">
+              <div className="flex items-center gap-2 mb-1">
+                <Flame className="w-4 h-4 text-amber-500" />
+                <label className="block text-sm font-semibold text-gray-700">
+                  Besin Değerleri
+                </label>
+                <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                  Opsiyonel
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mb-4">
+                Doldurulan alanlar ürün detayında gösterilir. Boş bırakılan
+                alanlar kaydedilmez.
+              </p>
+
+              <div className="mb-4">
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                  Porsiyon
+                </label>
+                <input
+                  type="text"
+                  value={form.servingSize}
+                  onChange={(e) => updateField("servingSize", e.target.value)}
+                  placeholder="Ör: 100g, 1 adet, 250ml"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {NUTRITION_FIELDS.map((f) => (
+                  <div key={f.key}>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                      {f.label}{" "}
+                      <span className="text-gray-400 font-normal">
+                        ({f.unit})
+                      </span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={form[f.key]}
+                      onChange={(e) => updateField(f.key, e.target.value)}
+                      placeholder={f.placeholder}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm transition-all"
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 
