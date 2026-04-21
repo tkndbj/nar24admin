@@ -284,7 +284,13 @@ export default function CategoriesPage() {
 
   // Category label edit
   function updateCategoryLabel(i: number, lang: keyof Labels, value: string) {
-    update((d) => { d.buyerCategories[i].labels[lang] = value; });
+    update((d) => {
+      // ✅ Guard: initialize labels if missing
+      if (!d.buyerCategories[i].labels) {
+        d.buyerCategories[i].labels = { tr: "", en: "", ru: "" };
+      }
+      d.buyerCategories[i].labels[lang] = value;
+    });
   }
 
   function deleteBuyerCategory(i: number) {
@@ -308,7 +314,13 @@ export default function CategoriesPage() {
   // Subcategory label edit
   function updateSubcategoryLabel(si: number, lang: keyof Labels, value: string) {
     if (selectedIndex === null) return;
-    update((d) => { d.buyerCategories[selectedIndex].subcategories[si].labels[lang] = value; });
+    update((d) => {
+      // ✅ Guard: initialize labels if missing
+      if (!d.buyerCategories[selectedIndex].subcategories[si].labels) {
+        d.buyerCategories[selectedIndex].subcategories[si].labels = { tr: "", en: "", ru: "" };
+      }
+      d.buyerCategories[selectedIndex].subcategories[si].labels[lang] = value;
+    });
   }
 
   function addSubcategory(key: string, labels: Labels) {
