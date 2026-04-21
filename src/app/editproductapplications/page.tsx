@@ -99,6 +99,9 @@ interface EditApplication {
   brandModel: string;
   gender?: string | null;
   imageUrls: string[];
+  imageStoragePaths?: string[];
+  videoStoragePath?: string | null;
+  colorImageStoragePaths?: Record<string, string>;
   category: string;
   subcategory: string;
   subsubcategory: string;
@@ -787,6 +790,14 @@ export default function EditProductApplicationsPage() {
         condition: application.condition,
         brandModel: application.brandModel,
         imageUrls: application.imageUrls,
+        imageStoragePaths: (application as unknown as { imageStoragePaths?: string[] })
+          .imageStoragePaths ?? [],
+        videoStoragePath:
+          (application as unknown as { videoStoragePath?: string | null })
+            .videoStoragePath ?? null,
+        colorImageStoragePaths:
+          (application as unknown as { colorImageStoragePaths?: Record<string, string> })
+            .colorImageStoragePaths ?? {},
         category: application.category,
         subcategory: application.subcategory,
         subsubcategory: application.subsubcategory,
@@ -895,6 +906,7 @@ export default function EditProductApplicationsPage() {
         updateData.availableColors = [];
         updateData.colorImages = {};
         updateData.colorQuantities = {};
+        updateData.colorImageStoragePaths = {};
       } else {
         // ✅ ADD THIS: Ensure availableColors is explicitly set when colors exist
         if (

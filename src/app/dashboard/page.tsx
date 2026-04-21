@@ -36,6 +36,7 @@ import {
   ShoppingBag,
   Bike,
   ChevronRight,
+  Layers,
 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { useActivityLog, createPageLogger } from "@/hooks/useActivityLog";
@@ -157,7 +158,7 @@ const NAV_CATEGORIES = [
     ],
   },
   {
-    title: "Nar24 Yonetimi",
+    title: "Nar24 Yönetimi",
     icon: Settings,
     color: "slate",
     adminOnly: true,
@@ -178,6 +179,7 @@ const NAV_CATEGORIES = [
         label: "Ana Ekran Dukkanlari",
         icon: Store,
       },
+      { path: "categories", label: "Kategori Yönetimi", icon: Layers }
       { path: "createcampaing", label: "Ozel Gun Kampanyalari", icon: Zap },
       {
         path: "marketscreenhorizontallist",
