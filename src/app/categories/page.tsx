@@ -20,21 +20,34 @@ import {
   setDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { db } from "../lib/firebase"; // adjust to your firebase config path
+import { db } from "../lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import { DEFAULT_CATEGORY_DATA } from "../defaultCategoryData"; // see separate file
+import { DEFAULT_CATEGORY_DATA } from "../defaultCategoryData";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface Labels {
+  tr: string;
+  en: string;
+  ru: string;
+}
+
+interface BuyerSubSubcategory {
+  key: string;
+  labels: Labels;
+}
 
 interface BuyerSubcategory {
   key: string;
-  subSubcategories: string[];
+  labels: Labels;
+  subSubcategories: BuyerSubSubcategory[];
 }
 
 interface BuyerCategory {
   key: string;
   image: string;
+  labels: Labels;
   subcategories: BuyerSubcategory[];
 }
 
@@ -49,7 +62,13 @@ interface CategoryMeta {
   updatedBy: string;
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const SUPPORTED_LANGS = [
+  { code: "tr", flag: "🇹🇷", label: "Türkçe" },
+  { code: "en", flag: "🇬🇧", label: "English" },
+  { code: "ru", flag: "🇷🇺", label: "Русский" },
+];
 
 const ACCENT_COLORS = [
   "bg-blue-500", "bg-violet-500", "bg-pink-500", "bg-orange-500",
@@ -62,11 +81,118 @@ function getAccent(i: number) {
 }
 
 function generateVersion(): string {
-  const now = new Date();
-  return now.toISOString().slice(0, 16).replace("T", "-");
+  return new Date().toISOString().slice(0, 16).replace("T", "-");
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+function emptyLabels(): Labels {
+  return { tr: "", en: "", ru: "" };
+}
+
+// ─── Label Input Component ────────────────────────────────────────────────────
+
+function LabelInputs({
+  labels,
+  onChange,
+  placeholder,
+}: {
+  labels: Labels;
+  onChange: (lang: keyof Labels, value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {SUPPORTED_LANGS.map(({ code, flag, label }) => (
+        <div key={code} className="flex items-center gap-2">
+          <span className="text-sm w-6 text-center">{flag}</span>
+          <input
+            type="text"
+            value={labels[code as keyof Labels]}
+            onChange={(e) => onChange(code as keyof Labels, e.target.value)}
+            placeholder={`${label}${placeholder ? ` — ${placeholder}` : ""}`}
+            className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Add Category Modal ───────────────────────────────────────────────────────
+
+function AddModal({
+  title,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  onConfirm: (key: string, labels: Labels) => void;
+  onCancel: () => void;
+}) {
+  const [key, setKey] = useState("");
+  const [labels, setLabels] = useState<Labels>(emptyLabels());
+
+  function handleLabelChange(lang: keyof Labels, value: string) {
+    setLabels((prev) => ({ ...prev, [lang]: value }));
+  }
+
+  function handleConfirm() {
+    const k = key.trim() || labels.en.trim() || labels.tr.trim();
+    if (!k) return;
+    onConfirm(k, {
+      tr: labels.tr.trim() || k,
+      en: labels.en.trim() || k,
+      ru: labels.ru.trim() || k,
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <h3 className="text-sm font-bold text-gray-900 mb-4">{title}</h3>
+
+        <div className="mb-4">
+          <label className="text-xs font-semibold text-gray-500 mb-1.5 block">
+            Anahtar (key) — veritabanında saklanır
+          </label>
+          <input
+            type="text"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="Örn: summer_collection"
+            className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+          />
+          <p className="text-[10px] text-gray-400 mt-1">
+            Boş bırakılırsa İngilizce isim kullanılır
+          </p>
+        </div>
+
+        <div className="mb-5">
+          <label className="text-xs font-semibold text-gray-500 mb-1.5 block">
+            Görünen İsimler
+          </label>
+          <LabelInputs labels={labels} onChange={handleLabelChange} />
+        </div>
+
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            İptal
+          </button>
+          <button
+            onClick={handleConfirm}
+            className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Ekle
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CategoriesPage() {
   const { user } = useAuth();
@@ -76,20 +202,19 @@ export default function CategoriesPage() {
   const [meta, setMeta] = useState<CategoryMeta | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [expandedSubs, setExpandedSubs] = useState<Set<number>>(new Set());
-  const [newSubInputs, setNewSubInputs] = useState<Record<number, string>>({});
+  const [newSubSubInputs, setNewSubSubInputs] = useState<Record<number, Labels>>({});
   const [hasChanges, setHasChanges] = useState(false);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "warn" } | null>(null);
 
-  // ── Toast ─────────────────────────────────────────────────────────────────
+  // Modal state
+  const [addModal, setAddModal] = useState<{
+    type: "category" | "subcategory" | "subsubcategory";
+    subIdx?: number;
+  } | null>(null);
 
-  const showToast = useCallback((msg: string, type: "success" | "warn" = "success") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  }, []);
-
-  // ── Load from Firestore ───────────────────────────────────────────────────
+  // ── Load ────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     async function load() {
@@ -98,138 +223,128 @@ export default function CategoriesPage() {
           getDoc(doc(db, "categories", "meta")),
           getDoc(doc(db, "categories", "structure")),
         ]);
-
-        if (structSnap.exists()) {
-          setStructure(structSnap.data() as CategoryStructure);
-        } else {
-          // First time: use bundled defaults
-          setStructure(DEFAULT_CATEGORY_DATA);
-        }
-
-        if (metaSnap.exists()) {
-          setMeta(metaSnap.data() as CategoryMeta);
-        }
-      } catch (err) {
-        console.error("Failed to load categories:", err);
-        setStructure(DEFAULT_CATEGORY_DATA);
+        setStructure(structSnap.exists()
+          ? (structSnap.data() as CategoryStructure)
+          : (DEFAULT_CATEGORY_DATA as CategoryStructure));
+        if (metaSnap.exists()) setMeta(metaSnap.data() as CategoryMeta);
+      } catch {
+        setStructure(DEFAULT_CATEGORY_DATA as CategoryStructure);
         showToast("Firestore'dan yüklenemedi, varsayılan veri kullanılıyor.", "warn");
       } finally {
         setLoading(false);
       }
     }
     load();
-  }, [showToast]);
+  }, []);
 
-  // ── Mark changed ─────────────────────────────────────────────────────────
+  // ── Toast ────────────────────────────────────────────────────────────────────
 
-  const markChanged = useCallback(() => setHasChanges(true), []);
+  const showToast = useCallback((msg: string, type: "success" | "warn" = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
 
-  // ── Publish ───────────────────────────────────────────────────────────────
+  // ── Publish ──────────────────────────────────────────────────────────────────
 
   async function handlePublish() {
     if (!structure) return;
     setPublishing(true);
     try {
       const version = generateVersion();
-      const batch = [
+      await Promise.all([
         setDoc(doc(db, "categories", "structure"), structure),
         setDoc(doc(db, "categories", "meta"), {
           version,
           updatedAt: serverTimestamp(),
           updatedBy: user?.email ?? "admin",
         }),
-      ];
-      await Promise.all(batch);
+      ]);
       setMeta({ version, updatedAt: new Date(), updatedBy: user?.email ?? "admin" });
       setHasChanges(false);
       showToast("Firestore'a başarıyla yayınlandı!");
-    } catch (err) {
-      console.error("Publish error:", err);
+    } catch {
       showToast("Yayınlama başarısız. Tekrar deneyin.", "warn");
     } finally {
       setPublishing(false);
     }
   }
 
-  // ── Category mutations ────────────────────────────────────────────────────
+  // ── Mutations ────────────────────────────────────────────────────────────────
 
-  function updateStructure(updater: (draft: CategoryStructure) => void) {
+  function update(updater: (draft: CategoryStructure) => void) {
     setStructure((prev) => {
       if (!prev) return prev;
       const next = JSON.parse(JSON.stringify(prev)) as CategoryStructure;
       updater(next);
       return next;
     });
-    markChanged();
+    setHasChanges(true);
   }
 
-  function renameBuyerCategory(i: number, val: string) {
-    if (!val.trim()) return;
-    updateStructure((d) => { d.buyerCategories[i].key = val.trim(); });
+  // Category label edit
+  function updateCategoryLabel(i: number, lang: keyof Labels, value: string) {
+    update((d) => { d.buyerCategories[i].labels[lang] = value; });
   }
 
   function deleteBuyerCategory(i: number) {
     const key = structure!.buyerCategories[i].key;
-    if (!confirm(`"${key}" kategorisi silinsin mi?`)) return;
-    updateStructure((d) => { d.buyerCategories.splice(i, 1); });
+    if (!confirm(`"${key}" silinsin mi?`)) return;
+    update((d) => { d.buyerCategories.splice(i, 1); });
     if (selectedIndex === i) setSelectedIndex(null);
     else if (selectedIndex !== null && selectedIndex > i) setSelectedIndex(selectedIndex - 1);
     showToast(`"${key}" silindi`, "warn");
   }
 
-  function addBuyerCategory() {
-    const name = prompt("Yeni alıcı kategori adı:");
-    if (!name?.trim()) return;
-    updateStructure((d) => {
-      d.buyerCategories.push({ key: name.trim(), image: "", subcategories: [] });
+  function addBuyerCategory(key: string, labels: Labels) {
+    update((d) => {
+      d.buyerCategories.push({ key, image: "", labels, subcategories: [] });
     });
-    setSelectedIndex((structure?.buyerCategories.length ?? 0)); // will be the new index
-    showToast(`"${name.trim()}" eklendi`);
+    setSelectedIndex((structure?.buyerCategories.length ?? 0));
+    showToast(`"${labels.en}" eklendi`);
+    setAddModal(null);
   }
 
-  function renameSubcategory(si: number, val: string) {
-    if (selectedIndex === null || !val.trim()) return;
-    updateStructure((d) => {
-      d.buyerCategories[selectedIndex].subcategories[si].key = val.trim();
-    });
-  }
-
-  function addSubcategory() {
+  // Subcategory label edit
+  function updateSubcategoryLabel(si: number, lang: keyof Labels, value: string) {
     if (selectedIndex === null) return;
-    const name = prompt("Yeni alt kategori adı:");
-    if (!name?.trim()) return;
-    updateStructure((d) => {
+    update((d) => { d.buyerCategories[selectedIndex].subcategories[si].labels[lang] = value; });
+  }
+
+  function addSubcategory(key: string, labels: Labels) {
+    if (selectedIndex === null) return;
+    update((d) => {
       d.buyerCategories[selectedIndex].subcategories.push({
-        key: name.trim(),
-        subSubcategories: [],
+        key, labels, subSubcategories: [],
       });
     });
-    showToast(`"${name.trim()}" eklendi`);
+    showToast(`"${labels.en}" eklendi`);
+    setAddModal(null);
   }
 
   function deleteSubcategory(si: number) {
     if (selectedIndex === null) return;
     const key = structure!.buyerCategories[selectedIndex].subcategories[si].key;
     if (!confirm(`"${key}" silinsin mi?`)) return;
-    updateStructure((d) => {
-      d.buyerCategories[selectedIndex].subcategories.splice(si, 1);
-    });
+    update((d) => { d.buyerCategories[selectedIndex].subcategories.splice(si, 1); });
     showToast(`"${key}" silindi`, "warn");
   }
 
-  function addSubSubcategory(si: number) {
+  // Sub-subcategory
+  function addSubSubcategory(si: number, key: string, labels: Labels) {
     if (selectedIndex === null) return;
-    const val = (newSubInputs[si] ?? "").trim();
-    if (!val) return;
-    updateStructure((d) => {
-      d.buyerCategories[selectedIndex].subcategories[si].subSubcategories.push(val);
+    update((d) => {
+      d.buyerCategories[selectedIndex].subcategories[si].subSubcategories.push({
+        key, labels,
+      });
     });
-    setNewSubInputs((prev) => ({ ...prev, [si]: "" }));
+    setNewSubSubInputs((prev) => ({ ...prev, [si]: emptyLabels() }));
+    setAddModal(null);
+    showToast(`"${labels.en}" eklendi`);
   }
 
   function deleteSubSubcategory(si: number, ti: number) {
     if (selectedIndex === null) return;
-    updateStructure((d) => {
+    update((d) => {
       d.buyerCategories[selectedIndex].subcategories[si].subSubcategories.splice(ti, 1);
     });
   }
@@ -237,16 +352,12 @@ export default function CategoriesPage() {
   function toggleSub(si: number) {
     setExpandedSubs((prev) => {
       const next = new Set(prev);
-      if (next.has(si)) {
-        next.delete(si);
-      } else {
-        next.add(si);
-      }
+      next.has(si) ? next.delete(si) : next.add(si);
       return next;
     });
   }
 
-  // ── Stats ─────────────────────────────────────────────────────────────────
+  // ── Stats ────────────────────────────────────────────────────────────────────
 
   const stats = structure
     ? structure.buyerCategories.reduce(
@@ -261,7 +372,7 @@ export default function CategoriesPage() {
 
   const selectedCat = selectedIndex !== null ? structure?.buyerCategories[selectedIndex] : null;
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -281,13 +392,10 @@ export default function CategoriesPage() {
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
 
         {/* Header */}
-        <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
+        <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-40">
           <div className="max-w-[1400px] mx-auto px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => router.back()}
-                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-              >
+              <button onClick={() => router.back()} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
                 <ChevronLeft className="w-4 h-4 text-gray-500" />
               </button>
               <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
@@ -300,7 +408,6 @@ export default function CategoriesPage() {
                 </p>
               </div>
             </div>
-
             <div className="flex items-center gap-3">
               {hasChanges && (
                 <div className="flex items-center gap-1.5 text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
@@ -313,15 +420,13 @@ export default function CategoriesPage() {
                 disabled={!hasChanges || publishing}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold shadow-sm transition-all ${
                   hasChanges && !publishing
-                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-blue-200"
+                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700"
                     : "bg-gray-100 text-gray-400 cursor-not-allowed"
                 }`}
               >
-                {publishing ? (
-                  <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <Upload className="w-3.5 h-3.5" />
-                )}
+                {publishing
+                  ? <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  : <Upload className="w-3.5 h-3.5" />}
                 {publishing ? "Yayınlanıyor..." : "Firestore'a Yayınla"}
               </button>
             </div>
@@ -343,23 +448,13 @@ export default function CategoriesPage() {
               </div>
             ))}
             <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm flex items-center gap-3">
-              {hasChanges ? (
-                <>
-                  <div className="w-2 h-2 bg-amber-400 rounded-full" />
-                  <div>
-                    <div className="text-xs text-gray-500">Durum</div>
-                    <div className="text-xs font-semibold text-amber-600">Yayınlanmamış</div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="w-2 h-2 bg-emerald-400 rounded-full" />
-                  <div>
-                    <div className="text-xs text-gray-500">Durum</div>
-                    <div className="text-xs font-semibold text-emerald-600">Güncel</div>
-                  </div>
-                </>
-              )}
+              <div className={`w-2 h-2 rounded-full ${hasChanges ? "bg-amber-400" : "bg-emerald-400"}`} />
+              <div>
+                <div className="text-xs text-gray-500">Durum</div>
+                <div className={`text-xs font-semibold ${hasChanges ? "text-amber-600" : "text-emerald-600"}`}>
+                  {hasChanges ? "Yayınlanmamış" : "Güncel"}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -374,11 +469,10 @@ export default function CategoriesPage() {
                   <span className="text-xs font-semibold text-gray-700">Alıcı Kategorileri</span>
                 </div>
                 <button
-                  onClick={addBuyerCategory}
+                  onClick={() => setAddModal({ type: "category" })}
                   className="flex items-center gap-1 text-[11px] text-blue-600 bg-blue-50 border border-blue-200 rounded-md px-2 py-1 hover:bg-blue-100 transition-colors font-medium"
                 >
-                  <Plus className="w-3 h-3" />
-                  Ekle
+                  <Plus className="w-3 h-3" /> Ekle
                 </button>
               </div>
               <div className="max-h-[600px] overflow-y-auto">
@@ -395,8 +489,13 @@ export default function CategoriesPage() {
                         {cat.key.charAt(0)}
                       </div>
                       <div>
-                        <div className="text-xs font-semibold text-gray-800">{cat.key}</div>
-                        <div className="text-[10px] text-gray-400">{cat.subcategories.length} alt kategori</div>
+                        {/* Show all 3 language labels in sidebar */}
+                        <div className="text-xs font-semibold text-gray-800">
+                          {cat.labels?.tr || cat.key}
+                        </div>
+                        <div className="text-[10px] text-gray-400">
+                          {cat.labels?.en} · {cat.subcategories.length} alt
+                        </div>
                       </div>
                     </div>
                     <button
@@ -415,7 +514,7 @@ export default function CategoriesPage() {
               {!selectedCat ? (
                 <div className="flex flex-col items-center justify-center h-[400px] text-gray-400">
                   <Layers className="w-10 h-10 mb-3 opacity-30" />
-                  <p className="text-sm font-medium">Düzenlemek için sol taraftan bir kategori seçin</p>
+                  <p className="text-sm font-medium">Sol taraftan bir kategori seçin</p>
                 </div>
               ) : (
                 <>
@@ -426,51 +525,57 @@ export default function CategoriesPage() {
                         {selectedCat.key.charAt(0)}
                       </div>
                       <div>
-                        <input
-                          defaultValue={selectedCat.key}
-                          onBlur={(e) => renameBuyerCategory(selectedIndex!, e.target.value)}
-                          className="text-sm font-bold text-gray-900 border-none outline-none bg-transparent focus:bg-blue-50 focus:rounded focus:px-1 transition-all w-48"
-                        />
-                        <p className="text-[11px] text-gray-400">{selectedCat.subcategories.length} alt kategori · Adı tıklayarak düzenleyin</p>
+                        <div className="text-sm font-bold text-gray-900">{selectedCat.key}</div>
+                        <div className="text-[11px] text-gray-400">İsimleri aşağıdan düzenleyin</div>
                       </div>
                     </div>
                     <button
-                      onClick={addSubcategory}
+                      onClick={() => setAddModal({ type: "subcategory" })}
                       className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 hover:bg-blue-100 transition-colors font-semibold"
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      Alt Kategori Ekle
+                      <Plus className="w-3.5 h-3.5" /> Alt Kategori Ekle
                     </button>
                   </div>
 
-                  {/* Subcategories */}
-                  <div className="p-4 flex flex-col gap-3">
+                  <div className="p-4 flex flex-col gap-4">
+
+                    {/* Category labels edit */}
+                    <div className="border border-dashed border-blue-200 rounded-xl p-4 bg-blue-50/30">
+                      <div className="text-xs font-semibold text-blue-700 mb-2">
+                        Kategori İsimleri — {selectedCat.key}
+                      </div>
+                      <LabelInputs
+                        labels={selectedCat.labels ?? emptyLabels()}
+                        onChange={(lang, value) => updateCategoryLabel(selectedIndex!, lang, value)}
+                      />
+                    </div>
+
+                    {/* Subcategories */}
                     {selectedCat.subcategories.length === 0 && (
-                      <div className="text-center py-8 text-gray-400 text-sm">
-                        Henüz alt kategori yok. &quot;Alt Kategori Ekle&quot; butonunu kullanın.
+                      <div className="text-center py-6 text-gray-400 text-sm">
+                        Henüz alt kategori yok.
                       </div>
                     )}
+
                     {selectedCat.subcategories.map((sub, si) => {
                       const isOpen = expandedSubs.has(si);
                       return (
                         <div key={si} className="border border-gray-200 rounded-xl overflow-hidden hover:border-blue-200 transition-colors">
+
                           {/* Sub header */}
                           <div
                             className="flex items-center gap-2 px-4 py-3 bg-gray-50 cursor-pointer select-none"
                             onClick={() => toggleSub(si)}
                           >
-                            <ChevronDown
-                              className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${isOpen ? "" : "-rotate-90"}`}
-                            />
-                            <input
-                              value={sub.key}
-                              onChange={(e) => renameSubcategory(si, e.target.value)}
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-xs font-semibold text-gray-700 flex-1 border-none outline-none bg-transparent focus:bg-white focus:rounded focus:px-1 transition-all"
-                            />
-                            <span className="text-[10px] text-gray-400 bg-white border border-gray-200 rounded-full px-2 py-0.5">
-                              {sub.subSubcategories.length}
-                            </span>
+                            <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${isOpen ? "" : "-rotate-90"}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-semibold text-gray-700">
+                                {sub.labels?.tr || sub.key}
+                              </div>
+                              <div className="text-[10px] text-gray-400">
+                                {sub.labels?.en} · {sub.subSubcategories.length} öğe
+                              </div>
+                            </div>
                             <button
                               onClick={(e) => { e.stopPropagation(); deleteSubcategory(si); }}
                               className="p-1 hover:bg-red-50 hover:text-red-500 text-gray-300 rounded transition-colors"
@@ -479,42 +584,55 @@ export default function CategoriesPage() {
                             </button>
                           </div>
 
-                          {/* Sub-sub tags */}
                           {isOpen && (
-                            <div className="px-4 py-3 border-t border-gray-100">
-                              <div className="flex flex-wrap gap-1.5 mb-3">
-                                {sub.subSubcategories.length === 0 && (
-                                  <span className="text-[11px] text-gray-400 italic">Henüz alt-alt kategori yok</span>
-                                )}
-                                {sub.subSubcategories.map((tag, ti) => (
-                                  <span
-                                    key={ti}
-                                    className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-md px-2 py-1 text-[11px] text-slate-600"
-                                  >
-                                    {tag}
-                                    <button
-                                      onClick={() => deleteSubSubcategory(si, ti)}
-                                      className="text-slate-300 hover:text-red-500 transition-colors leading-none"
-                                    >
-                                      <X className="w-3 h-3" />
-                                    </button>
-                                  </span>
-                                ))}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="text"
-                                  value={newSubInputs[si] ?? ""}
-                                  onChange={(e) => setNewSubInputs((prev) => ({ ...prev, [si]: e.target.value }))}
-                                  onKeyDown={(e) => { if (e.key === "Enter") addSubSubcategory(si); }}
-                                  placeholder="Yeni ekle..."
-                                  className="text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all w-44"
+                            <div className="px-4 py-4 border-t border-gray-100 flex flex-col gap-4">
+
+                              {/* Subcategory labels edit */}
+                              <div className="border border-dashed border-violet-200 rounded-xl p-3 bg-violet-50/30">
+                                <div className="text-xs font-semibold text-violet-700 mb-2">
+                                  Alt Kategori İsimleri — {sub.key}
+                                </div>
+                                <LabelInputs
+                                  labels={sub.labels ?? emptyLabels()}
+                                  onChange={(lang, value) => updateSubcategoryLabel(si, lang, value)}
                                 />
+                              </div>
+
+                              {/* Sub-sub tags */}
+                              <div>
+                                <div className="text-xs font-semibold text-gray-500 mb-2">
+                                  Alt-Alt Kategoriler
+                                </div>
+                                <div className="flex flex-wrap gap-1.5 mb-3">
+                                  {sub.subSubcategories.length === 0 && (
+                                    <span className="text-[11px] text-gray-400 italic">Henüz yok</span>
+                                  )}
+                                  {sub.subSubcategories.map((tag, ti) => (
+                                    <span
+                                      key={ti}
+                                      className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-600 group"
+                                      title={`TR: ${tag.labels?.tr}\nEN: ${tag.labels?.en}\nRU: ${tag.labels?.ru}`}
+                                    >
+                                      <span className="font-medium">{tag.labels?.tr || tag.key}</span>
+                                      <span className="text-slate-300">·</span>
+                                      <span className="text-slate-400">{tag.labels?.en || tag.key}</span>
+                                      <button
+                                        onClick={() => deleteSubSubcategory(si, ti)}
+                                        className="text-slate-300 hover:text-red-500 transition-colors ml-0.5"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    </span>
+                                  ))}
+                                </div>
+
+                                {/* Add sub-sub button */}
                                 <button
-                                  onClick={() => addSubSubcategory(si)}
-                                  className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 hover:bg-blue-100 transition-colors font-medium"
+                                  onClick={() => setAddModal({ type: "subsubcategory", subIdx: si })}
+                                  className="flex items-center gap-1.5 text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 hover:bg-emerald-100 transition-colors font-medium"
                                 >
-                                  Ekle
+                                  <Plus className="w-3.5 h-3.5" />
+                                  Alt-Alt Kategori Ekle
                                 </button>
                               </div>
                             </div>
@@ -531,16 +649,36 @@ export default function CategoriesPage() {
 
         {/* Toast */}
         {toast && (
-          <div className={`fixed bottom-6 right-6 flex items-center gap-2.5 px-4 py-3 rounded-xl text-white text-sm font-medium shadow-xl z-50 transition-all ${
+          <div className={`fixed bottom-6 right-6 flex items-center gap-2.5 px-4 py-3 rounded-xl text-white text-sm font-medium shadow-xl z-50 ${
             toast.type === "success" ? "bg-gray-900" : "bg-amber-600"
           }`}>
             {toast.type === "success"
               ? <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              : <AlertCircle className="w-4 h-4 text-white" />
-            }
+              : <AlertCircle className="w-4 h-4 text-white" />}
             {toast.msg}
           </div>
         )}
+
+        {/* Add Modal */}
+        {addModal && (
+          <AddModal
+            title={
+              addModal.type === "category"
+                ? "Yeni Alıcı Kategorisi"
+                : addModal.type === "subcategory"
+                ? "Yeni Alt Kategori"
+                : "Yeni Alt-Alt Kategori"
+            }
+            onConfirm={(key, labels) => {
+              if (addModal.type === "category") addBuyerCategory(key, labels);
+              else if (addModal.type === "subcategory") addSubcategory(key, labels);
+              else if (addModal.type === "subsubcategory" && addModal.subIdx !== undefined)
+                addSubSubcategory(addModal.subIdx, key, labels);
+            }}
+            onCancel={() => setAddModal(null)}
+          />
+        )}
+
       </div>
     </ProtectedRoute>
   );
