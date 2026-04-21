@@ -141,6 +141,97 @@ function formatTs(ts: Timestamp | null | undefined): string {
   }
 }
 
+// The writer sometimes stores fields with literal dotted keys at the top level
+// (e.g. a field named `"byFile.cart_provider.reads"`) instead of a nested map.
+// This happens when `set(..., merge: true)` is called with dotted keys. Parse
+// both shapes and merge, preferring whichever carries the non-zero value.
+function normalizeSession(
+  docId: string,
+  raw: Record<string, unknown>
+): UsageSession {
+  const byFile: Record<string, FileBucket> = {};
+
+  // 1. Pull any properly-nested byFile entries first.
+  const nestedByFile = raw.byFile;
+  if (nestedByFile && typeof nestedByFile === "object") {
+    for (const [file, b] of Object.entries(
+      nestedByFile as Record<string, Partial<FileBucket>>
+    )) {
+      byFile[file] = {
+        reads: Number(b?.reads ?? 0),
+        writes: Number(b?.writes ?? 0),
+        operations: { ...((b?.operations as Record<string, number>) ?? {}) },
+      };
+    }
+  }
+
+  let totalsReads = 0;
+  let totalsWrites = 0;
+  const nestedTotals = raw.totals;
+  if (nestedTotals && typeof nestedTotals === "object") {
+    const t = nestedTotals as { reads?: number; writes?: number };
+    totalsReads = Number(t.reads ?? 0);
+    totalsWrites = Number(t.writes ?? 0);
+  }
+
+  // 2. Walk the top-level fields looking for literal dotted keys.
+  //    Per the writer contract, file and operation names are already sanitized
+  //    (no `. / \ [ ] * ~`), so splitting on "." is safe.
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value !== "number") continue;
+    if (!key.includes(".")) continue;
+    const parts = key.split(".");
+
+    if (parts[0] === "byFile" && parts.length >= 3) {
+      const file = parts[1];
+      const bucket = byFile[file] ?? { reads: 0, writes: 0, operations: {} };
+      if (parts.length === 3 && parts[2] === "reads") {
+        bucket.reads = Math.max(bucket.reads, value);
+      } else if (parts.length === 3 && parts[2] === "writes") {
+        bucket.writes = Math.max(bucket.writes, value);
+      } else if (parts[2] === "operations" && parts.length >= 4) {
+        const op = parts.slice(3).join(".");
+        bucket.operations[op] = Math.max(bucket.operations[op] ?? 0, value);
+      }
+      byFile[file] = bucket;
+    } else if (parts[0] === "totals" && parts.length === 2) {
+      if (parts[1] === "reads") totalsReads = Math.max(totalsReads, value);
+      else if (parts[1] === "writes")
+        totalsWrites = Math.max(totalsWrites, value);
+    }
+  }
+
+  // 3. Self-heal: if totals.reads is missing but we have per-file reads, sum them.
+  if (totalsReads === 0) {
+    const derived = Object.values(byFile).reduce(
+      (acc, b) => acc + (b.reads ?? 0),
+      0
+    );
+    if (derived > 0) totalsReads = derived;
+  }
+  if (totalsWrites === 0) {
+    const derived = Object.values(byFile).reduce(
+      (acc, b) => acc + (b.writes ?? 0),
+      0
+    );
+    if (derived > 0) totalsWrites = derived;
+  }
+
+  return {
+    sessionId: (raw.sessionId as string) ?? docId,
+    date: (raw.date as string) ?? "",
+    startedAt: raw.startedAt as Timestamp,
+    lastActivityAt: raw.lastActivityAt as Timestamp,
+    appVersion: (raw.appVersion as string | null) ?? null,
+    platform: ((raw.platform as Platform) ?? "web") as Platform,
+    userId: (raw.userId as string | null) ?? null,
+    displayName: (raw.displayName as string | null) ?? null,
+    email: (raw.email as string | null) ?? null,
+    totals: { reads: totalsReads, writes: totalsWrites },
+    byFile,
+  };
+}
+
 function aggregateByUser(sessions: UsageSession[]): PerUser[] {
   const map = new Map<string, PerUser>();
   for (const s of sessions) {
@@ -287,22 +378,9 @@ function FirestoreReadTracker() {
       }
 
       const snap = await getDocs(query(col, ...constraints));
-      const docs: UsageSession[] = snap.docs.map((d) => {
-        const data = d.data() as Partial<UsageSession>;
-        return {
-          sessionId: data.sessionId ?? d.id,
-          date: data.date ?? "",
-          startedAt: data.startedAt as Timestamp,
-          lastActivityAt: data.lastActivityAt as Timestamp,
-          appVersion: data.appVersion ?? null,
-          platform: (data.platform ?? "web") as Platform,
-          userId: data.userId ?? null,
-          displayName: data.displayName ?? null,
-          email: data.email ?? null,
-          totals: data.totals ?? { reads: 0, writes: 0 },
-          byFile: data.byFile ?? {},
-        };
-      });
+      const docs: UsageSession[] = snap.docs.map((d) =>
+        normalizeSession(d.id, d.data() as Record<string, unknown>)
+      );
 
       setSessions(docs);
       setLoaded(true);
