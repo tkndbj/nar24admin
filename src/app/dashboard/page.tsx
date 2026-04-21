@@ -196,6 +196,11 @@ const NAV_CATEGORIES = [
         icon: Zap,
       },
       {
+        path: "firestore-read-tracker",
+        label: "Firestore Okuma Takibi",
+        icon: BarChart3,
+      },
+      {
         path: "search-functionality",
         label: "Arama Motoru Yönetimi",
         icon: Search,
