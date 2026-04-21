@@ -202,7 +202,6 @@ export default function CategoriesPage() {
   const [meta, setMeta] = useState<CategoryMeta | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [expandedSubs, setExpandedSubs] = useState<Set<number>>(new Set());
-  const [newSubSubInputs, setNewSubSubInputs] = useState<Record<number, Labels>>({});
   const [hasChanges, setHasChanges] = useState(false);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
@@ -213,6 +212,14 @@ export default function CategoriesPage() {
     type: "category" | "subcategory" | "subsubcategory";
     subIdx?: number;
   } | null>(null);
+
+  
+  // ── Toast ────────────────────────────────────────────────────────────────────
+
+  const showToast = useCallback((msg: string, type: "success" | "warn" = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
 
   // ── Load ────────────────────────────────────────────────────────────────────
 
@@ -235,14 +242,8 @@ export default function CategoriesPage() {
       }
     }
     load();
-  }, []);
+  }, [showToast]);
 
-  // ── Toast ────────────────────────────────────────────────────────────────────
-
-  const showToast = useCallback((msg: string, type: "success" | "warn" = "success") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  }, []);
 
   // ── Publish ──────────────────────────────────────────────────────────────────
 
@@ -337,7 +338,7 @@ export default function CategoriesPage() {
         key, labels,
       });
     });
-    setNewSubSubInputs((prev) => ({ ...prev, [si]: emptyLabels() }));
+ 
     setAddModal(null);
     showToast(`"${labels.en}" eklendi`);
   }
@@ -352,7 +353,11 @@ export default function CategoriesPage() {
   function toggleSub(si: number) {
     setExpandedSubs((prev) => {
       const next = new Set(prev);
-      next.has(si) ? next.delete(si) : next.add(si);
+      if (next.has(si)) {
+        next.delete(si);
+      } else {
+        next.add(si);
+      }
       return next;
     });
   }
