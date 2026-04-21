@@ -179,7 +179,7 @@ const NAV_CATEGORIES = [
         label: "Ana Ekran Dukkanlari",
         icon: Store,
       },
-      { path: "categories", label: "Kategori Yönetimi", icon: Layers }
+      { path: "categories", label: "Kategori Yönetimi", icon: Layers },
       { path: "createcampaing", label: "Ozel Gun Kampanyalari", icon: Zap },
       {
         path: "marketscreenhorizontallist",
