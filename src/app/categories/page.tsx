@@ -82,6 +82,13 @@ export default function CategoriesPage() {
   const [publishing, setPublishing] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "warn" } | null>(null);
 
+  // ── Toast ─────────────────────────────────────────────────────────────────
+
+  const showToast = useCallback((msg: string, type: "success" | "warn" = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
   // ── Load from Firestore ───────────────────────────────────────────────────
 
   useEffect(() => {
@@ -111,14 +118,7 @@ export default function CategoriesPage() {
       }
     }
     load();
-  }, []);
-
-  // ── Toast ─────────────────────────────────────────────────────────────────
-
-  const showToast = useCallback((msg: string, type: "success" | "warn" = "success") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  }, []);
+  }, [showToast]);
 
   // ── Mark changed ─────────────────────────────────────────────────────────
 
@@ -237,7 +237,11 @@ export default function CategoriesPage() {
   function toggleSub(si: number) {
     setExpandedSubs((prev) => {
       const next = new Set(prev);
-      next.has(si) ? next.delete(si) : next.add(si);
+      if (next.has(si)) {
+        next.delete(si);
+      } else {
+        next.add(si);
+      }
       return next;
     });
   }
@@ -443,7 +447,7 @@ export default function CategoriesPage() {
                   <div className="p-4 flex flex-col gap-3">
                     {selectedCat.subcategories.length === 0 && (
                       <div className="text-center py-8 text-gray-400 text-sm">
-                        Henüz alt kategori yok. "Alt Kategori Ekle" butonunu kullanın.
+                        Henüz alt kategori yok. &quot;Alt Kategori Ekle&quot; butonunu kullanın.
                       </div>
                     )}
                     {selectedCat.subcategories.map((sub, si) => {
