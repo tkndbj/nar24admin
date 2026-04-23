@@ -83,7 +83,12 @@ const NAV_CATEGORIES = [
     items: [
       { path: "deliveryprice", label: "Kargo Fiyatlandirma", icon: Truck },
       { path: "prices", label: "Reklam/Boost Fiyatlari", icon: DollarSign },
-      { path: "commissions", label: "Komisyonlar", icon: Percent },
+      { path: "commissions", label: "Dükkan Komisyonları", icon: Percent },
+      {
+        path: "commissions-restaurants",
+        label: "Restoran Komisyonları",
+        icon: Percent,
+      },
     ],
   },
   {
