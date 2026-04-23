@@ -128,6 +128,23 @@ interface FoodReport {
   calculatedAt?: Timestamp;
   periodStart?: Timestamp;
   periodEnd?: Timestamp;
+
+  // ── NEW: Platform economics (from frozen fees snapshot) ──────
+  platformRevenue?: number;       // commission + shipment fee kept by Nar24
+  commissionRevenue?: number;      // commission portion only
+  shipmentFeeRevenue?: number;     // shipment fee portion only
+  restaurantPayout?: number;       // what restaurants collectively earn
+  ordersWithoutFeesSnapshot?: number; // legacy orders (pre-Step-3)
+
+  // ── NEW: Courier-type breakdown ──────────────────────────────
+  // 'ours'   → Nar24 courier
+  // 'theirs' → restaurant's own courier
+  // 'legacy' → pre-Step-3, no courierType set
+  courierTypeBreakdown?: {
+    ours?: { count: number; amount: number; platformRevenue: number };
+    theirs?: { count: number; amount: number; platformRevenue: number };
+    legacy?: { count: number; amount: number; platformRevenue: number };
+  };
 }
 
 interface PeriodEntry {
@@ -1541,6 +1558,13 @@ function FoodSalesTab({
           "Brüt Ciro (TL)": r.grossRevenue,
           "Teslim Edilen Ciro (TL)": r.deliveredRevenue,
           "Teslimat Ücreti (TL)": r.deliveryFeeRevenue,
+          "Platform Geliri (TL)": r.platformRevenue ?? 0,
+          "Komisyon (TL)": r.commissionRevenue ?? 0,
+          "Kargo Ücreti (TL)": r.shipmentFeeRevenue ?? 0,
+          "Restoran Ödemesi (TL)": r.restaurantPayout ?? 0,
+          "Bizim Kurye": r.courierTypeBreakdown?.ours?.count ?? 0,
+          "Onların Kuryesi": r.courierTypeBreakdown?.theirs?.count ?? 0,
+          Legacy: r.courierTypeBreakdown?.legacy?.count ?? 0,
           "Ort. Sipariş (TL)": r.averageOrderValue,
         }));
 
@@ -1554,21 +1578,35 @@ function FoodSalesTab({
           "Brüt Ciro (TL)": platform?.grossRevenue || 0,
           "Teslim Edilen Ciro (TL)": platform?.deliveredRevenue || 0,
           "Teslimat Ücreti (TL)": platform?.deliveryFeeRevenue || 0,
+          "Platform Geliri (TL)": platform?.platformRevenue ?? 0,
+          "Komisyon (TL)": platform?.commissionRevenue ?? 0,
+          "Kargo Ücreti (TL)": platform?.shipmentFeeRevenue ?? 0,
+          "Restoran Ödemesi (TL)": platform?.restaurantPayout ?? 0,
+          "Bizim Kurye": platform?.courierTypeBreakdown?.ours?.count ?? 0,
+          "Onların Kuryesi": platform?.courierTypeBreakdown?.theirs?.count ?? 0,
+          Legacy: platform?.courierTypeBreakdown?.legacy?.count ?? 0,
           "Ort. Sipariş (TL)": platform?.averageOrderValue || 0,
         });
 
         const ws = XLSX.utils.json_to_sheet(rows);
         ws["!cols"] = [
-          { wch: 5 },
-          { wch: 30 },
-          { wch: 28 },
-          { wch: 15 },
-          { wch: 12 },
-          { wch: 10 },
-          { wch: 18 },
-          { wch: 20 },
-          { wch: 18 },
-          { wch: 15 },
+          { wch: 5 },    // #
+          { wch: 30 },   // Restoran Adı
+          { wch: 28 },   // Restoran ID
+          { wch: 15 },   // Toplam Sipariş
+          { wch: 12 },   // Tamamlanan
+          { wch: 10 },   // İptal
+          { wch: 18 },   // Brüt Ciro
+          { wch: 20 },   // Teslim Edilen Ciro
+          { wch: 18 },   // Teslimat Ücreti
+          { wch: 18 },   // Platform Geliri
+          { wch: 15 },   // Komisyon
+          { wch: 16 },   // Kargo Ücreti
+          { wch: 18 },   // Restoran Ödemesi
+          { wch: 13 },   // Bizim Kurye
+          { wch: 15 },   // Onların Kuryesi
+          { wch: 10 },   // Legacy
+          { wch: 15 },   // Ort. Sipariş
         ];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Restoran Raporu");
@@ -1745,10 +1783,10 @@ function FoodSalesTab({
                     </div>
 
                     {/* Stats */}
-                    <div className="flex items-center gap-6 flex-shrink-0">
+                    <div className="flex items-center gap-4 flex-shrink-0">
                       {hasReport ? (
                         <>
-                          <div className="text-right w-28">
+                          <div className="text-right w-24">
                             <p className="text-xs text-gray-500">Brüt Ciro</p>
                             <p className="text-sm font-semibold text-gray-900">
                               {formatCurrency(report.grossRevenue)}
@@ -1760,12 +1798,28 @@ function FoodSalesTab({
                               {report.totalOrders?.toLocaleString()}
                             </p>
                           </div>
-                          <div className="text-right w-28">
-                            <p className="text-xs text-gray-500">
-                              Teslim Edilen
-                            </p>
+                          <div className="text-right w-24">
+                            <p className="text-xs text-gray-500">Teslim Edilen</p>
                             <p className="text-sm font-semibold text-emerald-600">
                               {formatCurrency(report.deliveredRevenue)}
+                            </p>
+                          </div>
+                          <div className="text-right w-24">
+                            <p className="text-xs text-gray-500">Platform Geliri</p>
+                            <p className="text-sm font-semibold text-violet-600">
+                              {formatCurrency(report.platformRevenue ?? 0)}
+                            </p>
+                          </div>
+                          <div className="text-right w-24">
+                            <p className="text-xs text-gray-500">Bizim / Onların</p>
+                            <p className="text-sm font-semibold text-gray-900">
+                              <span className="text-emerald-600">
+                                {report.courierTypeBreakdown?.ours?.count ?? 0}
+                              </span>
+                              <span className="text-gray-300 mx-1">/</span>
+                              <span className="text-blue-600">
+                                {report.courierTypeBreakdown?.theirs?.count ?? 0}
+                              </span>
                             </p>
                           </div>
                           <div className="text-right w-20">
@@ -1776,7 +1830,7 @@ function FoodSalesTab({
                           </div>
                         </>
                       ) : (
-                        <div className="w-[296px]" />
+                        <div className="w-[448px]" />
                       )}
                     </div>
 
@@ -1860,10 +1914,13 @@ function FoodSalesTab({
                                     Brüt Ciro
                                   </th>
                                   <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-28">
-                                    Teslim Edilen
+                                    Platform Geliri
+                                  </th>
+                                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-28">
+                                    Restoran Ödemesi
                                   </th>
                                   <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-24">
-                                    Teslimat Ücr.
+                                    Bizim / Onların
                                   </th>
                                   <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 w-24">
                                     Ort. Sipariş
@@ -1899,11 +1956,20 @@ function FoodSalesTab({
                                     <td className="px-3 py-2.5 text-right font-semibold text-gray-900">
                                       {formatCurrency(r.grossRevenue)}
                                     </td>
-                                    <td className="px-3 py-2.5 text-right text-emerald-600 font-medium">
-                                      {formatCurrency(r.deliveredRevenue)}
+                                    <td className="px-3 py-2.5 text-right font-semibold text-violet-600">
+                                      {formatCurrency(r.platformRevenue ?? 0)}
                                     </td>
-                                    <td className="px-3 py-2.5 text-right text-gray-500">
-                                      {formatCurrency(r.deliveryFeeRevenue)}
+                                    <td className="px-3 py-2.5 text-right font-medium text-gray-700">
+                                      {formatCurrency(r.restaurantPayout ?? 0)}
+                                    </td>
+                                    <td className="px-3 py-2.5 text-right text-gray-900">
+                                      <span className="text-emerald-600 font-medium">
+                                        {r.courierTypeBreakdown?.ours?.count ?? 0}
+                                      </span>
+                                      <span className="text-gray-300 mx-1">/</span>
+                                      <span className="text-blue-600 font-medium">
+                                        {r.courierTypeBreakdown?.theirs?.count ?? 0}
+                                      </span>
                                     </td>
                                     <td className="px-3 py-2.5 text-right text-gray-500">
                                       {formatCurrency(r.averageOrderValue)}
