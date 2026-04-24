@@ -57,6 +57,9 @@ export default function CreateUserPage() {
   const [createPrefix, setCreatePrefix] = useState("courier");
   const [showCreateForm, setShowCreateForm] = useState(false);
 
+  const [editingUid, setEditingUid] = useState<string | null>(null);
+  const [savingName, setSavingName] = useState(false);
+
   // Confirm delete modal
   const [confirmDelete, setConfirmDelete] = useState<{
     type: "single" | "selected" | "all";
@@ -126,6 +129,36 @@ export default function CreateUserPage() {
       setCreating(false);
     }
   }, [createCount, createPrefix, fetchAccounts]);
+
+  const handleRename = useCallback(
+    async (uid: string, newName: string) => {
+      const trimmed = newName.trim();
+      if (!trimmed) {
+        setEditingUid(null);
+        return;
+      }
+      // Optimistic check: skip if unchanged
+      const current = accounts.find((a) => a.uid === uid);
+      if (current && current.displayName === trimmed) {
+        setEditingUid(null);
+        return;
+      }
+      setSavingName(true);
+      try {
+        const fn = httpsCallable(functions, "updateTestCourierName");
+        await fn({ uid, displayName: trimmed });
+        setToast({ type: "success", message: "İsim güncellendi" });
+        setEditingUid(null);
+        await fetchAccounts();
+      } catch (err) {
+        console.error("Failed to rename:", err);
+        setToast({ type: "error", message: "İsim güncellenemedi" });
+      } finally {
+        setSavingName(false);
+      }
+    },
+    [accounts, fetchAccounts],
+  );
 
   // ── Delete single ──
   const handleDeleteSingle = useCallback(
@@ -199,14 +232,11 @@ export default function CreateUserPage() {
   }, [createPrefix, fetchAccounts]);
 
   // ── Copy to clipboard ──
-  const copyToClipboard = useCallback(
-    (text: string, label: string) => {
-      navigator.clipboard.writeText(text);
-      setCopiedField(label);
-      setTimeout(() => setCopiedField(null), 1500);
-    },
-    [],
-  );
+  const copyToClipboard = useCallback((text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(label);
+    setTimeout(() => setCopiedField(null), 1500);
+  }, []);
 
   // ── Toggle selection ──
   const toggleSelect = (uid: string) => {
@@ -296,9 +326,11 @@ export default function CreateUserPage() {
                 Test Hesapları
               </p>
               <p className="text-xs text-orange-600 mt-0.5 leading-relaxed">
-                Bu hesaplar <code className="bg-orange-100 px-1 rounded">@test.local</code> uzantılı sahte email ile oluşturulur.
-                Kurye uygulamasına giriş yapabilir, konum paylaşabilir ve sipariş alabilir.
-                İstediğiniz zaman temizleyebilirsiniz.
+                Bu hesaplar{" "}
+                <code className="bg-orange-100 px-1 rounded">@test.local</code>{" "}
+                uzantılı sahte email ile oluşturulur. Kurye uygulamasına giriş
+                yapabilir, konum paylaşabilir ve sipariş alabilir. İstediğiniz
+                zaman temizleyebilirsiniz.
               </p>
               <div className="flex items-center gap-3 mt-2">
                 <span className="text-[10px] text-orange-500 font-medium uppercase tracking-wider">
@@ -457,9 +489,37 @@ export default function CreateUserPage() {
                         </div>
 
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">
-                            {account.displayName}
-                          </p>
+                          {editingUid === account.uid ? (
+                            <input
+                              type="text"
+                              defaultValue={account.displayName}
+                              autoFocus
+                              disabled={savingName}
+                              onBlur={(e) =>
+                                handleRename(account.uid, e.target.value)
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  handleRename(
+                                    account.uid,
+                                    (e.target as HTMLInputElement).value,
+                                  );
+                                } else if (e.key === "Escape") {
+                                  setEditingUid(null);
+                                }
+                              }}
+                              maxLength={60}
+                              className="w-full text-sm font-medium text-gray-900 bg-white border border-orange-300 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400"
+                            />
+                          ) : (
+                            <button
+                              onClick={() => setEditingUid(account.uid)}
+                              className="text-sm font-medium text-gray-900 truncate hover:text-orange-600 transition-colors text-left w-full block"
+                              title="İsmi düzenlemek için tıklayın"
+                            >
+                              {account.displayName}
+                            </button>
+                          )}
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className="text-xs text-gray-400 font-mono truncate">
                               {account.email}
@@ -586,7 +646,10 @@ export default function CreateUserPage() {
                       value={createCount}
                       onChange={(e) =>
                         setCreateCount(
-                          Math.min(50, Math.max(1, Number(e.target.value) || 1)),
+                          Math.min(
+                            50,
+                            Math.max(1, Number(e.target.value) || 1),
+                          ),
                         )
                       }
                       min={1}
@@ -605,10 +668,16 @@ export default function CreateUserPage() {
                       📧 <strong>{createCount}</strong> hesap oluşturulacak
                     </p>
                     <p>
-                      🔑 Şifre: <code className="bg-white px-1 rounded">{globalPassword}</code>
+                      🔑 Şifre:{" "}
+                      <code className="bg-white px-1 rounded">
+                        {globalPassword}
+                      </code>
                     </p>
                     <p>
-                      🏷️ Claim: <code className="bg-white px-1 rounded">foodcargoguy: true</code>
+                      🏷️ Claim:{" "}
+                      <code className="bg-white px-1 rounded">
+                        foodcargoguy: true
+                      </code>
                     </p>
                   </div>
                 </div>
