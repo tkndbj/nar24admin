@@ -46,6 +46,8 @@ interface RestaurantApplication {
   taxPlateCertificateUrl: string;
   ownerId: string;
   status: string;
+  city: string;           // ← ADD
+  subcity: string; 
   createdAt: Timestamp;
   latitude: number;
   longitude: number;
@@ -381,8 +383,11 @@ export default function RestaurantApplicationsPage() {
       const restaurantRef = await addDoc(collection(db, "restaurants"), {
         ownerId: application.ownerId,
         name: application.name,
+        email: application.email,                    // ← ADD
         contactNo: application.contactNo,
         address: application.address,
+        city: application.city,                       // ← ADD
+        subcity: application.subcity,                 // ← ADD
         latitude: application.latitude,
         longitude: application.longitude,
         businessType: "restaurant",
@@ -401,6 +406,7 @@ export default function RestaurantApplicationsPage() {
         clickCount: 0,
         followerCount: 0,
       });
+      
   
       await updateDoc(appRef, { status: "approved" });
   
