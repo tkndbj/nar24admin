@@ -133,6 +133,10 @@ interface EditApplication {
   consoleBrand?: string;
   curtainMaxWidth?: number;
   curtainMaxHeight?: number;
+  // Authoritative source (dukkan|vitrin) captured at fetch time, so approve/
+  // reject route correctly even if the operator switches source tabs while
+  // the detail modal is open.
+  _source?: SourceType;
 }
 
 interface ShopMember {
@@ -384,6 +388,9 @@ export default function EditProductApplicationsPage() {
         const apps = snapshot.docs.map((docSnap) => ({
           ...docSnap.data(),
           id: docSnap.id, // ✅ Put AFTER spread so it won't be overwritten
+          // Stamp the source so handleApprove/handleRejectConfirm route
+          // correctly even if the operator changed source tabs.
+          _source: source,
         })) as EditApplication[];
 
         const lastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
@@ -627,11 +634,17 @@ export default function EditProductApplicationsPage() {
   };
 
   const handleApprove = async (application: EditApplication) => {
+    // Use the source captured at fetch time, not the live activeSource —
+    // the operator may have switched source tabs while this modal was open.
+    const appSource: SourceType = application._source ?? activeSource;
+    const appCollection = COLLECTION_NAMES[appSource];
+
     setProcessing(true);
     try {
       console.log("Approving application:", application.id);
       console.log("Edit type:", application.editType);
       console.log("Original product ID:", application.originalProductId);
+      console.log("Authoritative source:", appSource, "→", appCollection);
       console.log(
         "Shop ID:",
         application.shopId || application.originalProductData?.shopId || "None",
@@ -672,26 +685,29 @@ export default function EditProductApplicationsPage() {
           });
 
           setSelectedApplication(null);
-          // Invalidate both pending and approved tabs for current source
+          // Invalidate both pending and approved tabs for the application's
+          // source (not the live activeSource, which may have changed).
           setSourceStates((prev) => ({
             ...prev,
-            [activeSource]: {
-              ...prev[activeSource],
+            [appSource]: {
+              ...prev[appSource],
               pending: {
-                ...prev[activeSource].pending,
+                ...prev[appSource].pending,
                 initialized: false,
                 lastDoc: null,
                 hasMore: true,
               },
               approved: {
-                ...prev[activeSource].approved,
+                ...prev[appSource].approved,
                 initialized: false,
                 lastDoc: null,
                 hasMore: true,
               },
             },
           }));
-          fetchApplications(activeSource, "pending");
+          if (activeSource === appSource) {
+            fetchApplications(appSource, "pending");
+          }
           alert(
             "Arşivlenmiş ürün güncellemesi onaylandı ve ürün aktif edildi!",
           );
@@ -790,14 +806,18 @@ export default function EditProductApplicationsPage() {
         condition: application.condition,
         brandModel: application.brandModel,
         imageUrls: application.imageUrls,
-        imageStoragePaths: (application as unknown as { imageStoragePaths?: string[] })
-          .imageStoragePaths ?? [],
+        imageStoragePaths:
+          (application as unknown as { imageStoragePaths?: string[] })
+            .imageStoragePaths ?? [],
         videoStoragePath:
           (application as unknown as { videoStoragePath?: string | null })
             .videoStoragePath ?? null,
         colorImageStoragePaths:
-          (application as unknown as { colorImageStoragePaths?: Record<string, string> })
-            .colorImageStoragePaths ?? {},
+          (
+            application as unknown as {
+              colorImageStoragePaths?: Record<string, string>;
+            }
+          ).colorImageStoragePaths ?? {},
         category: application.category,
         subcategory: application.subcategory,
         subsubcategory: application.subsubcategory,
@@ -923,8 +943,8 @@ export default function EditProductApplicationsPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await updateDoc(productRef, updateData as any);
 
-      // Delete the edit application
-      await updateDoc(doc(db, COLLECTION_NAMES[activeSource], application.id), {
+      // Delete the edit application — use the source captured at fetch time.
+      await updateDoc(doc(db, appCollection, application.id), {
         status: "approved",
         reviewedAt: Timestamp.now(),
       });
@@ -939,26 +959,28 @@ export default function EditProductApplicationsPage() {
       });
 
       setSelectedApplication(null);
-      // Invalidate both pending and approved tabs for current source
+      // Invalidate both pending and approved tabs for the application's source.
       setSourceStates((prev) => ({
         ...prev,
-        [activeSource]: {
-          ...prev[activeSource],
+        [appSource]: {
+          ...prev[appSource],
           pending: {
-            ...prev[activeSource].pending,
+            ...prev[appSource].pending,
             initialized: false,
             lastDoc: null,
             hasMore: true,
           },
           approved: {
-            ...prev[activeSource].approved,
+            ...prev[appSource].approved,
             initialized: false,
             lastDoc: null,
             hasMore: true,
           },
         },
       }));
-      fetchApplications(activeSource, "pending");
+      if (activeSource === appSource) {
+        fetchApplications(appSource, "pending");
+      }
       alert("Başvuru başarıyla onaylandı!");
     } catch (error) {
       console.error("Error approving application:", error);
@@ -995,22 +1017,28 @@ export default function EditProductApplicationsPage() {
     const application = rejectionModal.application;
     if (!application) return;
 
+    // Use the source captured at fetch time, not the live activeSource —
+    // the operator may have switched source tabs while this modal was open.
+    const appSource: SourceType = application._source ?? activeSource;
+    const appCollection = COLLECTION_NAMES[appSource];
+
     setProcessing(true);
     try {
       console.log("Rejecting application:", application.id);
       console.log("Rejection reason:", rejectionReason);
+      console.log("Authoritative source:", appSource, "→", appCollection);
       console.log(
         "Shop ID:",
         application.shopId || application.originalProductData?.shopId || "None",
       );
 
-      // Delete the edit application
-      await updateDoc(doc(db, COLLECTION_NAMES[activeSource], application.id), {
+      // Mark the edit application as rejected — use the captured source.
+      await updateDoc(doc(db, appCollection, application.id), {
         status: "rejected",
         reviewedAt: Timestamp.now(),
         rejectionReason: rejectionReason,
       });
-      console.log("Edit application deleted");
+      console.log("Edit application rejected");
 
       // Send notifications with rejection reason
       await sendNotifications(application, "rejected", rejectionReason);
@@ -1024,26 +1052,28 @@ export default function EditProductApplicationsPage() {
       // Close modal and clear selection
       setRejectionModal({ isOpen: false, application: null });
       setSelectedApplication(null);
-      // Invalidate both pending and rejected tabs for current source
+      // Invalidate both pending and rejected tabs for the application's source.
       setSourceStates((prev) => ({
         ...prev,
-        [activeSource]: {
-          ...prev[activeSource],
+        [appSource]: {
+          ...prev[appSource],
           pending: {
-            ...prev[activeSource].pending,
+            ...prev[appSource].pending,
             initialized: false,
             lastDoc: null,
             hasMore: true,
           },
           rejected: {
-            ...prev[activeSource].rejected,
+            ...prev[appSource].rejected,
             initialized: false,
             lastDoc: null,
             hasMore: true,
           },
         },
       }));
-      fetchApplications(activeSource, "pending");
+      if (activeSource === appSource) {
+        fetchApplications(appSource, "pending");
+      }
       alert("Başvuru başarıyla reddedildi!");
     } catch (error) {
       console.error("Error rejecting application:", error);

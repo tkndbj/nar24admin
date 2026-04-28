@@ -140,6 +140,10 @@ interface ProductApplication {
   consoleBrand?: string;
   curtainMaxWidth?: number;
   curtainMaxHeight?: number;
+  // Authoritative source collection captured at fetch time.
+  // Always prefer this over the current activeTab when calling Cloud Functions —
+  // the modal can outlive a tab switch, which would otherwise misroute approvals.
+  _source?: "product_applications" | "vitrin_product_applications";
 }
 
 // Detail Modal Component
@@ -1138,12 +1142,20 @@ export default function ProductApplications() {
   };
 
   // Fetch all applications and filter/sort client-side
-  const fetchApplications = async (collectionName: string) => {
+  const fetchApplications = async (
+    collectionName: "product_applications" | "vitrin_product_applications",
+  ) => {
     try {
       const snapshot = await getDocs(collection(db, collectionName));
       const docs = snapshot.docs;
 
-      const allApplications = docs.map(parseDocument);
+      const allApplications = docs.map((docSnapshot) => {
+        const parsed = parseDocument(docSnapshot);
+        // Stamp the source collection so approve/reject can route correctly
+        // even if the operator switches tabs while the detail modal is open.
+        parsed._source = collectionName;
+        return parsed;
+      });
 
       const pendingApplications = allApplications.filter(
         (app) => !app.status || app.status === "pending",
@@ -1151,8 +1163,14 @@ export default function ProductApplications() {
 
       pendingApplications.sort((a, b) => {
         if (!a.createdAt || !b.createdAt) return 0;
-        const aTime = typeof a.createdAt.toDate === "function" ? a.createdAt.toDate().getTime() : 0;
-        const bTime = typeof b.createdAt.toDate === "function" ? b.createdAt.toDate().getTime() : 0;
+        const aTime =
+          typeof a.createdAt.toDate === "function"
+            ? a.createdAt.toDate().getTime()
+            : 0;
+        const bTime =
+          typeof b.createdAt.toDate === "function"
+            ? b.createdAt.toDate().getTime()
+            : 0;
         return bTime - aTime;
       });
 
@@ -1247,6 +1265,29 @@ export default function ProductApplications() {
     }
   }, [applications]);
 
+  // Resolve the authoritative source for an application. Falls back to the
+  // current tab only if _source wasn't stamped (legacy data); the CF will
+  // still cross-check this against the document's shopId.
+  const sourceForApplication = (
+    application: ProductApplication,
+  ): "product_applications" | "vitrin_product_applications" =>
+    application._source ?? getCurrentCollectionName();
+
+  // Remove an application from whichever local list it actually lives in,
+  // independent of which tab is active right now.
+  const removeFromLocalState = (application: ProductApplication) => {
+    const source = sourceForApplication(application);
+    if (source === "product_applications") {
+      setDukkanApplications((prev) =>
+        prev.filter((app) => app.id !== application.id),
+      );
+    } else {
+      setVitrinApplications((prev) =>
+        prev.filter((app) => app.id !== application.id),
+      );
+    }
+  };
+
   // =====================================================================
   // ✅ APPROVE — now delegates to Cloud Function
   // =====================================================================
@@ -1257,7 +1298,7 @@ export default function ProductApplications() {
     try {
       const result = await approveProductApplicationFn({
         applicationId: application.id,
-        sourceCollection: getCurrentCollectionName(),
+        sourceCollection: sourceForApplication(application),
       });
 
       const data = result.data as {
@@ -1274,16 +1315,7 @@ export default function ProductApplications() {
         showNotification("Ürün başarıyla onaylandı!");
       }
 
-      // Remove from local state
-      if (activeTab === "dukkan") {
-        setDukkanApplications((prev) =>
-          prev.filter((app) => app.id !== application.id),
-        );
-      } else {
-        setVitrinApplications((prev) =>
-          prev.filter((app) => app.id !== application.id),
-        );
-      }
+      removeFromLocalState(application);
 
       setShowDetailModal(false);
       setSelectedApplication(null);
@@ -1295,7 +1327,10 @@ export default function ProductApplications() {
       if (firebaseError.code === "functions/not-found") {
         showNotification("Başvuru bulunamadı — zaten işlenmiş olabilir");
       } else if (firebaseError.code === "functions/failed-precondition") {
-        showNotification("Bu başvuru zaten işlenmiş");
+        showNotification(
+          firebaseError.message ||
+            "Bu başvuru işlenemiyor (zaten işlenmiş veya yanlış koleksiyonda).",
+        );
       } else if (firebaseError.code === "functions/permission-denied") {
         showNotification("Yetki hatası — lütfen tekrar giriş yapın");
       } else {
@@ -1322,22 +1357,13 @@ export default function ProductApplications() {
     try {
       await rejectProductApplicationFn({
         applicationId: application.id,
-        sourceCollection: getCurrentCollectionName(),
+        sourceCollection: sourceForApplication(application),
         rejectionReason: "Başvuru reddedildi",
       });
 
       showNotification("Ürün başvurusu reddedildi");
 
-      // Remove from local state
-      if (activeTab === "dukkan") {
-        setDukkanApplications((prev) =>
-          prev.filter((app) => app.id !== application.id),
-        );
-      } else {
-        setVitrinApplications((prev) =>
-          prev.filter((app) => app.id !== application.id),
-        );
-      }
+      removeFromLocalState(application);
 
       setShowDetailModal(false);
       setSelectedApplication(null);
@@ -1348,7 +1374,10 @@ export default function ProductApplications() {
       if (firebaseError.code === "functions/not-found") {
         showNotification("Başvuru bulunamadı");
       } else if (firebaseError.code === "functions/failed-precondition") {
-        showNotification("Bu başvuru zaten işlenmiş");
+        showNotification(
+          firebaseError.message ||
+            "Bu başvuru işlenemiyor (zaten işlenmiş veya yanlış koleksiyonda).",
+        );
       } else {
         showNotification(
           firebaseError.message || "Ürün reddedilirken hata oluştu",
