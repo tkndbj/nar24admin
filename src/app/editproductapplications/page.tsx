@@ -663,6 +663,10 @@ export default function EditProductApplicationsPage() {
 
         const result = await approveArchivedEdit({
           applicationId: application.id,
+          // Tell the CF which collection to read the application from. The CF
+          // also cross-checks this against appData.shopId, so a mismatch
+          // throws failed-precondition rather than silently mis-routing.
+          applicationCollection: appCollection,
         });
 
         const data = result.data as {
