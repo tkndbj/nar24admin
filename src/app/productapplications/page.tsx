@@ -8,6 +8,11 @@ import {
   Timestamp,
   getDoc,
   getDocs,
+  query,
+  where,
+  orderBy,
+  limit,
+  startAfter,
   QueryDocumentSnapshot,
   DocumentData,
 } from "firebase/firestore";
@@ -972,6 +977,8 @@ function ProductDetailModal({
 
 type TabType = "dukkan" | "vitrin";
 
+const ITEMS_PER_PAGE = 30;
+
 export default function ProductApplications() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>("dukkan");
@@ -981,6 +988,10 @@ export default function ProductApplications() {
     ProductApplication[]
   >([]);
   const [dukkanLoading, setDukkanLoading] = useState(true);
+  const [dukkanLoadingMore, setDukkanLoadingMore] = useState(false);
+  const [dukkanLastDoc, setDukkanLastDoc] =
+    useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [dukkanHasMore, setDukkanHasMore] = useState(true);
 
   // Vitrin tab state
   const [vitrinApplications, setVitrinApplications] = useState<
@@ -988,6 +999,10 @@ export default function ProductApplications() {
   >([]);
   const [vitrinLoading, setVitrinLoading] = useState(false);
   const [vitrinLoaded, setVitrinLoaded] = useState(false);
+  const [vitrinLoadingMore, setVitrinLoadingMore] = useState(false);
+  const [vitrinLastDoc, setVitrinLastDoc] =
+    useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [vitrinHasMore, setVitrinHasMore] = useState(true);
 
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [selectedApplication, setSelectedApplication] =
@@ -1001,6 +1016,9 @@ export default function ProductApplications() {
   const applications =
     activeTab === "dukkan" ? dukkanApplications : vitrinApplications;
   const loading = activeTab === "dukkan" ? dukkanLoading : vitrinLoading;
+  const loadingMore =
+    activeTab === "dukkan" ? dukkanLoadingMore : vitrinLoadingMore;
+  const hasMore = activeTab === "dukkan" ? dukkanHasMore : vitrinHasMore;
 
   // Parse document to ProductApplication
   const parseDocument = (
@@ -1141,15 +1159,30 @@ export default function ProductApplications() {
     } as ProductApplication;
   };
 
-  // Fetch all applications and filter/sort client-side
+  // Fetch a single page of pending applications, server-side filtered + ordered.
+  // Pass `startAfterDoc` to fetch the next page.
   const fetchApplications = async (
     collectionName: "product_applications" | "vitrin_product_applications",
+    startAfterDoc?: QueryDocumentSnapshot<DocumentData> | null,
   ) => {
     try {
-      const snapshot = await getDocs(collection(db, collectionName));
-      const docs = snapshot.docs;
+      const q = startAfterDoc
+        ? query(
+            collection(db, collectionName),
+            where("status", "==", "pending"),
+            orderBy("createdAt", "desc"),
+            startAfter(startAfterDoc),
+            limit(ITEMS_PER_PAGE),
+          )
+        : query(
+            collection(db, collectionName),
+            where("status", "==", "pending"),
+            orderBy("createdAt", "desc"),
+            limit(ITEMS_PER_PAGE),
+          );
 
-      const allApplications = docs.map((docSnapshot) => {
+      const snapshot = await getDocs(q);
+      const applicationsData = snapshot.docs.map((docSnapshot) => {
         const parsed = parseDocument(docSnapshot);
         // Stamp the source collection so approve/reject can route correctly
         // even if the operator switches tabs while the detail modal is open.
@@ -1157,28 +1190,10 @@ export default function ProductApplications() {
         return parsed;
       });
 
-      const pendingApplications = allApplications.filter(
-        (app) => !app.status || app.status === "pending",
-      );
+      const newLastDoc = snapshot.docs[snapshot.docs.length - 1] ?? null;
+      const hasMoreData = snapshot.docs.length === ITEMS_PER_PAGE;
 
-      pendingApplications.sort((a, b) => {
-        if (!a.createdAt || !b.createdAt) return 0;
-        const aTime =
-          typeof a.createdAt.toDate === "function"
-            ? a.createdAt.toDate().getTime()
-            : 0;
-        const bTime =
-          typeof b.createdAt.toDate === "function"
-            ? b.createdAt.toDate().getTime()
-            : 0;
-        return bTime - aTime;
-      });
-
-      return {
-        applicationsData: pendingApplications,
-        newLastDoc: null,
-        hasMoreData: false,
-      };
+      return { applicationsData, newLastDoc, hasMoreData };
     } catch (error) {
       console.error(`Error fetching from ${collectionName}:`, error);
       throw error;
@@ -1190,10 +1205,11 @@ export default function ProductApplications() {
     const loadDukkanData = async () => {
       setDukkanLoading(true);
       try {
-        const { applicationsData } = await fetchApplications(
-          "product_applications",
-        );
+        const { applicationsData, newLastDoc, hasMoreData } =
+          await fetchApplications("product_applications");
         setDukkanApplications(applicationsData);
+        setDukkanLastDoc(newLastDoc);
+        setDukkanHasMore(hasMoreData);
       } catch (error) {
         console.error("Dükkan başvuruları yüklenirken hata:", error);
       } finally {
@@ -1210,10 +1226,11 @@ export default function ProductApplications() {
       const loadVitrinData = async () => {
         setVitrinLoading(true);
         try {
-          const { applicationsData } = await fetchApplications(
-            "vitrin_product_applications",
-          );
+          const { applicationsData, newLastDoc, hasMoreData } =
+            await fetchApplications("vitrin_product_applications");
           setVitrinApplications(applicationsData);
+          setVitrinLastDoc(newLastDoc);
+          setVitrinHasMore(hasMoreData);
           setVitrinLoaded(true);
         } catch (error) {
           console.error("Vitrin başvuruları yüklenirken hata:", error);
@@ -1225,6 +1242,38 @@ export default function ProductApplications() {
       loadVitrinData();
     }
   }, [activeTab, vitrinLoaded]);
+
+  // Load the next page for the active tab.
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    if (activeTab === "dukkan") {
+      setDukkanLoadingMore(true);
+      try {
+        const { applicationsData, newLastDoc, hasMoreData } =
+          await fetchApplications("product_applications", dukkanLastDoc);
+        setDukkanApplications((prev) => [...prev, ...applicationsData]);
+        setDukkanLastDoc(newLastDoc);
+        setDukkanHasMore(hasMoreData);
+      } catch (error) {
+        console.error("Daha fazla yüklenirken hata:", error);
+      } finally {
+        setDukkanLoadingMore(false);
+      }
+    } else {
+      setVitrinLoadingMore(true);
+      try {
+        const { applicationsData, newLastDoc, hasMoreData } =
+          await fetchApplications("vitrin_product_applications", vitrinLastDoc);
+        setVitrinApplications((prev) => [...prev, ...applicationsData]);
+        setVitrinLastDoc(newLastDoc);
+        setVitrinHasMore(hasMoreData);
+      } catch (error) {
+        console.error("Daha fazla yüklenirken hata:", error);
+      } finally {
+        setVitrinLoadingMore(false);
+      }
+    }
+  };
 
   // Get current collection name
   const getCurrentCollectionName = () => {
@@ -1704,6 +1753,26 @@ export default function ProductApplications() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Load More */}
+          {!loading && applications.length > 0 && hasMore && (
+            <div className="flex justify-center mt-4">
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed text-gray-700 text-sm font-medium rounded-lg transition-colors"
+              >
+                {loadingMore ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Yükleniyor...</span>
+                  </>
+                ) : (
+                  <span>Daha fazla yükle</span>
+                )}
+              </button>
             </div>
           )}
         </main>
