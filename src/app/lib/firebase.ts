@@ -4,6 +4,7 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getFunctions } from "firebase/functions";
+import { initializeAppCheckOnce, getCachedAppCheck } from "./firebase-appcheck";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
@@ -20,6 +21,12 @@ const app: FirebaseApp = !getApps().length
   ? initializeApp(firebaseConfig)
   : getApps()[0];
 
+// Initialize App Check (runs async, but starts immediately on client)
+if (typeof window !== "undefined") {
+  initializeAppCheckOnce(app);
+}
+
+export const getAppCheck = getCachedAppCheck;
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
